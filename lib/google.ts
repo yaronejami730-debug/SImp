@@ -55,6 +55,7 @@ export async function createEvent(a: Appointment) {
       end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
       extendedProperties: {
         private: {
+          app: "simplici-rdv",
           clientEmail: a.email,
           clientPhone: a.phone,
           clientFirstName: a.firstName,
@@ -120,7 +121,13 @@ export async function listAppointments(
   timeMax: Date,
 ): Promise<AppointmentItem[]> {
   const items = await listEvents(timeMin, timeMax);
-  return items.map((ev) => {
+  return items
+    // Ne garder que les RDV créés par l'app (pas les events perso de l'agenda).
+    .filter((ev) => {
+      const p = ev.extendedProperties?.private;
+      return p?.app === "simplici-rdv" || !!p?.clientEmail;
+    })
+    .map((ev) => {
     const p = ev.extendedProperties?.private ?? {};
     return {
       id: ev.id ?? "",
