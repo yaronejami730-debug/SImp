@@ -32,25 +32,35 @@ export async function POST(req: Request) {
     // 2. Création de l'événement dans Google Agenda
     const event = await createEvent(appt);
 
-    // 3. Mail de confirmation via Brevo
-    const mail = confirmationEmail({
-      firstName: appt.firstName,
-      startDateTime: appt.startDateTime,
-      location: appt.location,
-      platform: appt.platform,
-      listingUrl: appt.listingUrl,
-    });
-    await sendEmail({
-      to: appt.email,
-      toName: `${appt.firstName} ${appt.lastName}`,
-      subject: mail.subject,
-      html: mail.html,
-    });
+    // 3. Mail de confirmation via Brevo (non-bloquant : si ça échoue,
+    //    l'événement reste créé et la requête réussit quand même).
+    let emailSent = false;
+    let emailError: string | undefined;
+    try {
+      const mail = confirmationEmail({
+        firstName: appt.firstName,
+        startDateTime: appt.startDateTime,
+        location: appt.location,
+        platform: appt.platform,
+        listingUrl: appt.listingUrl,
+      });
+      await sendEmail({
+        to: appt.email,
+        toName: `${appt.firstName} ${appt.lastName}`,
+        subject: mail.subject,
+        html: mail.html,
+      });
+      emailSent = true;
+    } catch (e) {
+      emailError = e instanceof Error ? e.message : "Erreur e-mail.";
+    }
 
     return NextResponse.json({
       ok: true,
       appointment: appt,
       eventLink: event.htmlLink,
+      emailSent,
+      emailError,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue.";
