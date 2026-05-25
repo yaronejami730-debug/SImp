@@ -21,7 +21,6 @@ const EMPTY = {
   lastName: "",
   email: "",
   listingUrl: "",
-  location: "",
   date: "",
   time: "10:00",
 };
@@ -58,7 +57,6 @@ export default function Home() {
     form.lastName.trim() &&
     form.email.trim() &&
     form.listingUrl.trim() &&
-    form.location.trim() &&
     form.date &&
     form.time;
 
@@ -127,16 +125,6 @@ export default function Home() {
             value={form.listingUrl}
             onChange={(e) => set("listingUrl", e.target.value)}
             placeholder="https://www.leboncoin.fr/voitures/123456789"
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle}>Lieu</label>
-          <input
-            style={inputStyle}
-            value={form.location}
-            onChange={(e) => set("location", e.target.value)}
-            placeholder="12 rue de la Gare, 75010 Paris"
           />
         </div>
 

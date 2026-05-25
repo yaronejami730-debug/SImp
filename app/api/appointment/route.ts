@@ -15,7 +15,6 @@ export async function POST(req: Request) {
       "lastName",
       "email",
       "listingUrl",
-      "location",
       "date",
       "time",
     ];

@@ -20,13 +20,17 @@ export const appointmentSchema = z.object({
 
 export type Appointment = z.infer<typeof appointmentSchema>;
 
+/** Lieu de rendez-vous fixe (toujours le même). */
+export const DEFAULT_LOCATION =
+  process.env.DEFAULT_LOCATION ?? "3 rue Bolidor, 75017 Paris";
+
 /** Champs bruts envoyés par le formulaire (sans IA). */
 export type AppointmentInput = {
   firstName: string;
   lastName: string;
   email: string;
   listingUrl: string;
-  location: string;
+  location?: string; // optionnel : si absent, lieu fixe par défaut
   date: string; // "YYYY-MM-DD"
   time: string; // "HH:MM"
 };
@@ -84,7 +88,7 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     email: input.email.trim(),
     platform: platformFromUrl(input.listingUrl),
     listingUrl: input.listingUrl.trim(),
-    location: input.location.trim(),
+    location: input.location?.trim() || DEFAULT_LOCATION,
     startDateTime: toParisISO(input.date, input.time),
   };
 }

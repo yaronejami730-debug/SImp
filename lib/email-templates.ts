@@ -99,7 +99,6 @@ export function confirmationEmail(d: ConfirmData) {
     ${infoTable([
       ["Date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
       ["Lieu", d.location],
-      ["Annonce", `<a href="${d.listingUrl}" style="color:${C.accent};text-decoration:none">${d.platform}</a>`],
     ])}
     ${buttons(d.whatsappUrl, d.rescheduleUrl)}`;
   return {
