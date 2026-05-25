@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { addLead, searchLeads, deleteLead } from "@/lib/leads";
+import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 function checkPin(req: Request): boolean {
-  const pin = process.env.DASHBOARD_PIN;
-  return !pin || req.headers.get("x-pin") === pin;
+  return !!getAuth(req);
 }
 
-/** GET ?phone= -> recherche de leads (PIN). */
+/** GET ?phone= -> recherche de leads (connecté). */
 export async function GET(req: Request) {
-  if (!checkPin(req)) return NextResponse.json({ error: "Code invalide." }, { status: 401 });
+  if (!checkPin(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const phone = new URL(req.url).searchParams.get("phone") ?? "";
   try {
     const leads = await searchLeads(phone);

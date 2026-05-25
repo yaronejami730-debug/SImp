@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
 import { listAppointments } from "@/lib/google";
+import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const digits = (s: string) => s.replace(/\D/g, "");
 
-/** GET ?phone=&url= -> RDV existants correspondants (détection doublons). PIN requis. */
+/** GET ?phone=&url= -> RDV existants correspondants (détection doublons). Connecté requis. */
 export async function GET(req: Request) {
-  const pin = process.env.DASHBOARD_PIN;
-  if (pin && req.headers.get("x-pin") !== pin) {
-    return NextResponse.json({ error: "Code invalide." }, { status: 401 });
-  }
+  if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   const sp = new URL(req.url).searchParams;
   const phone = digits(sp.get("phone") ?? "");

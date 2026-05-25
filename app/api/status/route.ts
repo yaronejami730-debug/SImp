@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
 import { patchTracking } from "@/lib/google";
+import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-/** POST { eid, present?, signStatus?, negotiation? } -> maj suivi du RDV. PIN requis. */
+/** POST { eid, present?, signStatus?, negotiation? } -> maj suivi du RDV. Connecté requis. */
 export async function POST(req: Request) {
-  const dashPin = process.env.DASHBOARD_PIN;
-  if (dashPin && req.headers.get("x-pin") !== dashPin) {
-    return NextResponse.json({ error: "Code invalide." }, { status: 401 });
-  }
+  if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
     const { eid, present, signStatus, negotiation } = (await req.json()) as {

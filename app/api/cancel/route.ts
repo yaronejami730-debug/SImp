@@ -3,6 +3,7 @@ import { getEvent, deleteEvent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { cancelledEmail } from "@/lib/email-templates";
 import { whatsappUrl } from "@/lib/links";
+import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -10,10 +11,7 @@ export const dynamic = "force-dynamic";
 /** POST { eid } -> supprime l'événement Google + mail d'annulation au client. */
 export async function POST(req: Request) {
   try {
-    const dashPin = process.env.DASHBOARD_PIN;
-    if (dashPin && req.headers.get("x-pin") !== dashPin) {
-      return NextResponse.json({ error: "Code invalide." }, { status: 401 });
-    }
+    if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
     const { eid } = (await req.json()) as { eid?: string };
     if (!eid) {

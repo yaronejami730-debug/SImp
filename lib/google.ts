@@ -33,7 +33,7 @@ function calendarClient(): calendar_v3.Calendar {
 
 /** Crée l'événement dans Google Agenda. Les infos client sont stockées
  *  dans extendedProperties.private pour que le cron retrouve l'e-mail. */
-export async function createEvent(a: Appointment) {
+export async function createEvent(a: Appointment, owner = "") {
   const cal = calendarClient();
   const start = new Date(a.startDateTime);
   const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 min par défaut
@@ -56,6 +56,7 @@ export async function createEvent(a: Appointment) {
       extendedProperties: {
         private: {
           app: "simplici-rdv",
+          owner,
           clientEmail: a.email,
           clientPhone: a.phone,
           clientFirstName: a.firstName,
@@ -136,6 +137,7 @@ export type AppointmentItem = {
   present: boolean;
   signStatus: "" | "signed" | "thinking" | "unsigned";
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
+  owner: string; // email du collaborateur ayant créé le RDV
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -165,6 +167,7 @@ export async function listAppointments(
       present: p.present === "1",
       signStatus: (p.signStatus as AppointmentItem["signStatus"]) ?? "",
       negotiation: p.negotiation ? Number(p.negotiation) : 0,
+      owner: p.owner ?? "",
     };
   });
 }

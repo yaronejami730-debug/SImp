@@ -5,11 +5,15 @@ import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { SLOT_MIN } from "@/lib/slots";
+import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   try {
+    const auth = getAuth(req);
+    if (!auth) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+
     const body = (await req.json()) as Partial<AppointmentInput>;
     const required: (keyof AppointmentInput)[] = [
       "firstName",
@@ -39,8 +43,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Création de l'événement dans Google Agenda
-    const event = await createEvent(appt);
+    // 2. Création de l'événement dans Google Agenda (owner = collaborateur)
+    const event = await createEvent(appt, auth.email);
 
     // 3. Mail de confirmation via Brevo (non-bloquant : si ça échoue,
     //    l'événement reste créé et la requête réussit quand même).
