@@ -221,8 +221,11 @@ export default function Agenda() {
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <div style={{ background: NAVY, borderRadius: 14, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOGO} alt="Simplicicar" width={170} style={{ width: 170, maxWidth: "50%", height: "auto" }} />
-          <a href="/" style={{ color: "#fff", fontSize: 13, textDecoration: "none", background: PINK, padding: "8px 12px", borderRadius: 8, fontWeight: 600 }}>+ Nouveau RDV</a>
+          <img src={LOGO} alt="Simplicicar" width={170} style={{ width: 170, maxWidth: "45%", height: "auto" }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <a href="/prospection" style={{ color: "#fff", fontSize: 13, textDecoration: "none", background: "#2d3a52", padding: "8px 12px", borderRadius: 8, fontWeight: 600 }}>Prospection</a>
+            <a href="/" style={{ color: "#fff", fontSize: 13, textDecoration: "none", background: PINK, padding: "8px 12px", borderRadius: 8, fontWeight: 600 }}>+ RDV</a>
+          </div>
         </div>
 
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
