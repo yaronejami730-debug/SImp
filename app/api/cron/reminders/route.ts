@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listBookings } from "@/lib/calcom";
+import { listEvents } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { reminderEmail } from "@/lib/email-templates";
 
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
   const tomorrow = parisDate(new Date(now.getTime() + 24 * 60 * 60 * 1000));
 
   // On regarde les 3 prochains jours puis on filtre ceux de "demain"
-  const bookings = await listBookings(
+  const events = await listEvents(
     now,
     new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
   );
@@ -34,21 +34,21 @@ export async function GET(req: Request) {
   let sent = 0;
   const errors: string[] = [];
 
-  for (const b of bookings) {
-    const startIso = b.start;
+  for (const ev of events) {
+    const startIso = ev.start?.dateTime;
     if (!startIso) continue;
     if (parisDate(new Date(startIso)) !== tomorrow) continue;
 
-    const attendee = b.attendees?.[0];
-    const email = attendee?.email;
+    const priv = ev.extendedProperties?.private;
+    const email = priv?.clientEmail;
     if (!email) continue;
 
-    const firstName = b.metadata?.firstName ?? attendee?.name?.split(" ")[0] ?? "";
+    const firstName = priv?.clientFirstName ?? "";
 
     const mail = reminderEmail({
       firstName,
       startDateTime: startIso,
-      location: b.metadata?.address ?? b.location ?? "",
+      location: ev.location ?? "",
     });
 
     try {
