@@ -15,25 +15,32 @@ function decode(s: string) {
 }
 
 function meta(html: string, key: string): string | null {
-  const re1 = new RegExp(
-    `<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']*)["']`,
-    "i",
-  );
-  const re2 = new RegExp(
-    `<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${key}["']`,
-    "i",
-  );
+  const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']*)["']`, "i");
+  const re2 = new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${key}["']`, "i");
   const m = html.match(re1) ?? html.match(re2);
   return m ? decode(m[1]) : null;
 }
 
-/** GET ?url= -> aperçu Open Graph du lien (titre, image, plateforme). */
-export async function GET(req: Request) {
-  const url = new URL(req.url).searchParams.get("url");
-  if (!url || !/^https?:\/\//i.test(url)) {
-    return NextResponse.json({ ok: false, error: "URL invalide." }, { status: 400 });
+/** Aperçu via microlink (rendu headless, contourne DataDome de LeBonCoin). */
+async function viaMicrolink(url: string) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`, { signal: ctrl.signal });
+    const j = await r.json();
+    if (j.status !== "success") return null;
+    const d = j.data ?? {};
+    const image = d.image?.url ?? d.logo?.url ?? null;
+    return { title: d.title ?? null, image, description: d.description ?? null };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
   }
+}
 
+/** Aperçu par fetch direct + balises Open Graph (fallback). */
+async function viaDirect(url: string) {
   try {
     const res = await fetch(url, {
       headers: {
@@ -44,21 +51,34 @@ export async function GET(req: Request) {
       redirect: "follow",
     });
     const html = (await res.text()).slice(0, 600_000);
-
-    const title =
-      meta(html, "og:title") ??
-      (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? null);
-    const image = meta(html, "og:image");
-    const description = meta(html, "og:description");
-
-    return NextResponse.json({
-      ok: true,
-      platform: platformFromUrl(url),
-      title: title ? decode(title) : null,
-      image,
-      description,
-    });
+    const title = meta(html, "og:title") ?? (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim() ?? null);
+    return { title: title ? decode(title) : null, image: meta(html, "og:image"), description: meta(html, "og:description") };
   } catch {
-    return NextResponse.json({ ok: false, platform: platformFromUrl(url) });
+    return null;
   }
+}
+
+/** GET ?url= -> aperçu (titre véhicule, image, plateforme). */
+export async function GET(req: Request) {
+  const url = new URL(req.url).searchParams.get("url");
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return NextResponse.json({ ok: false, error: "URL invalide." }, { status: 400 });
+  }
+
+  const platform = platformFromUrl(url);
+  const isGood = (t?: string | null) => !!t && !/^leboncoin\.fr$/i.test(t);
+
+  // microlink en priorité (gère LeBonCoin), sinon fetch direct.
+  const m = await viaMicrolink(url);
+  if (m && isGood(m.title)) return NextResponse.json({ ok: true, platform, ...m });
+
+  const d = await viaDirect(url);
+  const best = isGood(d?.title) ? d : (m ?? d);
+  return NextResponse.json({
+    ok: true,
+    platform,
+    title: best?.title ?? null,
+    image: best?.image ?? null,
+    description: best?.description ?? null,
+  });
 }
