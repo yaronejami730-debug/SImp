@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildAppointment, type AppointmentInput } from "@/lib/parse";
-import { createEvent } from "@/lib/google";
+import { createBooking, bookingLink } from "@/lib/calcom";
 import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
 
@@ -29,8 +29,8 @@ export async function POST(req: Request) {
     // 1. Champs du formulaire -> rendez-vous structuré (sans IA)
     const appt = buildAppointment(body as AppointmentInput);
 
-    // 2. Création de l'événement dans Google Agenda
-    const event = await createEvent(appt);
+    // 2. Création de la réservation dans cal.com
+    const booking = await createBooking(appt);
 
     // 3. Mail de confirmation via Brevo (non-bloquant : si ça échoue,
     //    l'événement reste créé et la requête réussit quand même).
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       appointment: appt,
-      eventLink: event.htmlLink,
+      eventLink: bookingLink(booking.uid),
       emailSent,
       emailError,
     });

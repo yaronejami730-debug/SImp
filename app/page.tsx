@@ -83,7 +83,7 @@ export default function Home() {
     <main style={{ maxWidth: 640, margin: "0 auto", padding: "48px 20px" }}>
       <h1 style={{ fontSize: 26, marginBottom: 4 }}>Prise de rendez-vous</h1>
       <p style={{ color: "#94a3b8", marginTop: 0, marginBottom: 24 }}>
-        Remplis les champs. Le rendez-vous est ajouté à Google Agenda et un
+        Remplis les champs. Le rendez-vous est créé dans cal.com et un
         e-mail de confirmation est envoyé au client.
       </p>
 
@@ -213,7 +213,7 @@ export default function Home() {
               rel="noreferrer"
               style={{ color: "#60a5fa", display: "inline-block", marginTop: 12 }}
             >
-              Ouvrir dans Google Agenda →
+              Ouvrir la réservation cal.com →
             </a>
           )}
         </div>

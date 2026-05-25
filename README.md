@@ -1,10 +1,10 @@
 # Prise de rendez-vous — Simplisicar
 
-App simple : tu colles les infos en vrac → l'IA les découpe → l'événement est créé
-dans **Google Agenda** + un **mail de confirmation** part via **Brevo**.
+App simple : tu remplis le formulaire → la réservation est créée
+dans **cal.com** + un **mail de confirmation** part via **Brevo**.
 Un **cron quotidien** envoie une **relance la veille** du rendez-vous.
 
-Pas de base de données : l'agenda Google sert de stockage.
+Pas de base de données : cal.com sert de stockage des rendez-vous.
 
 ## 1. Installer
 
@@ -16,13 +16,14 @@ npm install
 
 Copie `.env.example` en `.env.local` et remplis les valeurs.
 
-### Google Agenda (compte de service)
-1. Console Google Cloud → crée un projet → active **Google Calendar API**.
-2. Crée un **compte de service**, génère une **clé JSON**.
-3. Récupère `client_email` et `private_key` dans le JSON → `GOOGLE_CLIENT_EMAIL` et `GOOGLE_PRIVATE_KEY`.
-4. Dans Google Agenda (web) → paramètres de ton agenda → **Partager avec des personnes**
-   → ajoute l'e-mail du compte de service avec le droit **« Apporter des modifications aux événements »**.
-5. `GOOGLE_CALENDAR_ID` = l'ID de cet agenda (souvent ton adresse Gmail).
+### cal.com (API v2)
+1. cal.com → **Settings → Developer → API Keys** → crée une clé (préfixe `cal_`) → `CALCOM_API_KEY`.
+2. Crée un **Event Type** (durée du RDV, disponibilités). Configure des dispos larges :
+   une réservation hors créneau dispo est **refusée** par cal.com.
+3. Récupère l'**ID numérique** de cet event type (URL d'édition, ou `GET /v2/event-types`)
+   → `CALCOM_EVENT_TYPE_ID`.
+4. Les infos client (plateforme, annonce, adresse) sont stockées dans le `metadata`
+   de la réservation ; le cron de relance les relit de là.
 
 ### Brevo
 1. Brevo → SMTP & API → crée une **clé API** → `BREVO_API_KEY`.
@@ -38,7 +39,7 @@ Copie `.env.example` en `.env.local` et remplis les valeurs.
 npm run dev
 ```
 
-Ouvre http://localhost:3000, colle un texte, clique « Créer le rendez-vous ».
+Ouvre http://localhost:3000, remplis le formulaire, clique « Créer le rendez-vous ».
 
 ## 4. Déployer
 
