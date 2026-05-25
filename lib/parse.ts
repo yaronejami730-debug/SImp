@@ -4,6 +4,7 @@ export const appointmentSchema = z.object({
   firstName: z.string().describe("Prénom du client"),
   lastName: z.string().describe("Nom de famille du client"),
   email: z.string().describe("Adresse e-mail du client"),
+  phone: z.string().describe("Numéro de téléphone du client"),
   platform: z
     .string()
     .describe(
@@ -29,6 +30,7 @@ export type AppointmentInput = {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string;
   listingUrl: string;
   location?: string; // optionnel : si absent, lieu fixe par défaut
   date: string; // "YYYY-MM-DD"
@@ -86,6 +88,7 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
     email: input.email.trim(),
+    phone: input.phone.trim(),
     platform: platformFromUrl(input.listingUrl),
     listingUrl: input.listingUrl.trim(),
     location: input.location?.trim() || DEFAULT_LOCATION,

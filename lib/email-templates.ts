@@ -111,22 +111,48 @@ type ReminderData = {
   firstName: string;
   startDateTime: string;
   location: string;
+  kind: "24h" | "2h";
   whatsappUrl?: string;
   rescheduleUrl?: string;
 };
 
 export function reminderEmail(d: ReminderData) {
+  const quand = d.kind === "2h" ? "dans 2 heures" : "demain";
   const body = `
     <p style="margin:0 0 12px">Bonjour ${d.firstName},</p>
-    <p style="margin:0 0 4px">Petit rappel : vous avez rendez-vous <strong>demain</strong>.</p>
+    <p style="margin:0 0 4px">Petit rappel : vous avez rendez-vous <strong>${quand}</strong>.</p>
     ${infoTable([
       ["Date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
       ["Lieu", d.location],
     ])}
     ${buttons(d.whatsappUrl, d.rescheduleUrl)}`;
   return {
-    subject: `Rappel : votre rendez-vous demain — ${BUSINESS}`,
+    subject: `Rappel : votre rendez-vous ${quand} — ${BUSINESS}`,
     html: shell("N'oubliez pas votre rendez-vous ⏰", body),
+  };
+}
+
+type CancelData = {
+  firstName: string;
+  startDateTime: string;
+  location: string;
+  whatsappUrl?: string;
+};
+
+/** E-mail envoyé quand un rendez-vous est annulé. */
+export function cancelledEmail(d: CancelData) {
+  const body = `
+    <p style="margin:0 0 12px">Bonjour ${d.firstName},</p>
+    <p style="margin:0 0 6px">Votre rendez-vous suivant a été <strong>annulé</strong> :</p>
+    ${infoTable([
+      ["Date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
+      ["Lieu", d.location],
+    ])}
+    <p style="margin:16px 0 0">Pour reprendre un rendez-vous, contactez-nous :</p>
+    ${buttons(d.whatsappUrl, undefined)}`;
+  return {
+    subject: `Rendez-vous annulé — ${BUSINESS}`,
+    html: shell("Rendez-vous annulé ❌", body),
   };
 }
 

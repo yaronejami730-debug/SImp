@@ -45,6 +45,7 @@ export async function createEvent(a: Appointment) {
       description: [
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
+        `Téléphone : ${a.phone}`,
         `Plateforme : ${a.platform}`,
         `Annonce : ${a.listingUrl}`,
         `Lieu : ${a.location}`,
@@ -55,6 +56,7 @@ export async function createEvent(a: Appointment) {
       extendedProperties: {
         private: {
           clientEmail: a.email,
+          clientPhone: a.phone,
           clientFirstName: a.firstName,
           clientLastName: a.lastName,
           platform: a.platform,
@@ -90,6 +92,70 @@ export async function getEvent(eventId: string) {
   return res.data;
 }
 
+/** Supprime (annule) un événement. */
+export async function deleteEvent(eventId: string) {
+  const cal = calendarClient();
+  await cal.events.delete({ calendarId: CALENDAR_ID, eventId });
+}
+
+/** RDV simplifié pour le dashboard. */
+export type AppointmentItem = {
+  id: string;
+  startDateTime: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  platform: string;
+  listingUrl: string;
+  location: string;
+  present: boolean;
+  signStatus: "" | "signed" | "thinking" | "unsigned";
+  negotiation: number; // montant de la négociation en euros (0 si non saisi)
+};
+
+/** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
+export async function listAppointments(
+  timeMin: Date,
+  timeMax: Date,
+): Promise<AppointmentItem[]> {
+  const items = await listEvents(timeMin, timeMax);
+  return items.map((ev) => {
+    const p = ev.extendedProperties?.private ?? {};
+    return {
+      id: ev.id ?? "",
+      startDateTime: ev.start?.dateTime ?? null,
+      firstName: p.clientFirstName ?? "",
+      lastName: p.clientLastName ?? "",
+      email: p.clientEmail ?? "",
+      phone: p.clientPhone ?? "",
+      platform: p.platform ?? "",
+      listingUrl: p.listingUrl ?? "",
+      location: ev.location ?? "",
+      present: p.present === "1",
+      signStatus: (p.signStatus as AppointmentItem["signStatus"]) ?? "",
+      negotiation: p.negotiation ? Number(p.negotiation) : 0,
+    };
+  });
+}
+
+/** Met à jour les champs de suivi (présent / signature / négociation) d'un RDV. */
+export async function patchTracking(
+  eventId: string,
+  fields: { present?: boolean; signStatus?: string; negotiation?: number },
+) {
+  const cal = calendarClient();
+  const priv: Record<string, string> = {};
+  if (fields.present !== undefined) priv.present = fields.present ? "1" : "0";
+  if (fields.signStatus !== undefined) priv.signStatus = fields.signStatus;
+  if (fields.negotiation !== undefined) priv.negotiation = String(fields.negotiation);
+  await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
+  });
+}
+
 /** Déplace un événement à une nouvelle heure de début (reprogrammation).
  *  Garde la même durée (30 min par défaut). */
 export async function updateEvent(eventId: string, newStartISO: string) {
@@ -103,7 +169,24 @@ export async function updateEvent(eventId: string, newStartISO: string) {
     requestBody: {
       start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
       end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
+      // Reset des rappels : la nouvelle heure déclenchera de nouveaux 24h/2h.
+      extendedProperties: {
+        private: { reminder24Sent: null, reminder2Sent: null } as unknown as {
+          [k: string]: string;
+        },
+      },
     },
   });
   return res.data;
+}
+
+/** Marque qu'un rappel (24h ou 2h) a été envoyé pour cet événement. */
+export async function markReminderSent(eventId: string, kind: "24h" | "2h") {
+  const cal = calendarClient();
+  const key = kind === "24h" ? "reminder24Sent" : "reminder2Sent";
+  await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { [key]: "1" } } },
+  });
 }
