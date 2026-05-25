@@ -77,7 +77,7 @@ export default function Agenda() {
     else alert("Erreur : " + (d.error ?? ""));
   }
 
-  const { groups, total } = useMemo(() => {
+  const { groups, total, month } = useMemo(() => {
     const now = new Date();
     const today = parisDate(now);
     const yest = parisDate(new Date(now.getTime() - 86400000));
@@ -98,7 +98,19 @@ export default function Agenda() {
     }
     g.passes.reverse();
     const total = appts.reduce((s, a) => s + commission(a), 0);
-    return { groups: g, total };
+
+    // Stats du mois courant (Europe/Paris).
+    const monthKey = today.slice(0, 7); // YYYY-MM
+    const m = { rdv: 0, signed: 0, present: 0, thinking: 0, comm: 0 };
+    for (const a of appts) {
+      if (!a.startDateTime) continue;
+      if (parisDate(new Date(a.startDateTime)).slice(0, 7) !== monthKey) continue;
+      m.rdv++;
+      if (a.present) m.present++;
+      if (a.signStatus === "signed") { m.signed++; m.comm += commission(a); }
+      if (a.signStatus === "thinking") m.thinking++;
+    }
+    return { groups: g, total, month: m };
   }, [appts, search]);
 
   const fmt = (iso: string) =>
@@ -213,9 +225,29 @@ export default function Agenda() {
           <a href="/" style={{ color: "#fff", fontSize: 13, textDecoration: "none", background: PINK, padding: "8px 12px", borderRadius: 8, fontWeight: 600 }}>+ Nouveau RDV</a>
         </div>
 
-        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "#6b7280", fontSize: 14 }}>Commissions totales (signés)</span>
-          <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 22, fontWeight: 700, color: "#16a34a" }}>{eur(total)}</span>
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Ce mois-ci</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, textAlign: "center" }}>
+            {[
+              { n: month.rdv, l: "RDV", c: NAVY },
+              { n: month.present, l: "Présents", c: NAVY },
+              { n: month.signed, l: "Signés", c: "#16a34a" },
+              { n: month.thinking, l: "Réfléchit", c: "#ca8a04" },
+            ].map((s) => (
+              <div key={s.l}>
+                <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: s.c }}>{s.n}</div>
+                <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.3 }}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #f0f1f3", marginTop: 14, paddingTop: 12 }}>
+            <span style={{ color: "#6b7280", fontSize: 13 }}>Commission du mois</span>
+            <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: "#16a34a" }}>{eur(month.comm)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+            <span style={{ color: "#9aa6b8", fontSize: 12 }}>Total tous mois</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#6b7280" }}>{eur(total)}</span>
+          </div>
         </div>
 
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher par téléphone du client"

@@ -63,6 +63,17 @@ export default function Home() {
     image?: string | null;
   } | null>(null);
 
+  type Dup = {
+    firstName: string;
+    lastName: string;
+    phone: string;
+    startDateTime: string | null;
+    platform: string;
+    signStatus: string;
+    matchedBy: string;
+  };
+  const [dups, setDups] = useState<Dup[]>([]);
+
   function set(key: keyof typeof EMPTY, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -85,6 +96,34 @@ export default function Home() {
     }, 600);
     return () => clearTimeout(t);
   }, [form.listingUrl]);
+
+  // Détection de doublons par téléphone OU lien (nécessite le code dashboard en localStorage).
+  useEffect(() => {
+    const pin = typeof window !== "undefined" ? localStorage.getItem("dash_pin") : null;
+    if (!pin) {
+      setDups([]);
+      return;
+    }
+    const phone = form.phone.replace(/\D/g, "");
+    const url = form.listingUrl.trim();
+    if (phone.length < 4 && !/^https?:\/\//i.test(url)) {
+      setDups([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams();
+        if (phone.length >= 4) qs.set("phone", form.phone);
+        if (/^https?:\/\//i.test(url)) qs.set("url", url);
+        const r = await fetch(`/api/lookup?${qs.toString()}`, { headers: { "x-pin": pin } });
+        const d = await r.json();
+        setDups(d.ok ? d.matches : []);
+      } catch {
+        setDups([]);
+      }
+    }, 700);
+    return () => clearTimeout(t);
+  }, [form.phone, form.listingUrl]);
 
   const ready =
     form.firstName.trim() &&
@@ -260,6 +299,34 @@ export default function Home() {
               />
             </div>
           </div>
+
+          {dups.length > 0 && (
+            <div
+              style={{
+                marginTop: 18,
+                padding: 14,
+                borderRadius: 10,
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+              }}
+            >
+              <strong style={{ color: "#b45309" }}>
+                ⚠️ Déjà {dups.length} rendez-vous avec ce client / ce lien
+              </strong>
+              <ul style={{ margin: "8px 0 0", paddingLeft: 18, lineHeight: 1.6, color: "#92400e", fontSize: 13 }}>
+                {dups.slice(0, 4).map((d, i) => (
+                  <li key={i}>
+                    {d.startDateTime
+                      ? new Date(d.startDateTime).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })
+                      : "—"}{" "}
+                    — {d.firstName} {d.lastName} ({d.phone}) · {d.platform} ·{" "}
+                    {d.signStatus === "signed" ? "signé ✅" : d.signStatus === "thinking" ? "réfléchit 🤔" : d.signStatus === "unsigned" ? "pas signé ❌" : "à venir"}{" "}
+                    <span style={{ color: "#b45309" }}>[{d.matchedBy === "url" ? "même lien" : d.matchedBy === "phone" ? "même tél" : "tél+lien"}]</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <button
             onClick={submit}
