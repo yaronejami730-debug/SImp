@@ -3,6 +3,7 @@ import { buildAppointment, type AppointmentInput } from "@/lib/parse";
 import { createEvent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
+import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 
 export const maxDuration = 60;
 
@@ -37,12 +38,15 @@ export async function POST(req: Request) {
     let emailSent = false;
     let emailError: string | undefined;
     try {
+      const base = baseUrlFrom(req);
       const mail = confirmationEmail({
         firstName: appt.firstName,
         startDateTime: appt.startDateTime,
         location: appt.location,
         platform: appt.platform,
         listingUrl: appt.listingUrl,
+        whatsappUrl: whatsappUrl(),
+        rescheduleUrl: event.id ? rescheduleUrl(base, event.id) : undefined,
       });
       await sendEmail({
         to: appt.email,

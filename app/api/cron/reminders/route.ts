@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { listEvents } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { reminderEmail } from "@/lib/email-templates";
+import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 
 export const maxDuration = 60;
 
@@ -45,10 +46,13 @@ export async function GET(req: Request) {
 
     const firstName = priv?.clientFirstName ?? "";
 
+    const base = baseUrlFrom();
     const mail = reminderEmail({
       firstName,
       startDateTime: startIso,
       location: ev.location ?? "",
+      whatsappUrl: whatsappUrl(),
+      rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined,
     });
 
     try {

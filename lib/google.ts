@@ -79,3 +79,31 @@ export async function listEvents(timeMin: Date, timeMax: Date) {
   });
   return res.data.items ?? [];
 }
+
+/** Récupère un événement par son id (page de reprogrammation). */
+export async function getEvent(eventId: string) {
+  const cal = calendarClient();
+  const res = await cal.events.get({
+    calendarId: CALENDAR_ID,
+    eventId,
+  });
+  return res.data;
+}
+
+/** Déplace un événement à une nouvelle heure de début (reprogrammation).
+ *  Garde la même durée (30 min par défaut). */
+export async function updateEvent(eventId: string, newStartISO: string) {
+  const cal = calendarClient();
+  const start = new Date(newStartISO);
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+
+  const res = await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: {
+      start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
+      end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
+    },
+  });
+  return res.data;
+}

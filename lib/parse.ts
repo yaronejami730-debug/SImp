@@ -63,20 +63,21 @@ function zonedWallClockToUtc(
   return new Date(utcGuess.getTime() - offset);
 }
 
+/** Convertit une date "YYYY-MM-DD" + heure "HH:MM" (Europe/Paris) en ISO UTC. */
+export function toParisISO(date: string, time: string): string {
+  const [y, mo, da] = date.split("-").map(Number);
+  const [h, mi] = time.split(":").map(Number);
+  if (!y || !mo || !da || Number.isNaN(h) || Number.isNaN(mi)) {
+    throw new Error("Date ou heure invalide.");
+  }
+  return zonedWallClockToUtc(y, mo, da, h, mi, "Europe/Paris").toISOString();
+}
+
 /**
  * Construit un rendez-vous structuré à partir des champs du formulaire.
  * Aucune IA : la date/heure sont lues telles quelles (fuseau Europe/Paris).
  */
 export function buildAppointment(input: AppointmentInput): Appointment {
-  const [y, mo, da] = input.date.split("-").map(Number);
-  const [h, mi] = input.time.split(":").map(Number);
-
-  if (!y || !mo || !da || Number.isNaN(h) || Number.isNaN(mi)) {
-    throw new Error("Date ou heure invalide.");
-  }
-
-  const start = zonedWallClockToUtc(y, mo, da, h, mi, "Europe/Paris");
-
   return {
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
@@ -84,6 +85,6 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     platform: platformFromUrl(input.listingUrl),
     listingUrl: input.listingUrl.trim(),
     location: input.location.trim(),
-    startDateTime: start.toISOString(),
+    startDateTime: toParisISO(input.date, input.time),
   };
 }

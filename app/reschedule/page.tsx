@@ -1,0 +1,195 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+const NAVY = "#1a273a";
+const PINK = "#DB407A";
+const LOGO =
+  "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
+
+const input: React.CSSProperties = {
+  width: "100%",
+  padding: 12,
+  fontSize: 15,
+  borderRadius: 8,
+  border: "1.5px solid #e5e7eb",
+  boxSizing: "border-box",
+  fontFamily: "inherit",
+};
+
+export default function Reschedule() {
+  const [eid, setEid] = useState("");
+  const [info, setInfo] = useState<{ firstName?: string; startDateTime?: string | null; location?: string } | null>(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("10:00");
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState<{ startDateTime: string } | null>(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("eid") ?? "";
+    setEid(id);
+    if (!id) {
+      setLoadErr("Lien invalide (identifiant manquant).");
+      return;
+    }
+    fetch(`/api/reschedule?eid=${encodeURIComponent(id)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) setInfo(d);
+        else setLoadErr(d.error ?? "Rendez-vous introuvable.");
+      })
+      .catch(() => setLoadErr("Erreur de chargement."));
+  }, []);
+
+  async function submit() {
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/reschedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ eid, date, time }),
+      });
+      const d = await res.json();
+      if (d.ok) setDone({ startDateTime: d.startDateTime });
+      else setErr(d.error ?? "Erreur.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Erreur.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const current = info?.startDateTime
+    ? new Date(info.startDateTime).toLocaleString("fr-FR", {
+        timeZone: "Europe/Paris",
+        dateStyle: "full",
+        timeStyle: "short",
+      })
+    : null;
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#eceef1",
+        fontFamily: "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif",
+        color: "#232323",
+        padding: "24px 16px",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 520,
+          margin: "0 auto",
+          background: "#fff",
+          borderRadius: 14,
+          overflow: "hidden",
+          boxShadow: "0 10px 15px rgba(26,39,58,0.12)",
+        }}
+      >
+        <div style={{ background: NAVY, textAlign: "center", padding: "26px 24px" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LOGO} alt="Simplicicar" width={280} style={{ width: 280, maxWidth: "80%", height: "auto" }} />
+        </div>
+        <div style={{ height: 4, background: PINK }} />
+
+        <div style={{ padding: "30px 28px" }}>
+          <h1
+            style={{
+              margin: "0 0 18px",
+              fontFamily: "'Cabin','Manrope',Arial,sans-serif",
+              fontSize: 22,
+              fontWeight: 700,
+              color: NAVY,
+              textTransform: "uppercase",
+            }}
+          >
+            Reprogrammer le rendez-vous
+          </h1>
+
+          {loadErr && <p style={{ color: "#dc2626" }}>❌ {loadErr}</p>}
+
+          {!loadErr && !done && (
+            <>
+              {current && (
+                <p style={{ color: "#6b7280", marginTop: 0 }}>
+                  Rendez-vous actuel : <strong style={{ color: "#232323" }}>{current}</strong>
+                  {info?.firstName ? ` — ${info.firstName}` : ""}
+                </p>
+              )}
+              <p style={{ marginBottom: 16 }}>Choisissez une nouvelle date et heure :</p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 }}>Date</label>
+                  <input style={input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 }}>Heure</label>
+                  <input style={input} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                </div>
+              </div>
+
+              {err && <p style={{ color: "#dc2626", marginTop: 14 }}>❌ {err}</p>}
+
+              <button
+                onClick={submit}
+                disabled={loading || !date || !time}
+                style={{
+                  marginTop: 22,
+                  width: "100%",
+                  padding: "14px 18px",
+                  fontSize: 15,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: "none",
+                  cursor: loading || !date || !time ? "not-allowed" : "pointer",
+                  background: loading || !date || !time ? "#cbd5e1" : PINK,
+                  color: "#fff",
+                  fontFamily: "inherit",
+                }}
+              >
+                {loading ? "Mise à jour…" : "Confirmer la nouvelle date"}
+              </button>
+            </>
+          )}
+
+          {done && (
+            <div
+              style={{
+                padding: 18,
+                borderRadius: 10,
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                color: "#166534",
+              }}
+            >
+              <strong>✅ Rendez-vous reprogrammé</strong>
+              <p style={{ margin: "8px 0 0" }}>
+                Nouvelle date :{" "}
+                {new Date(done.startDateTime).toLocaleString("fr-FR", {
+                  timeZone: "Europe/Paris",
+                  dateStyle: "full",
+                  timeStyle: "short",
+                })}
+              </p>
+              <p style={{ margin: "8px 0 0", fontSize: 13 }}>Un e-mail de confirmation vous a été envoyé.</p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: NAVY, padding: "20px 24px", textAlign: "center" }}>
+          <div style={{ fontFamily: "'Cabin','Manrope',Arial,sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>
+            SIMPLICI<span style={{ color: PINK }}>CAR</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 4 }}>
+            Réseau de concessions automobiles en France
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
