@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { buildAppointment, type AppointmentInput } from "@/lib/parse";
-import { createEvent } from "@/lib/google";
+import { createEvent, isSlotFree } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
+import { SLOT_MIN } from "@/lib/slots";
 
 export const maxDuration = 60;
 
@@ -29,6 +30,14 @@ export async function POST(req: Request) {
 
     // 1. Champs du formulaire -> rendez-vous structuré (sans IA)
     const appt = buildAppointment(body as AppointmentInput);
+
+    // 1b. Anti-chevauchement : refuser si le créneau est déjà occupé.
+    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN))) {
+      return NextResponse.json(
+        { error: "Ce créneau vient d'être pris. Choisissez-en un autre." },
+        { status: 409 },
+      );
+    }
 
     // 2. Création de l'événement dans Google Agenda
     const event = await createEvent(appt);

@@ -93,6 +93,29 @@ export async function getEvent(eventId: string) {
   return res.data;
 }
 
+/** Vrai si aucun événement ne chevauche [start, start+durationMin].
+ *  ignoreEventId : exclure un event (cas reprogrammation du même RDV). */
+export async function isSlotFree(
+  startISO: string,
+  durationMin: number,
+  ignoreEventId?: string,
+): Promise<boolean> {
+  const start = new Date(startISO);
+  const end = new Date(start.getTime() + durationMin * 60 * 1000);
+  const items = await listEvents(
+    new Date(start.getTime() - 6 * 3600 * 1000),
+    new Date(end.getTime() + 6 * 3600 * 1000),
+  );
+  for (const ev of items) {
+    if (ignoreEventId && ev.id === ignoreEventId) continue;
+    const es = ev.start?.dateTime ? new Date(ev.start.dateTime) : null;
+    const ee = ev.end?.dateTime ? new Date(ev.end.dateTime) : null;
+    if (!es || !ee) continue;
+    if (es < end && ee > start) return false; // chevauchement
+  }
+  return true;
+}
+
 /** Supprime (annule) un événement. */
 export async function deleteEvent(eventId: string) {
   const cal = calendarClient();

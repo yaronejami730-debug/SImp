@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getEvent, updateEvent } from "@/lib/google";
+import { getEvent, updateEvent, isSlotFree } from "@/lib/google";
 import { toParisISO } from "@/lib/parse";
+import { SLOT_MIN } from "@/lib/slots";
 import { sendEmail } from "@/lib/brevo";
 import { rescheduledEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
@@ -40,6 +41,15 @@ export async function POST(req: Request) {
     }
 
     const newStart = toParisISO(date, time);
+
+    // Anti-chevauchement (en ignorant le RDV lui-même).
+    if (!(await isSlotFree(newStart, SLOT_MIN, eid))) {
+      return NextResponse.json(
+        { error: "Ce créneau est déjà pris. Choisissez-en un autre." },
+        { status: 409 },
+      );
+    }
+
     const ev = await updateEvent(eid, newStart);
 
     const priv = ev.extendedProperties?.private;

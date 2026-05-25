@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import SlotPicker from "@/components/SlotPicker";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -29,7 +30,7 @@ const EMPTY = {
   phone: "",
   listingUrl: "",
   date: "",
-  time: "10:00",
+  time: "",
 };
 
 const inputStyle: React.CSSProperties = {
@@ -251,25 +252,12 @@ export default function Home() {
               )}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div>
-                <label style={labelStyle}>Date</label>
-                <input
-                  style={inputStyle}
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => set("date", e.target.value)}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Heure</label>
-                <input
-                  style={inputStyle}
-                  type="time"
-                  value={form.time}
-                  onChange={(e) => set("time", e.target.value)}
-                />
-              </div>
+            <div>
+              <label style={labelStyle}>Créneau du rendez-vous</label>
+              <SlotPicker
+                value={{ date: form.date, time: form.time }}
+                onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))}
+              />
             </div>
           </div>
 

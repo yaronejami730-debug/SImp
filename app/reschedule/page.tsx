@@ -1,28 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import SlotPicker from "@/components/SlotPicker";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
 const LOGO =
   "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
 
-const input: React.CSSProperties = {
-  width: "100%",
-  padding: 12,
-  fontSize: 15,
-  borderRadius: 8,
-  border: "1.5px solid #e5e7eb",
-  boxSizing: "border-box",
-  fontFamily: "inherit",
-};
-
 export default function Reschedule() {
   const [eid, setEid] = useState("");
   const [info, setInfo] = useState<{ firstName?: string; startDateTime?: string | null; location?: string } | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [date, setDate] = useState("");
-  const [time, setTime] = useState("10:00");
+  const [time, setTime] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ startDateTime: string } | null>(null);
   const [err, setErr] = useState("");
@@ -120,18 +111,9 @@ export default function Reschedule() {
                   {info?.firstName ? ` — ${info.firstName}` : ""}
                 </p>
               )}
-              <p style={{ marginBottom: 16 }}>Choisissez une nouvelle date et heure :</p>
+              <p style={{ marginBottom: 16 }}>Choisissez un nouveau créneau :</p>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <div>
-                  <label style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 }}>Date</label>
-                  <input style={input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 }}>Heure</label>
-                  <input style={input} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-                </div>
-              </div>
+              <SlotPicker value={{ date, time }} onChange={(v) => { setDate(v.date); setTime(v.time); }} />
 
               {err && <p style={{ color: "#dc2626", marginTop: 14 }}>❌ {err}</p>}
 
