@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 
+const NAVY = "#1a273a";
+const PINK = "#DB407A";
+const ACCENT = "#24B9D7";
+const LOGO =
+  "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
+
 type Result = {
   ok: boolean;
   eventLink?: string;
@@ -29,17 +35,18 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: 12,
   fontSize: 15,
-  borderRadius: 10,
-  border: "1px solid #1e293b",
-  background: "#0f172a",
-  color: "#e2e8f0",
+  borderRadius: 8,
+  border: "1.5px solid #e5e7eb",
+  background: "#fff",
+  color: "#232323",
   boxSizing: "border-box",
+  fontFamily: "inherit",
 };
 
 const labelStyle: React.CSSProperties = {
   display: "block",
   fontSize: 13,
-  color: "#94a3b8",
+  color: "#6b7280",
   marginBottom: 6,
 };
 
@@ -69,7 +76,9 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(form),
       });
-      setResult(await res.json());
+      const data = await res.json();
+      setResult(data);
+      if (data.ok) setForm(EMPTY);
     } catch (e) {
       setResult({ ok: false, error: e instanceof Error ? e.message : "Erreur" });
     } finally {
@@ -78,149 +87,210 @@ export default function Home() {
   }
 
   return (
-    <main style={{ maxWidth: 640, margin: "0 auto", padding: "48px 20px" }}>
-      <h1 style={{ fontSize: 26, marginBottom: 4 }}>Prise de rendez-vous</h1>
-      <p style={{ color: "#94a3b8", marginTop: 0, marginBottom: 24 }}>
-        Remplis les champs. Le rendez-vous est ajouté à Google Agenda et un
-        e-mail de confirmation est envoyé au client.
-      </p>
-
-      <div style={{ display: "grid", gap: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div>
-            <label style={labelStyle}>Prénom</label>
-            <input
-              style={inputStyle}
-              value={form.firstName}
-              onChange={(e) => set("firstName", e.target.value)}
-              placeholder="Jean"
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Nom</label>
-            <input
-              style={inputStyle}
-              value={form.lastName}
-              onChange={(e) => set("lastName", e.target.value)}
-              placeholder="Dupont"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label style={labelStyle}>E-mail du client</label>
-          <input
-            style={inputStyle}
-            type="email"
-            value={form.email}
-            onChange={(e) => set("email", e.target.value)}
-            placeholder="jean.dupont@email.com"
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#eceef1",
+        fontFamily:
+          "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif",
+        color: "#232323",
+        padding: "24px 16px",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 560,
+          margin: "0 auto",
+          background: "#fff",
+          borderRadius: 14,
+          overflow: "hidden",
+          boxShadow: "0 10px 15px rgba(26,39,58,0.12)",
+        }}
+      >
+        <div style={{ background: NAVY, textAlign: "center", padding: "26px 24px" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={LOGO}
+            alt="Simplicicar"
+            width={300}
+            style={{ width: 300, maxWidth: "80%", height: "auto" }}
           />
         </div>
+        <div style={{ height: 4, background: PINK }} />
 
-        <div>
-          <label style={labelStyle}>Lien de l'annonce</label>
-          <input
-            style={inputStyle}
-            value={form.listingUrl}
-            onChange={(e) => set("listingUrl", e.target.value)}
-            placeholder="https://www.leboncoin.fr/voitures/123456789"
-          />
+        <div style={{ padding: "30px 28px" }}>
+          <h1
+            style={{
+              margin: "0 0 6px",
+              fontFamily: "'Cabin','Manrope',Arial,sans-serif",
+              fontSize: 22,
+              fontWeight: 700,
+              color: NAVY,
+              textTransform: "uppercase",
+            }}
+          >
+            Prise de rendez-vous
+          </h1>
+          <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 22, fontSize: 14 }}>
+            Rendez-vous au 3 rue Bolidor, 75017 Paris. Le client reçoit une
+            confirmation par e-mail.
+          </p>
+
+          <div style={{ display: "grid", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={labelStyle}>Prénom</label>
+                <input
+                  style={inputStyle}
+                  value={form.firstName}
+                  onChange={(e) => set("firstName", e.target.value)}
+                  placeholder="Jean"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Nom</label>
+                <input
+                  style={inputStyle}
+                  value={form.lastName}
+                  onChange={(e) => set("lastName", e.target.value)}
+                  placeholder="Dupont"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>E-mail du client</label>
+              <input
+                style={inputStyle}
+                type="email"
+                value={form.email}
+                onChange={(e) => set("email", e.target.value)}
+                placeholder="jean.dupont@email.com"
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>Lien de l&apos;annonce</label>
+              <input
+                style={inputStyle}
+                value={form.listingUrl}
+                onChange={(e) => set("listingUrl", e.target.value)}
+                placeholder="https://www.leboncoin.fr/voitures/123456789"
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={labelStyle}>Date</label>
+                <input
+                  style={inputStyle}
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => set("date", e.target.value)}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Heure</label>
+                <input
+                  style={inputStyle}
+                  type="time"
+                  value={form.time}
+                  onChange={(e) => set("time", e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={submit}
+            disabled={loading || !ready}
+            style={{
+              marginTop: 24,
+              width: "100%",
+              padding: "14px 20px",
+              fontSize: 16,
+              fontWeight: 600,
+              borderRadius: 8,
+              border: "none",
+              cursor: loading || !ready ? "not-allowed" : "pointer",
+              background: loading || !ready ? "#cbd5e1" : PINK,
+              color: "#fff",
+              fontFamily: "inherit",
+            }}
+          >
+            {loading ? "Création en cours…" : "Créer le rendez-vous"}
+          </button>
+
+          {result?.ok && result.appointment && (
+            <div
+              style={{
+                marginTop: 24,
+                padding: 18,
+                borderRadius: 10,
+                background: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+              }}
+            >
+              <strong style={{ color: "#166534" }}>✅ Rendez-vous créé</strong>
+              <ul style={{ margin: "10px 0 0", paddingLeft: 18, lineHeight: 1.7, color: "#166534" }}>
+                <li>
+                  {result.appointment.firstName} {result.appointment.lastName} —{" "}
+                  {result.appointment.email}
+                </li>
+                <li>{result.appointment.location}</li>
+                <li>
+                  {new Date(result.appointment.startDateTime).toLocaleString("fr-FR", {
+                    timeZone: "Europe/Paris",
+                    dateStyle: "full",
+                    timeStyle: "short",
+                  })}
+                </li>
+              </ul>
+              {result.eventLink && (
+                <a
+                  href={result.eventLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: ACCENT, display: "inline-block", marginTop: 10 }}
+                >
+                  Ouvrir dans Google Agenda →
+                </a>
+              )}
+            </div>
+          )}
+
+          {result && !result.ok && (
+            <div
+              style={{
+                marginTop: 24,
+                padding: 18,
+                borderRadius: 10,
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#dc2626",
+              }}
+            >
+              ❌ {result.error}
+            </div>
+          )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div>
-            <label style={labelStyle}>Date</label>
-            <input
-              style={inputStyle}
-              type="date"
-              value={form.date}
-              onChange={(e) => set("date", e.target.value)}
-            />
+        <div style={{ background: NAVY, padding: "20px 24px", textAlign: "center" }}>
+          <div
+            style={{
+              fontFamily: "'Cabin','Manrope',Arial,sans-serif",
+              fontSize: 15,
+              fontWeight: 700,
+              color: "#fff",
+            }}
+          >
+            SIMPLICI<span style={{ color: PINK }}>CAR</span>
           </div>
-          <div>
-            <label style={labelStyle}>Heure</label>
-            <input
-              style={inputStyle}
-              type="time"
-              value={form.time}
-              onChange={(e) => set("time", e.target.value)}
-            />
+          <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 4 }}>
+            Réseau de concessions automobiles en France
           </div>
         </div>
       </div>
-
-      <button
-        onClick={submit}
-        disabled={loading || !ready}
-        style={{
-          marginTop: 24,
-          width: "100%",
-          padding: "14px 20px",
-          fontSize: 16,
-          fontWeight: 600,
-          borderRadius: 12,
-          border: "none",
-          cursor: loading || !ready ? "not-allowed" : "pointer",
-          background: loading || !ready ? "#334155" : "#2563eb",
-          color: "#fff",
-        }}
-      >
-        {loading ? "Création en cours…" : "Créer le rendez-vous"}
-      </button>
-
-      {result?.ok && result.appointment && (
-        <div
-          style={{
-            marginTop: 24,
-            padding: 20,
-            borderRadius: 12,
-            background: "#052e1a",
-            border: "1px solid #14532d",
-          }}
-        >
-          <strong style={{ color: "#4ade80" }}>✅ Rendez-vous créé</strong>
-          <ul style={{ margin: "12px 0 0", paddingLeft: 18, lineHeight: 1.7 }}>
-            <li>
-              {result.appointment.firstName} {result.appointment.lastName} —{" "}
-              {result.appointment.email}
-            </li>
-            <li>{result.appointment.platform}</li>
-            <li>{result.appointment.location}</li>
-            <li>
-              {new Date(result.appointment.startDateTime).toLocaleString(
-                "fr-FR",
-                { timeZone: "Europe/Paris", dateStyle: "full", timeStyle: "short" },
-              )}
-            </li>
-          </ul>
-          {result.eventLink && (
-            <a
-              href={result.eventLink}
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "#60a5fa", display: "inline-block", marginTop: 12 }}
-            >
-              Ouvrir dans Google Agenda →
-            </a>
-          )}
-        </div>
-      )}
-
-      {result && !result.ok && (
-        <div
-          style={{
-            marginTop: 24,
-            padding: 20,
-            borderRadius: 12,
-            background: "#3f1212",
-            border: "1px solid #7f1d1d",
-            color: "#fca5a5",
-          }}
-        >
-          ❌ {result.error}
-        </div>
-      )}
     </main>
   );
 }
