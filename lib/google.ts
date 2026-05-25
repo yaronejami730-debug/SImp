@@ -4,7 +4,23 @@ import type { Appointment } from "./parse";
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";
 
+const SCOPES = ["https://www.googleapis.com/auth/calendar"];
+
 function calendarClient(): calendar_v3.Calendar {
+  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+
+  // Voie A : compte de service (recommandé, aucun navigateur / redirect).
+  if (clientEmail && privateKey) {
+    const auth = new google.auth.JWT({
+      email: clientEmail,
+      key: privateKey,
+      scopes: SCOPES,
+    });
+    return google.calendar({ version: "v3", auth });
+  }
+
+  // Voie B : OAuth utilisateur via refresh token.
   const auth = new google.auth.OAuth2(
     process.env.GOOGLE_OAUTH_CLIENT_ID,
     process.env.GOOGLE_OAUTH_CLIENT_SECRET,
