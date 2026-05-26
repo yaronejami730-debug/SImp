@@ -28,9 +28,11 @@ function upcomingWeekdays(n = 12): Date[] {
 export default function SlotPicker({
   value,
   onChange,
+  allowCustom = true,
 }: {
   value: { date: string; time: string };
   onChange: (v: { date: string; time: string }) => void;
+  allowCustom?: boolean;
 }) {
   const days = upcomingWeekdays();
   const [open, setOpen] = useState<string>(value.date || "");
@@ -119,6 +121,17 @@ export default function SlotPicker({
                     );
                   })}
                 </div>
+                {allowCustom && (
+                  <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 600 }}>Autre horaire :</span>
+                    <input
+                      type="time"
+                      value={value.date === date ? value.time : ""}
+                      onChange={(e) => e.target.value && onChange({ date, time: e.target.value })}
+                      style={{ padding: "8px 10px", borderRadius: 7, border: `1.5px solid ${value.date === date && value.time ? PINK : "#e5e7eb"}`, fontSize: 14, fontFamily: "inherit" }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>

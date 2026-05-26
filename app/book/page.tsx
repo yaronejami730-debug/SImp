@@ -75,7 +75,7 @@ export default function Book() {
                 <div><label style={lab}>Nom</label><input style={inp} value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
               </div>
               <div><label style={lab}>Téléphone</label><input style={inp} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
-              <div><label style={lab}>Choisissez votre créneau</label><SlotPicker value={{ date, time }} onChange={(v) => { setDate(v.date); setTime(v.time); }} /></div>
+              <div><label style={lab}>Choisissez votre créneau</label><SlotPicker value={{ date, time }} onChange={(v) => { setDate(v.date); setTime(v.time); }} allowCustom={false} /></div>
             </div>
 
             {err && <p style={{ color: "#dc2626", marginTop: 14 }}>❌ {err}</p>}

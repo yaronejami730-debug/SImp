@@ -6,6 +6,7 @@ import { authHeaders, getUser } from "@/lib/client";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
+const ACCENT = "#24B9D7";
 
 const BASE_COMMISSION = 50;
 const NEGO_RATE = 0.1;
@@ -107,6 +108,7 @@ function Agenda() {
           <div style={{ fontWeight: 700, color: NAVY }}>{a.firstName} {a.lastName}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{a.phone} · {a.email}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
+          {a.listingUrl && <a href={a.listingUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: ACCENT, textDecoration: "none", fontWeight: 600 }}>🔗 Voir l&apos;annonce</a>}
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{a.startDateTime ? fmt(a.startDateTime) : "—"}</div>
