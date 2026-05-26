@@ -136,20 +136,17 @@ export function cancellationFollowupEmail(d: {
     subject = `Reprenez rendez-vous — ${BUSINESS}`;
     body = `
       <p style="margin:0 0 16px;font-size:15px">Suite à l'annulation de votre rendez-vous, vous pouvez en reprendre un nouveau en quelques clics.</p>
-      <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
       <p style="margin:0 0 8px;font-size:15px">Choisissez la date et l'heure qui vous arrangent :</p>`;
   } else if (d.stage === 2) {
     subject = `Toujours intéressé ? Reprenez rendez-vous — ${BUSINESS}`;
     body = `
       <p style="margin:0 0 16px;font-size:15px">Toujours intéressé par la vente de votre véhicule ?</p>
-      <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
-      <p style="margin:0 0 8px;font-size:15px">Programmez votre rendez-vous quand vous voulez :</p>`;
+      <p style="margin:0 0 8px;font-size:15px">Programmez votre rendez-vous quand vous le voulez :</p>`;
   } else {
     subject = `Vous n'avez pas encore vendu votre véhicule ? — ${BUSINESS}`;
     body = `
       <p style="margin:0 0 16px;font-size:15px">Vous n'avez peut-être pas encore vendu votre véhicule.</p>
       <p style="margin:0 0 16px;font-size:15px">Notre agence vous accompagne pour finaliser la vente rapidement, sereinement, sans frais cachés.</p>
-      <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
       <p style="margin:0 0 8px;font-size:15px">Reprenez rendez-vous quand vous voulez :</p>`;
   }
   const content = hello + body + `<p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
