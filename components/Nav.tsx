@@ -4,7 +4,7 @@ import { getUser, clearAuth } from "@/lib/client";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
-const LOGO = "https://agenda-rdv.vercel.app/logo.png";
+const LOGO = "/logo.png";
 
 const TABS = [
   { key: "rdv", label: "Prise de RDV", href: "/" },

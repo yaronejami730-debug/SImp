@@ -5,7 +5,7 @@ import SlotPicker from "@/components/SlotPicker";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
-const LOGO = "https://agenda-rdv.vercel.app/logo.png";
+const LOGO = "/logo.png";
 
 const inp: React.CSSProperties = { width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box", fontFamily: "inherit" };
 const lab: React.CSSProperties = { display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 };
