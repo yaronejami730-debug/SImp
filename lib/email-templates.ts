@@ -6,7 +6,7 @@ const FONT_BODY = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,s
 const FONT_HEAD = "'Cabin','Manrope',Arial,sans-serif";
 const LOGO =
   process.env.LOGO_URL ??
-  "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
+  `${(process.env.APP_URL ?? "https://agenda-rdv.vercel.app").replace(/\/$/, "")}/logo.png`;
 
 const MAPS = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(LOCATION)}`;
 const WAZE = `https://waze.com/ul?q=${encodeURIComponent(LOCATION)}&navigate=yes`;
@@ -46,7 +46,7 @@ function shell(content: string, buttons = "") {
 <body style="margin:0;background:#ffffff;font-family:${FONT_BODY};color:${C.text};line-height:1.6">
   <div style="max-width:560px;margin:0 auto;padding:30px 24px">
     <div style="text-align:center;margin-bottom:30px">
-      <img src="${LOGO}" alt="${BUSINESS}" width="240" style="width:240px;max-width:70%;height:auto;display:inline-block;border:0;border-radius:8px"/>
+      <img src="${LOGO}" alt="${BUSINESS}" width="230" style="width:230px;max-width:68%;height:auto;display:inline-block;border:0"/>
     </div>
     ${content}
     ${buttons ? `<table role="presentation" style="width:100%;max-width:340px;margin:26px auto 0;border-collapse:collapse">${buttons}</table>` : ""}
@@ -62,7 +62,7 @@ function shell(content: string, buttons = "") {
 </body></html>`;
 }
 
-const addressLine = `<a href="${MAPS}" target="_blank" style="color:${C.link};text-decoration:none;font-weight:600">${BUSINESS} — ${LOCATION}</a>`;
+const addressLine = `<a href="${MAPS}" target="_blank" style="color:#111111;text-decoration:none;font-weight:700">Agence : ${LOCATION}</a>`;
 
 type ConfirmData = {
   civility?: string; firstName: string; lastName?: string;
@@ -78,7 +78,7 @@ export function confirmationEmail(d: ConfirmData) {
     <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
     <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">Votre rendez-vous est prévu le ${date} à ${heure}.</p>
     <p style="margin:0 0 4px;font-size:15px">N'oubliez pas de vous munir de votre <strong>carte grise</strong> et de votre <strong>pièce d'identité</strong>.</p>
-    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS}</p>`;
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
   const buttons = btn(WAZE, "🧭 Itinéraire vers l'agence", C.navy) + btn(d.rescheduleUrl, "Reprogrammer le rendez-vous", C.primary);
   return { subject: `Votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
 }
@@ -94,7 +94,7 @@ export function reminderEmail(d: ReminderData) {
     <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
     <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">Le ${date} à ${heure}.</p>
     <p style="margin:0 0 4px;font-size:15px">N'oubliez pas votre <strong>carte grise</strong> et votre <strong>pièce d'identité</strong>.</p>
-    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS}</p>`;
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
   const buttons = btn(WAZE, "🧭 Itinéraire vers l'agence", C.navy) + btn(d.rescheduleUrl, "Reprogrammer le rendez-vous", C.primary);
   return { subject: `Rappel : votre rendez-vous ${quand} — ${BUSINESS}`, html: shell(content, buttons) };
 }
@@ -107,7 +107,7 @@ export function rescheduledEmail(d: ConfirmData) {
     <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
     <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">Nouvelle date : le ${date} à ${heure}.</p>
     <p style="margin:0 0 4px;font-size:15px">N'oubliez pas votre <strong>carte grise</strong> et votre <strong>pièce d'identité</strong>.</p>
-    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS}</p>`;
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
   const buttons = btn(WAZE, "🧭 Itinéraire vers l'agence", C.navy) + btn(d.rescheduleUrl, "Reprogrammer à nouveau", C.primary);
   return { subject: `Rendez-vous reprogrammé — ${BUSINESS}`, html: shell(content, buttons) };
 }
@@ -120,7 +120,7 @@ export function cancelledEmail(d: CancelData) {
     <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
     <p style="margin:0 0 16px;font-size:15px">Votre rendez-vous du <strong>${date} à ${heure}</strong> a été annulé.</p>
     <p style="margin:0 0 4px;font-size:15px">Pour reprendre rendez-vous, contactez-nous.</p>
-    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS}</p>`;
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
   const buttons = btn(d.whatsappUrl, "Nous contacter sur WhatsApp", "#25D366");
   return { subject: `Rendez-vous annulé — ${BUSINESS}`, html: shell(content, buttons) };
 }
