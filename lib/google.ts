@@ -57,12 +57,14 @@ export async function createEvent(a: Appointment, owner = "") {
         private: {
           app: "simplici-rdv",
           owner,
+          clientCivility: a.civility ?? "",
           clientEmail: a.email,
           clientPhone: a.phone,
           clientFirstName: a.firstName,
           clientLastName: a.lastName,
           platform: a.platform,
           listingUrl: a.listingUrl,
+          history: JSON.stringify([{ t: "created", at: new Date().toISOString() }]),
         },
       },
     },
@@ -138,6 +140,9 @@ export type AppointmentItem = {
   signStatus: "" | "signed" | "thinking" | "unsigned";
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
   owner: string; // email du collaborateur ayant créé le RDV
+  civility: string;
+  createdAt: string | null;
+  history: { t: string; at: string; info?: string }[];
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -168,6 +173,9 @@ export async function listAppointments(
       signStatus: (p.signStatus as AppointmentItem["signStatus"]) ?? "",
       negotiation: p.negotiation ? Number(p.negotiation) : 0,
       owner: p.owner ?? "",
+      civility: p.clientCivility ?? "",
+      createdAt: ev.created ?? null,
+      history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),
     };
   });
 }
@@ -196,15 +204,19 @@ export async function updateEvent(eventId: string, newStartISO: string) {
   const start = new Date(newStartISO);
   const end = new Date(start.getTime() + 30 * 60 * 1000);
 
+  // Lire l'historique existant pour y ajouter la reprogrammation.
+  let hist = await readHistory(eventId);
+  hist.push({ t: "rescheduled", at: new Date().toISOString(), info: newStartISO });
+
   const res = await cal.events.patch({
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: {
       start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
       end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
-      // Reset des rappels : la nouvelle heure déclenchera de nouveaux 24h/2h.
       extendedProperties: {
-        private: { reminder24Sent: null, reminder2Sent: null } as unknown as {
+        // Reset des rappels + ajout historique.
+        private: { reminder24Sent: null, reminder2Sent: null, history: JSON.stringify(hist.slice(-40)) } as unknown as {
           [k: string]: string;
         },
       },
@@ -213,13 +225,36 @@ export async function updateEvent(eventId: string, newStartISO: string) {
   return res.data;
 }
 
-/** Marque qu'un rappel (24h ou 2h) a été envoyé pour cet événement. */
-export async function markReminderSent(eventId: string, kind: "24h" | "2h") {
-  const cal = calendarClient();
-  const key = kind === "24h" ? "reminder24Sent" : "reminder2Sent";
-  await cal.events.patch({
+export type HistEntry = { t: string; at: string; info?: string };
+
+async function readHistory(eventId: string): Promise<HistEntry[]> {
+  try {
+    const ev = await getEvent(eventId);
+    return JSON.parse(ev.extendedProperties?.private?.history ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+/** Ajoute une entrée à l'historique (timeline) de l'événement. */
+export async function appendHistory(eventId: string, t: string, info?: string) {
+  const hist = await readHistory(eventId);
+  hist.push({ t, at: new Date().toISOString(), ...(info ? { info } : {}) });
+  await calendarClient().events.patch({
     calendarId: CALENDAR_ID,
     eventId,
-    requestBody: { extendedProperties: { private: { [key]: "1" } } },
+    requestBody: { extendedProperties: { private: { history: JSON.stringify(hist.slice(-40)) } } },
+  });
+}
+
+/** Marque qu'un rappel (24h ou 2h) a été envoyé + historique. */
+export async function markReminderSent(eventId: string, kind: "24h" | "2h") {
+  const key = kind === "24h" ? "reminder24Sent" : "reminder2Sent";
+  const hist = await readHistory(eventId);
+  hist.push({ t: kind === "24h" ? "reminder_24h" : "reminder_2h", at: new Date().toISOString() });
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { [key]: "1", history: JSON.stringify(hist.slice(-40)) } } },
   });
 }

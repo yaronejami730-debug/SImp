@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const appointmentSchema = z.object({
+  civility: z.string().describe("Civilité : Monsieur ou Madame"),
   firstName: z.string().describe("Prénom du client"),
   lastName: z.string().describe("Nom de famille du client"),
   email: z.string().describe("Adresse e-mail du client"),
@@ -27,6 +28,7 @@ export const DEFAULT_LOCATION =
 
 /** Champs bruts envoyés par le formulaire (sans IA). */
 export type AppointmentInput = {
+  civility: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -85,6 +87,7 @@ export function toParisISO(date: string, time: string): string {
  */
 export function buildAppointment(input: AppointmentInput): Appointment {
   return {
+    civility: input.civility?.trim() || "",
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
     email: input.email.trim(),

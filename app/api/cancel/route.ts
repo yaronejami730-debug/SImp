@@ -20,6 +20,8 @@ export async function POST(req: Request) {
 
     // Récupère les infos client avant suppression.
     let firstName = "";
+    let lastName = "";
+    let civility = "";
     let email = "";
     let location = "";
     let startDateTime = "";
@@ -27,6 +29,8 @@ export async function POST(req: Request) {
       const ev = await getEvent(eid);
       const priv = ev.extendedProperties?.private;
       firstName = priv?.clientFirstName ?? "";
+      lastName = priv?.clientLastName ?? "";
+      civility = priv?.clientCivility ?? "";
       email = priv?.clientEmail ?? "";
       location = ev.location ?? "";
       startDateTime = ev.start?.dateTime ?? "";
@@ -40,7 +44,9 @@ export async function POST(req: Request) {
     if (email && startDateTime) {
       try {
         const mail = cancelledEmail({
+          civility,
           firstName,
+          lastName,
           startDateTime,
           location,
           whatsappUrl: whatsappUrl(),

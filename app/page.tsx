@@ -17,7 +17,7 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { firstName: "", lastName: "", email: "", phone: "", listingUrl: "", date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", date: "", time: "" };
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: 12, fontSize: 15, borderRadius: 8,
@@ -93,6 +93,17 @@ function Home() {
       <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 22, fontSize: 14 }}>Rendez-vous au 3 rue Bolidor, 75017 Paris. Le client reçoit une confirmation par e-mail.</p>
 
       <div style={{ display: "grid", gap: 16 }}>
+        <div>
+          <label style={labelStyle}>Civilité</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["Monsieur", "Madame"].map((c) => (
+              <button key={c} type="button" onClick={() => set("civility", c)}
+                style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
+                  border: form.civility === c ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
+                  background: form.civility === c ? PINK : "#fff", color: form.civility === c ? "#fff" : "#6b7280" }}>{c}</button>
+            ))}
+          </div>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div><label style={labelStyle}>Prénom</label><input style={inputStyle} value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Jean" /></div>
           <div><label style={labelStyle}>Nom</label><input style={inputStyle} value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Dupont" /></div>

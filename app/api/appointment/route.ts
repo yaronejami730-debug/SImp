@@ -53,7 +53,9 @@ export async function POST(req: Request) {
     try {
       const base = baseUrlFrom(req);
       const mail = confirmationEmail({
+        civility: appt.civility,
         firstName: appt.firstName,
+        lastName: appt.lastName,
         startDateTime: appt.startDateTime,
         location: appt.location,
         platform: appt.platform,

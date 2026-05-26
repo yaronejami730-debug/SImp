@@ -48,7 +48,9 @@ export async function GET(req: Request) {
     if (!email) continue;
 
     const mail = reminderEmail({
+      civility: priv.clientCivility,
       firstName,
+      lastName: priv.clientLastName,
       startDateTime: startIso,
       location: ev.location ?? "",
       kind,

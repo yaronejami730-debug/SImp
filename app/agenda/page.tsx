@@ -15,7 +15,11 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string; location: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
+  civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
 };
+
+const histLabel = (t: string) =>
+  ({ created: "Rendez-vous créé + mail de confirmation", rescheduled: "Reprogrammé", reminder_24h: "Rappel 24h envoyé", reminder_2h: "Rappel 2h envoyé" } as Record<string, string>)[t] ?? t;
 
 const parisDate = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
@@ -123,6 +127,21 @@ function Agenda() {
           <input type="number" value={a.negotiation || ""} onChange={(e) => setLocal(a.id, { negotiation: Number(e.target.value) })} onBlur={(e) => save(a.id, { negotiation: Number(e.target.value) })} placeholder="0" style={{ width: 110, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }} />
           <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
         </div>
+      )}
+      {a.history.length > 0 && (
+        <details style={{ marginTop: 12 }}>
+          <summary style={{ cursor: "pointer", fontSize: 13, color: "#6b7280", fontWeight: 600 }}>Historique ({a.history.length})</summary>
+          <div style={{ marginTop: 8, borderLeft: `2px solid ${PINK}`, paddingLeft: 10 }}>
+            {a.history.map((h, i) => (
+              <div key={i} style={{ fontSize: 12, color: "#6b7280", padding: "3px 0" }}>
+                <span style={{ color: NAVY, fontWeight: 600 }}>{histLabel(h.t)}</span>
+                {h.t === "rescheduled" && h.info ? ` → ${new Date(h.info).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}` : ""}
+                {" · "}
+                {new Date(h.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}
+              </div>
+            ))}
+          </div>
+        </details>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", padding: "9px 12px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>Reprogrammer</a>

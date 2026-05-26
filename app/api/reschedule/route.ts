@@ -61,7 +61,9 @@ export async function POST(req: Request) {
       try {
         const base = baseUrlFrom(req);
         const mail = rescheduledEmail({
+          civility: priv?.clientCivility,
           firstName,
+          lastName: priv?.clientLastName,
           startDateTime: newStart,
           location: ev.location ?? "",
           platform: priv?.platform ?? "",
