@@ -44,7 +44,7 @@ function shell(content: string, buttons = "") {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Cabin:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></head>
 <body style="margin:0;background:#ffffff;font-family:${FONT_BODY};color:${C.text};line-height:1.6">
-  <div style="max-width:560px;margin:0 auto;padding:30px 24px">
+  <div style="max-width:560px;margin:0 auto;padding:30px 24px;text-align:center">
     <div style="text-align:center;margin-bottom:30px">
       <img src="${LOGO}" alt="${BUSINESS}" width="230" style="width:230px;max-width:68%;height:auto;display:inline-block;border:0"/>
     </div>
@@ -121,6 +121,5 @@ export function cancelledEmail(d: CancelData) {
     <p style="margin:0 0 16px;font-size:15px">Votre rendez-vous du <strong>${date} à ${heure}</strong> a été annulé.</p>
     <p style="margin:0 0 4px;font-size:15px">Pour reprendre rendez-vous, contactez-nous.</p>
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
-  const buttons = btn(d.whatsappUrl, "Nous contacter sur WhatsApp", "#25D366");
-  return { subject: `Rendez-vous annulé — ${BUSINESS}`, html: shell(content, buttons) };
+  return { subject: `Rendez-vous annulé — ${BUSINESS}`, html: shell(content) };
 }
