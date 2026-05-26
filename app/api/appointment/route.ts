@@ -6,6 +6,7 @@ import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { SLOT_MIN } from "@/lib/slots";
 import { getAuth } from "@/lib/auth";
+import { cancelFollowup } from "@/lib/followups";
 
 export const maxDuration = 60;
 
@@ -45,6 +46,9 @@ export async function POST(req: Request) {
 
     // 2. Création de l'événement dans Google Agenda (owner = collaborateur)
     const event = await createEvent(appt, auth.email);
+
+    // 2b. Stoppe une éventuelle séquence de relances en cours pour ce client.
+    try { await cancelFollowup(appt.email); } catch { /* non-bloquant */ }
 
     // 3. Mail de confirmation via Brevo (non-bloquant : si ça échoue,
     //    l'événement reste créé et la requête réussit quand même).

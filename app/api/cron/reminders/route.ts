@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { listEvents, markReminderSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
-import { reminderEmail } from "@/lib/email-templates";
+import { reminderEmail, cancellationFollowupEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
+import { signBooking } from "@/lib/auth";
+import { dueFollowups, advanceFollowup } from "@/lib/followups";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -67,5 +69,32 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked: events.length, sent, errors });
+  // === Séquence de relances après annulation (J+7, J+14, J+30) ===
+  let followupsSent = 0;
+  try {
+    const due = await dueFollowups();
+    for (const r of due) {
+      try {
+        const stage = (r.stage + 1) as 1 | 2 | 3;
+        const token = signBooking({ email: r.email, listingUrl: r.listing_url, owner: r.owner, civility: r.civility });
+        const bookUrl = `${base}/book?t=${encodeURIComponent(token)}`;
+        const mail = cancellationFollowupEmail({
+          stage,
+          civility: r.civility,
+          firstName: r.first_name,
+          lastName: r.last_name,
+          bookUrl,
+        });
+        await sendEmail({ to: r.email, toName: r.first_name, subject: mail.subject, html: mail.html });
+        await advanceFollowup(r.id, r.stage);
+        followupsSent++;
+      } catch (e) {
+        errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e));
+  }
+
+  return NextResponse.json({ ok: true, checked: events.length, sent, followupsSent, errors });
 }

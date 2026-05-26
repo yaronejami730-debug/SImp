@@ -123,6 +123,40 @@ export function bookingInviteEmail(d: { bookUrl: string }) {
   return { subject: `Prenez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
+/** Relance après annulation. stage 1 = J+7, stage 2 = J+14, stage 3 = J+44 (final). */
+export function cancellationFollowupEmail(d: {
+  stage: 1 | 2 | 3;
+  civility?: string; firstName: string; lastName?: string;
+  bookUrl: string;
+}) {
+  const hello = `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>`;
+  let body = "";
+  let subject = "";
+  if (d.stage === 1) {
+    subject = `Reprenez rendez-vous — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Suite à l'annulation de votre rendez-vous, vous pouvez en reprendre un nouveau en quelques clics.</p>
+      <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
+      <p style="margin:0 0 8px;font-size:15px">Choisissez la date et l'heure qui vous arrangent :</p>`;
+  } else if (d.stage === 2) {
+    subject = `Toujours intéressé ? Reprenez rendez-vous — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Toujours intéressé par la vente de votre véhicule ?</p>
+      <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
+      <p style="margin:0 0 8px;font-size:15px">Programmez votre rendez-vous quand vous voulez :</p>`;
+  } else {
+    subject = `Vous n'avez pas encore vendu votre véhicule ? — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Vous n'avez peut-être pas encore vendu votre véhicule.</p>
+      <p style="margin:0 0 16px;font-size:15px">Notre agence vous accompagne pour finaliser la vente rapidement, sereinement, sans frais cachés.</p>
+      <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
+      <p style="margin:0 0 8px;font-size:15px">Reprenez rendez-vous quand vous voulez :</p>`;
+  }
+  const content = hello + body + `<p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(d.bookUrl, "Programmer un rendez-vous", C.primary);
+  return { subject, html: shell(content, buttons) };
+}
+
 type CancelData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; whatsappUrl?: string };
 
 export function cancelledEmail(d: CancelData) {

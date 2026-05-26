@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/brevo";
 import { cancelledEmail } from "@/lib/email-templates";
 import { whatsappUrl } from "@/lib/links";
 import { getAuth } from "@/lib/auth";
+import { scheduleFollowup } from "@/lib/followups";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
     let email = "";
     let location = "";
     let startDateTime = "";
+    let listingUrl = "";
+    let owner = "";
     try {
       const ev = await getEvent(eid);
       const priv = ev.extendedProperties?.private;
@@ -34,6 +37,8 @@ export async function POST(req: Request) {
       email = priv?.clientEmail ?? "";
       location = ev.location ?? "";
       startDateTime = ev.start?.dateTime ?? "";
+      listingUrl = priv?.listingUrl ?? "";
+      owner = priv?.owner ?? "";
     } catch {
       /* event déjà absent ? on tente quand même la suppression */
     }
@@ -56,6 +61,11 @@ export async function POST(req: Request) {
       } catch {
         /* mail non-bloquant */
       }
+    }
+
+    // Programme la séquence de relances (J+7, J+14, J+30 après).
+    if (email) {
+      try { await scheduleFollowup({ email, civility, firstName, lastName, listingUrl, owner }); } catch { /* non-bloquant */ }
     }
 
     return NextResponse.json({ ok: true, emailSent });

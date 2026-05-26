@@ -6,6 +6,7 @@ import { SLOT_MIN } from "@/lib/slots";
 import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
+import { cancelFollowup } from "@/lib/followups";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export async function POST(req: Request) {
     }
 
     const event = await createEvent(appt, p.owner);
+    try { await cancelFollowup(appt.email); } catch { /* non-bloquant */ }
 
     let emailSent = false;
     try {
