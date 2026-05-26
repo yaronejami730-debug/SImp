@@ -13,6 +13,15 @@ const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.ge
 const label = (d: Date) =>
   d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
+// Horaires au pas de 5 min (08:00 → 21:00) pour le menu "Autre horaire".
+const CUSTOM_TIMES = (() => {
+  const out: string[] = [];
+  for (let m = 8 * 60; m <= 21 * 60; m += 5) {
+    out.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+  }
+  return out;
+})();
+
 function upcomingWeekdays(n = 12): Date[] {
   const out: Date[] = [];
   for (let i = 0; out.length < n && i < 200; i++) {
@@ -125,12 +134,16 @@ export default function SlotPicker({
                 {allowCustom && (
                   <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 600 }}>Autre horaire :</span>
-                    <input
-                      type="time"
+                    <select
                       value={value.date === date ? value.time : ""}
                       onChange={(e) => e.target.value && onChange({ date, time: e.target.value })}
-                      style={{ padding: "8px 10px", borderRadius: 7, border: `1.5px solid ${value.date === date && value.time ? PINK : "#e5e7eb"}`, fontSize: 14, fontFamily: "inherit" }}
-                    />
+                      style={{ padding: "8px 10px", borderRadius: 7, border: `1.5px solid ${value.date === date && value.time ? PINK : "#e5e7eb"}`, fontSize: 14, fontFamily: "inherit", background: "#fff" }}
+                    >
+                      <option value="">--:--</option>
+                      {CUSTOM_TIMES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
               </div>

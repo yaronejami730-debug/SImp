@@ -7,7 +7,6 @@ import { authHeaders } from "@/lib/client";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
-const ACCENT = "#24B9D7";
 
 type Result = {
   ok: boolean;
@@ -185,7 +184,7 @@ function Home() {
             <li>{result.appointment.location}</li>
             <li>{new Date(result.appointment.startDateTime).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "full", timeStyle: "short" })}</li>
           </ul>
-          {result.eventLink && <a href={result.eventLink} target="_blank" rel="noreferrer" style={{ color: ACCENT, display: "inline-block", marginTop: 10 }}>Ouvrir dans Google Agenda →</a>}
+          {result.eventLink && <a href={result.eventLink} target="_blank" rel="noreferrer" style={{ color: PINK, fontWeight: 600, display: "inline-block", marginTop: 10 }}>Ouvrir dans Google Agenda →</a>}
         </div>
       )}
       {result && !result.ok && (
@@ -193,8 +192,8 @@ function Home() {
       )}
 
       <div style={{ marginTop: 26, borderTop: "1px solid #ececec", paddingTop: 18 }}>
-        <button type="button" onClick={() => setShowLink((s) => !s)} style={{ background: "none", border: "none", color: ACCENT, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-          {showLink ? "▲ " : "▼ "}Plutôt envoyer le lien au client (il choisit son créneau)
+        <button type="button" onClick={() => setShowLink((s) => !s)} style={{ background: "none", border: "none", color: PINK, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+          {showLink ? "▲ " : "▼ "}📩 Laisser le client choisir son créneau (envoi d&apos;un lien)
         </button>
         {showLink && (
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
