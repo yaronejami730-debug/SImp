@@ -1,16 +1,13 @@
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplicicar";
+const LOCATION = process.env.DEFAULT_LOCATION ?? "3 rue Bélidor 75017 Paris";
 
-// Tokens design system simplicicar.com
 const C = {
   primary: "#DB407A",
-  accent: "#24B9D7",
-  navy: "#1a273a", // fond header/footer = fond du logo (fondu parfait)
+  navy: "#1a273a",
   text: "#232323",
   muted: "#6b7280",
   bg: "#eceef1",
-  surface: "#ffffff",
-  border: "#e5e7eb",
-  whatsapp: "#25D366",
+  highlight: "#fff3a0",
 };
 const FONT_BODY = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif";
 const FONT_HEAD = "'Cabin','Manrope',Arial,sans-serif";
@@ -18,93 +15,100 @@ const LOGO =
   process.env.LOGO_URL ??
   "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
 
-function fmtDateTime(dt: string | Date) {
+// Réseaux sociaux (footer)
+const SOCIAL = {
+  facebook: "https://www.facebook.com/SimpliciCarBike/",
+  instagram: "https://www.instagram.com/simplicicar_france/",
+  youtube: "https://www.youtube.com/@Declencheur_podcast",
+  whatsapp: process.env.WHATSAPP_NUMBER ? `https://wa.me/${process.env.WHATSAPP_NUMBER}` : "",
+};
+
+function fmtLong(dt: string | Date) {
   const d = typeof dt === "string" ? new Date(dt) : dt;
-  return new Intl.DateTimeFormat("fr-FR", {
+  const date = new Intl.DateTimeFormat("fr-FR", {
     timeZone: "Europe/Paris",
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
+  }).format(d);
+  const heure = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(d);
+  })
+    .format(d)
+    .replace(":", "h");
+  return { date, heure };
 }
 
-function shell(title: string, body: string) {
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link href="https://fonts.googleapis.com/css2?family=Cabin:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
-<body style="margin:0;background:${C.bg};font-family:${FONT_BODY};color:${C.text};line-height:1.6">
-  <div style="max-width:560px;margin:0 auto;padding:24px 16px">
-    <div style="background:${C.surface};border-radius:14px;overflow:hidden;box-shadow:0 10px 15px rgba(26,39,58,0.12)">
-      <!-- Header bleu nuit (fond = fond du logo => fondu) -->
-      <div style="background:${C.navy};text-align:center;padding:26px 24px">
-        <img src="${LOGO}" alt="${BUSINESS}" width="300" style="width:300px;max-width:80%;height:auto;display:inline-block;border:0"/>
+function socialIcon(href: string, name: string, file: string) {
+  if (!href) return "";
+  return `<td style="padding:0 8px"><a href="${href}" target="_blank" style="text-decoration:none">
+    <img src="https://img.icons8.com/ios-filled/50/ffffff/${file}.png" width="26" height="26" alt="${name}" style="display:block;border:0"/></a></td>`;
+}
+
+/** Bouton plein, centré. */
+function button(href: string | undefined, label: string, bg = C.primary) {
+  if (!href) return "";
+  return `<table role="presentation" align="center" style="margin:8px auto 0"><tr><td style="border-radius:8px;background:${bg}">
+    <a href="${href}" target="_blank" style="display:inline-block;padding:13px 26px;font-family:${FONT_BODY};font-size:15px;font-weight:600;color:#ffffff;text-decoration:none">${label}</a>
+  </td></tr></table>`;
+}
+
+function shell(content: string) {
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Cabin:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></head>
+<body style="margin:0;background:${C.bg};font-family:${FONT_BODY};color:${C.text}">
+  <div style="max-width:600px;margin:0 auto;padding:24px 14px">
+    <div style="background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 20px rgba(26,39,58,0.10)">
+      <!-- Header -->
+      <div style="background:${C.navy};text-align:center;padding:24px 20px 18px">
+        <img src="${LOGO}" alt="${BUSINESS}" width="300" style="width:300px;max-width:78%;height:auto;display:inline-block;border:0"/>
+        <div style="margin-top:10px;font-family:${FONT_BODY};font-size:12px;font-style:italic;color:#aeb8c7">Recommandé par Vincent Lagaf'</div>
       </div>
-      <div style="height:4px;background:${C.primary}"></div>
-      <!-- Corps -->
-      <div style="padding:30px 28px">
-        <h1 style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:22px;font-weight:700;color:${C.navy};text-transform:uppercase;letter-spacing:0.3px">${title}</h1>
-        ${body}
-        <p style="margin:26px 0 0;font-size:13px;color:${C.muted}">À très vite,<br/>L'équipe ${BUSINESS}</p>
+      <!-- Corps centré -->
+      <div style="padding:34px 30px;text-align:center">
+        ${content}
       </div>
-      <!-- Footer bleu nuit -->
-      <div style="background:${C.navy};padding:20px 24px;text-align:center">
-        <div style="font-family:${FONT_HEAD};font-size:15px;font-weight:700;color:#ffffff">SIMPLICI<span style="color:${C.primary}">CAR</span></div>
-        <div style="font-size:11px;color:#9aa6b8;margin-top:4px">Réseau de concessions automobiles en France</div>
+      <!-- Footer rose -->
+      <div style="background:${C.primary};padding:22px 20px;text-align:center">
+        <div style="font-family:${FONT_BODY};font-size:14px;color:#ffffff;margin-bottom:12px">${LOCATION}</div>
+        <table role="presentation" align="center"><tr>
+          ${socialIcon(SOCIAL.facebook, "Facebook", "facebook-new")}
+          ${socialIcon(SOCIAL.instagram, "Instagram", "instagram-new")}
+          ${socialIcon(SOCIAL.youtube, "YouTube", "youtube-play")}
+          ${socialIcon(SOCIAL.whatsapp, "WhatsApp", "whatsapp")}
+        </tr></table>
       </div>
     </div>
   </div>
 </body></html>`;
 }
 
-function infoTable(rows: [string, string][]) {
-  const trs = rows
-    .map(
-      ([k, v]) =>
-        `<tr><td style="padding:7px 0;color:${C.muted};font-size:14px">${k}</td><td style="padding:7px 0;text-align:right;font-size:14px">${v}</td></tr>`,
-    )
-    .join("");
-  return `<table style="width:100%;border-collapse:collapse;border-top:1px solid ${C.border};margin-top:8px">${trs}</table>`;
-}
-
-/** Deux boutons empilés : WhatsApp + reprogrammer. */
-function buttons(whatsappUrl?: string, rescheduleUrl?: string) {
-  if (!whatsappUrl && !rescheduleUrl) return "";
-  const btn = (href: string, bg: string, label: string) =>
-    `<a href="${href}" style="display:block;background:${bg};color:#ffffff;text-decoration:none;
-       font-family:${FONT_BODY};font-size:15px;font-weight:600;text-align:center;
-       padding:14px 18px;border-radius:8px;margin-top:10px">${label}</a>`;
-  return `<div style="margin:24px 0 4px">
-    ${whatsappUrl ? btn(whatsappUrl, C.whatsapp, "💬 Nous contacter sur WhatsApp") : ""}
-    ${rescheduleUrl ? btn(rescheduleUrl, C.primary, "📅 Reprogrammer le rendez-vous") : ""}
-  </div>`;
-}
+const hl = (t: string) => `<span style="background:${C.highlight};font-weight:700">${t}</span>`;
 
 type ConfirmData = {
   firstName: string;
   startDateTime: string;
   location: string;
-  platform: string;
-  listingUrl: string;
+  platform?: string;
+  listingUrl?: string;
   whatsappUrl?: string;
   rescheduleUrl?: string;
 };
 
 export function confirmationEmail(d: ConfirmData) {
-  const body = `
-    <p style="margin:0 0 12px">Bonjour ${d.firstName},</p>
-    <p style="margin:0 0 4px">Votre rendez-vous est confirmé :</p>
-    ${infoTable([
-      ["Date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
-      ["Lieu", d.location],
-    ])}
-    ${buttons(d.whatsappUrl, d.rescheduleUrl)}`;
-  return {
-    subject: `Confirmation de votre rendez-vous — ${BUSINESS}`,
-    html: shell("Rendez-vous confirmé ✅", body),
-  };
+  const { date, heure } = fmtLong(d.startDateTime);
+  const content = `
+    <h1 style="margin:0 0 22px;font-family:${FONT_HEAD};font-size:30px;font-weight:700;color:${C.navy}">Bonjour, ${d.firstName}</h1>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.navy};line-height:1.5">Suite à notre entretien téléphonique, je vous envoie les coordonnées de notre agence :</p>
+    <p style="margin:0 0 20px;font-size:16px;color:${C.text}">${hl(BUSINESS.toUpperCase())} ${d.location}</p>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.primary}">Votre rendez-vous est prévu le ${date} à ${heure}.</p>
+    <p style="margin:0 0 22px;font-size:15px;color:${C.text}">N'oubliez pas de vous munir de votre <strong>carte grise</strong> et de votre <strong>pièce d'identité</strong>.</p>
+    ${button(d.rescheduleUrl, "Reprogrammer le rendez-vous")}
+    <p style="margin:24px 0 0;font-size:15px;color:${C.text}">L'équipe ${hl(BUSINESS)}</p>`;
+  return { subject: `Votre rendez-vous — ${BUSINESS}`, html: shell(content) };
 }
 
 type ReminderData = {
@@ -117,57 +121,41 @@ type ReminderData = {
 };
 
 export function reminderEmail(d: ReminderData) {
+  const { date, heure } = fmtLong(d.startDateTime);
   const quand = d.kind === "2h" ? "dans 2 heures" : "demain";
-  const body = `
-    <p style="margin:0 0 12px">Bonjour ${d.firstName},</p>
-    <p style="margin:0 0 4px">Petit rappel : vous avez rendez-vous <strong>${quand}</strong>.</p>
-    ${infoTable([
-      ["Date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
-      ["Lieu", d.location],
-    ])}
-    ${buttons(d.whatsappUrl, d.rescheduleUrl)}`;
-  return {
-    subject: `Rappel : votre rendez-vous ${quand} — ${BUSINESS}`,
-    html: shell("N'oubliez pas votre rendez-vous ⏰", body),
-  };
+  const content = `
+    <h1 style="margin:0 0 22px;font-family:${FONT_HEAD};font-size:28px;font-weight:700;color:${C.navy}">Bonjour, ${d.firstName}</h1>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.navy};line-height:1.5">Petit rappel : votre rendez-vous est ${quand}.</p>
+    <p style="margin:0 0 20px;font-size:16px;color:${C.text}">${hl(BUSINESS.toUpperCase())} ${d.location}</p>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.primary}">Le ${date} à ${heure}.</p>
+    <p style="margin:0 0 22px;font-size:15px;color:${C.text}">N'oubliez pas votre <strong>carte grise</strong> et votre <strong>pièce d'identité</strong>.</p>
+    ${button(d.rescheduleUrl, "Reprogrammer le rendez-vous")}
+    <p style="margin:24px 0 0;font-size:15px;color:${C.text}">L'équipe ${hl(BUSINESS)}</p>`;
+  return { subject: `Rappel : votre rendez-vous ${quand} — ${BUSINESS}`, html: shell(content) };
 }
 
-type CancelData = {
-  firstName: string;
-  startDateTime: string;
-  location: string;
-  whatsappUrl?: string;
-};
-
-/** E-mail envoyé quand un rendez-vous est annulé. */
-export function cancelledEmail(d: CancelData) {
-  const body = `
-    <p style="margin:0 0 12px">Bonjour ${d.firstName},</p>
-    <p style="margin:0 0 6px">Votre rendez-vous suivant a été <strong>annulé</strong> :</p>
-    ${infoTable([
-      ["Date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
-      ["Lieu", d.location],
-    ])}
-    <p style="margin:16px 0 0">Pour reprendre un rendez-vous, contactez-nous :</p>
-    ${buttons(d.whatsappUrl, undefined)}`;
-  return {
-    subject: `Rendez-vous annulé — ${BUSINESS}`,
-    html: shell("Rendez-vous annulé ❌", body),
-  };
-}
-
-/** E-mail envoyé après une reprogrammation réussie. */
 export function rescheduledEmail(d: ConfirmData) {
-  const body = `
-    <p style="margin:0 0 12px">Bonjour ${d.firstName},</p>
-    <p style="margin:0 0 4px">Votre rendez-vous a bien été <strong>reprogrammé</strong> :</p>
-    ${infoTable([
-      ["Nouvelle date", `<strong>${fmtDateTime(d.startDateTime)}</strong>`],
-      ["Lieu", d.location],
-    ])}
-    ${buttons(d.whatsappUrl, d.rescheduleUrl)}`;
-  return {
-    subject: `Rendez-vous reprogrammé — ${BUSINESS}`,
-    html: shell("Rendez-vous reprogrammé 🔄", body),
-  };
+  const { date, heure } = fmtLong(d.startDateTime);
+  const content = `
+    <h1 style="margin:0 0 22px;font-family:${FONT_HEAD};font-size:28px;font-weight:700;color:${C.navy}">Bonjour, ${d.firstName}</h1>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.navy};line-height:1.5">Votre rendez-vous a bien été reprogrammé.</p>
+    <p style="margin:0 0 20px;font-size:16px;color:${C.text}">${hl(BUSINESS.toUpperCase())} ${d.location}</p>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.primary}">Nouvelle date : le ${date} à ${heure}.</p>
+    <p style="margin:0 0 22px;font-size:15px;color:${C.text}">N'oubliez pas votre <strong>carte grise</strong> et votre <strong>pièce d'identité</strong>.</p>
+    ${button(d.rescheduleUrl, "Reprogrammer à nouveau")}
+    <p style="margin:24px 0 0;font-size:15px;color:${C.text}">L'équipe ${hl(BUSINESS)}</p>`;
+  return { subject: `Rendez-vous reprogrammé — ${BUSINESS}`, html: shell(content) };
+}
+
+type CancelData = { firstName: string; startDateTime: string; location: string; whatsappUrl?: string };
+
+export function cancelledEmail(d: CancelData) {
+  const { date, heure } = fmtLong(d.startDateTime);
+  const content = `
+    <h1 style="margin:0 0 22px;font-family:${FONT_HEAD};font-size:28px;font-weight:700;color:${C.navy}">Bonjour, ${d.firstName}</h1>
+    <p style="margin:0 0 20px;font-size:16px;font-weight:700;color:${C.navy};line-height:1.5">Votre rendez-vous du ${date} à ${heure} a été annulé.</p>
+    <p style="margin:0 0 22px;font-size:15px;color:${C.text}">Pour reprendre rendez-vous, contactez-nous sur WhatsApp.</p>
+    ${button(d.whatsappUrl, "Nous contacter sur WhatsApp", "#25D366")}
+    <p style="margin:24px 0 0;font-size:15px;color:${C.text}">L'équipe ${hl(BUSINESS)}</p>`;
+  return { subject: `Rendez-vous annulé — ${BUSINESS}`, html: shell(content) };
 }
