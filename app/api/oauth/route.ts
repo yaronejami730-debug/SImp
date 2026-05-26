@@ -35,7 +35,10 @@ export async function GET(req: Request) {
     const authUrl = oauth2.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
-      scope: ["https://www.googleapis.com/auth/calendar"],
+      scope: [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/contacts",
+      ],
     });
     return NextResponse.redirect(authUrl);
   }

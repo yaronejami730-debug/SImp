@@ -4,7 +4,46 @@ import type { Appointment } from "./parse";
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";
 
-const SCOPES = ["https://www.googleapis.com/auth/calendar"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/contacts",
+];
+
+function googleAuth() {
+  const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  if (clientEmail && privateKey) {
+    return new google.auth.JWT({ email: clientEmail, key: privateKey, scopes: SCOPES });
+  }
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_OAUTH_CLIENT_ID,
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+  );
+  auth.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+  return auth;
+}
+
+/** Crée un contact dans Google Contacts (People API). Requiert le scope
+ *  `https://www.googleapis.com/auth/contacts` dans le refresh token OAuth. */
+export async function createGoogleContact(opts: {
+  firstName: string;
+  lastName?: string;
+  phone: string;
+  email?: string;
+  note?: string;
+}): Promise<string> {
+  const auth = googleAuth();
+  const people = google.people({ version: "v1", auth });
+  const res = await people.people.createContact({
+    requestBody: {
+      names: [{ givenName: opts.firstName || "Lead", familyName: opts.lastName || "" }],
+      phoneNumbers: opts.phone ? [{ value: opts.phone, type: "mobile" }] : [],
+      emailAddresses: opts.email ? [{ value: opts.email }] : [],
+      biographies: opts.note ? [{ value: opts.note, contentType: "TEXT_PLAIN" }] : [],
+    },
+  });
+  return res.data.resourceName ?? "";
+}
 
 function calendarClient(): calendar_v3.Calendar {
   const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
@@ -71,6 +110,57 @@ export async function createEvent(a: Appointment, owner = "") {
   });
 
   return res.data;
+}
+
+/** Crée un événement "rappel téléphonique" (15 min) dans Google Agenda.
+ *  - clientEmail (si fourni) -> ajouté comme attendee : Google le voit alors
+ *    comme un "contact fréquent" (Contacts > Autres contacts). */
+export async function createReminderEvent(opts: {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  listingUrl?: string;
+  note?: string;
+  remindAt: string; // ISO
+  owner: string;
+  clientEmail?: string;
+}): Promise<string> {
+  const cal = calendarClient();
+  const start = new Date(opts.remindAt);
+  const end = new Date(start.getTime() + 15 * 60 * 1000);
+  const name = `${opts.firstName} ${opts.lastName}`.trim() || opts.phone;
+
+  const attendees: { email: string; displayName?: string }[] = [];
+  if (opts.clientEmail) attendees.push({ email: opts.clientEmail, displayName: name });
+
+  const res = await cal.events.insert({
+    calendarId: CALENDAR_ID,
+    sendUpdates: "none", // on envoie nos propres mails via Brevo, pas l'invite Google
+    requestBody: {
+      summary: `📞 Rappel ${name}`,
+      description: [
+        `Téléphone : ${opts.phone}`,
+        opts.clientEmail ? `E-mail : ${opts.clientEmail}` : "",
+        opts.listingUrl ? `Annonce : ${opts.listingUrl}` : "",
+        opts.note ? `Note : ${opts.note}` : "",
+      ].filter(Boolean).join("\n"),
+      start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
+      end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
+      ...(attendees.length ? { attendees } : {}),
+      extendedProperties: {
+        private: {
+          app: "simplici-reminder",
+          kind: "reminder",
+          owner: opts.owner,
+          phone: opts.phone,
+          clientEmail: opts.clientEmail ?? "",
+          clientFirstName: opts.firstName,
+          clientLastName: opts.lastName,
+        },
+      },
+    },
+  });
+  return res.data.id ?? "";
 }
 
 /** Liste les événements entre deux dates (cron de relance). */

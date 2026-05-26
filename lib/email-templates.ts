@@ -154,6 +154,53 @@ export function cancellationFollowupEmail(d: {
   return { subject, html: shell(content, buttons) };
 }
 
+// ─── Rappel téléphonique (RDV téléphonique programmé via Prospection) ───
+
+type PhoneRappelOrganizerData = {
+  organizerName?: string;
+  firstName: string;
+  lastName?: string;
+  phone: string;
+  remindAt: string;
+  listingUrl?: string;
+  note?: string;
+};
+
+/** Mail envoyé à l'organisateur (le collaborateur) 30 min avant le RDV téléphonique. */
+export function phoneRappelOrganizerEmail(d: PhoneRappelOrganizerData) {
+  const { date, heure } = fmtLong(d.remindAt);
+  const fullName = `${d.firstName ?? ""} ${d.lastName ?? ""}`.trim() || d.phone;
+  const telDigits = d.phone.replace(/\s/g, "");
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${d.organizerName ?? ""},</p>
+    <p style="margin:0 0 16px;font-size:15px">Vous avez un <strong>rendez-vous téléphonique</strong> dans 30 minutes.</p>
+    <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:${C.primary}">${fullName} — ${d.phone}</p>
+    <p style="margin:0 0 14px;font-size:15px;color:${C.muted}">Le ${date} à ${heure}.</p>
+    ${d.listingUrl ? `<p style="margin:0 0 10px;font-size:14px"><a href="${d.listingUrl}" target="_blank" style="color:${C.link};text-decoration:none">Ouvrir l'annonce →</a></p>` : ""}
+    ${d.note ? `<p style="margin:0 0 14px;font-size:14px;color:${C.muted}">Note : ${d.note}</p>` : ""}
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">— ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(`tel:${telDigits}`, `📞 Appeler ${fullName}`, C.primary);
+  return { subject: `📞 Rappel dans 30 min — ${fullName}`, html: shell(content, buttons) };
+}
+
+type PhoneRappelClientData = {
+  firstName: string;
+  lastName?: string;
+  remindAt: string;
+};
+
+/** Mail envoyé au client (si email fourni) 30 min avant l'appel. */
+export function phoneRappelClientEmail(d: PhoneRappelClientData) {
+  const { date, heure } = fmtLong(d.remindAt);
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${d.firstName},</p>
+    <p style="margin:0 0 16px;font-size:15px">Petit rappel : nous vous rappelons dans 30 minutes pour faire le point sur votre annonce.</p>
+    <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">Appel prévu le ${date} à ${heure}.</p>
+    <p style="margin:0 0 4px;font-size:15px">Si vous n'êtes pas disponible, prévenez-nous et nous reprogrammerons.</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  return { subject: `Rappel de notre appel à venir — ${BUSINESS}`, html: shell(content) };
+}
+
 type CancelData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; whatsappUrl?: string };
 
 export function cancelledEmail(d: CancelData) {

@@ -65,6 +65,14 @@ function Home() {
   const ready = form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && form.listingUrl.trim() && form.date && form.time;
 
   useEffect(() => {
+    const prefill = typeof window !== "undefined" ? sessionStorage.getItem("prefillListingUrl") : null;
+    if (prefill) {
+      sessionStorage.removeItem("prefillListingUrl");
+      setForm((f) => ({ ...f, listingUrl: prefill }));
+    }
+  }, []);
+
+  useEffect(() => {
     const u = form.listingUrl.trim();
     if (!/^https?:\/\//i.test(u)) { setPreview(null); return; }
     const t = setTimeout(async () => {
