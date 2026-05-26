@@ -39,6 +39,18 @@ export type AppointmentInput = {
   time: string; // "HH:MM"
 };
 
+/**
+ * Extrait la première URL https/http d'une chaîne (collage type "Voici l'annonce : https://www.leboncoin.fr/...").
+ * Renvoie l'URL pure, sinon la chaîne d'origine (trim).
+ */
+export function extractUrl(raw: string): string {
+  if (!raw) return "";
+  const m = raw.match(/https?:\/\/[^\s<>"']+/i);
+  if (!m) return raw.trim();
+  // Retire la ponctuation finale courante (). , ; : !) collée par certains partages.
+  return m[0].replace(/[.,;:!)\]]+$/, "");
+}
+
 /** Déduit le nom de la plateforme à partir du domaine du lien. */
 export function platformFromUrl(url: string): string {
   try {

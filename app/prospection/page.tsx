@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
+import { extractUrl } from "@/lib/parse";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -63,7 +64,7 @@ function Prospection() {
         <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Nouveau lead (appel)</div>
         <div style={{ display: "grid", gap: 10 }}>
           <input style={inp} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Téléphone appelé" />
-          <input style={inp} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Lien de l'annonce" />
+          <input style={inp} value={url} onChange={(e) => setUrl(extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); setUrl(extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle le lien (texte ou URL)" />
           <input style={inp} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optionnel)" />
           <button onClick={add} disabled={adding || !phone.trim() || !url.trim()} style={{ padding: 13, borderRadius: 8, border: "none", background: adding || !phone.trim() || !url.trim() ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
             {adding ? "Ajout…" : "Ajouter le lead"}

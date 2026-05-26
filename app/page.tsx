@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import SlotPicker from "@/components/SlotPicker";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
+import { extractUrl } from "@/lib/parse";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -139,7 +140,7 @@ function Home() {
         </div>
         <div>
           <label style={labelStyle}>Lien de l&apos;annonce</label>
-          <input style={inputStyle} value={form.listingUrl} onChange={(e) => set("listingUrl", e.target.value)} placeholder="https://www.leboncoin.fr/voitures/123456789" />
+          <input style={inputStyle} value={form.listingUrl} onChange={(e) => set("listingUrl", extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); set("listingUrl", extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" />
           {preview && (preview.title || preview.image) && (
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, padding: 10, border: "1px solid #e5e7eb", borderRadius: 10, background: "#f8f9fa" }}>
               {preview.image && (
@@ -207,7 +208,7 @@ function Home() {
               </div>
             </div>
             <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
-            <div><label style={labelStyle}>Lien de l&apos;annonce</label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://www.leboncoin.fr/voitures/..." /></div>
+            <div><label style={labelStyle}>Lien de l&apos;annonce</label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); setLinkUrl(extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" /></div>
             <button onClick={sendLink} disabled={linkBusy || !linkEmail.trim() || !linkUrl.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkEmail.trim() || !linkUrl.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
               {linkBusy ? "Envoi…" : "Envoyer le lien au client"}
             </button>
