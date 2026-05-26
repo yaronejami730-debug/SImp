@@ -5,8 +5,7 @@ import SlotPicker from "@/components/SlotPicker";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
-const LOGO =
-  "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
+const LOGO = "https://agenda-rdv.vercel.app/logo.png";
 
 export default function Reschedule() {
   const [eid, setEid] = useState("");
@@ -81,9 +80,9 @@ export default function Reschedule() {
           boxShadow: "0 10px 15px rgba(26,39,58,0.12)",
         }}
       >
-        <div style={{ background: NAVY, textAlign: "center", padding: "26px 24px" }}>
+        <div style={{ background: "#fff", textAlign: "center", padding: "26px 24px 18px" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOGO} alt="Simplicicar" width={280} style={{ width: 280, maxWidth: "80%", height: "auto" }} />
+          <img src={LOGO} alt="Simplicicar" width={230} style={{ width: 230, maxWidth: "78%", height: "auto" }} />
         </div>
         <div style={{ height: 4, background: PINK }} />
 

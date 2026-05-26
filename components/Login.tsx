@@ -5,8 +5,7 @@ import { setAuth } from "@/lib/client";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
-const LOGO =
-  "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
+const LOGO = "https://agenda-rdv.vercel.app/logo.png";
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail] = useState("");
@@ -43,9 +42,9 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
   return (
     <main style={{ minHeight: "100vh", background: "#eceef1", fontFamily: "'Manrope',Arial,sans-serif", padding: "24px 16px" }}>
       <div style={{ maxWidth: 380, margin: "60px auto", background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 10px 15px rgba(26,39,58,0.12)" }}>
-        <div style={{ background: NAVY, textAlign: "center", padding: 24 }}>
+        <div style={{ background: "#fff", textAlign: "center", padding: "26px 24px 18px" }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOGO} alt="Simplicicar" width={240} style={{ width: 240, maxWidth: "80%", height: "auto" }} />
+          <img src={LOGO} alt="Simplicicar" width={230} style={{ width: 230, maxWidth: "78%", height: "auto" }} />
         </div>
         <div style={{ height: 4, background: PINK }} />
         <div style={{ padding: 28 }}>

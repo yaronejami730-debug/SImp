@@ -4,8 +4,7 @@ import { getUser, clearAuth } from "@/lib/client";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
-const LOGO =
-  "https://www.simplicicar.com/img/cms/Logo/Simplicicar-concession-automobile-France.jpg";
+const LOGO = "https://agenda-rdv.vercel.app/logo.png";
 
 const TABS = [
   { key: "rdv", label: "Prise de RDV", href: "/" },
@@ -23,16 +22,16 @@ export default function Nav({ active }: { active: string }) {
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto 16px" }}>
-      <div style={{ background: NAVY, borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={LOGO} alt="Simplicicar" width={150} style={{ width: 150, maxWidth: "40%", height: "auto" }} />
+        <img src={LOGO} alt="Simplicicar" width={150} style={{ width: 150, maxWidth: "42%", height: "auto" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {user && (
-            <span style={{ color: "#9aa6b8", fontSize: 12 }}>
+            <span style={{ color: "#6b7280", fontSize: 12 }}>
               {user.name}{user.role === "admin" ? " (admin)" : ""}
             </span>
           )}
-          <button onClick={logout} style={{ color: "#fff", fontSize: 12, background: "transparent", border: "1px solid #3a4a63", padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+          <button onClick={logout} style={{ color: NAVY, fontSize: 12, background: "#fff", border: "1px solid #e5e7eb", padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
             Déconnexion
           </button>
         </div>
