@@ -112,6 +112,17 @@ export function rescheduledEmail(d: ConfirmData) {
   return { subject: `Rendez-vous reprogrammé — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
+/** Mail envoyé au client pour qu'il choisisse lui-même son créneau. */
+export function bookingInviteEmail(d: { bookUrl: string }) {
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour,</p>
+    <p style="margin:0 0 16px;font-size:15px">Suite à notre conversation, choisissez le créneau qui vous convient pour votre rendez-vous avec ${BUSINESS.toUpperCase()} :</p>
+    <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(d.bookUrl, "Choisir mon créneau", C.primary);
+  return { subject: `Prenez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
+}
+
 type CancelData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; whatsappUrl?: string };
 
 export function cancelledEmail(d: CancelData) {

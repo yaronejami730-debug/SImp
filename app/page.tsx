@@ -32,6 +32,32 @@ function Home() {
   const [preview, setPreview] = useState<{ platform?: string; title?: string | null; image?: string | null } | null>(null);
   const [dups, setDups] = useState<Dup[]>([]);
 
+  // Section "envoyer le lien au client"
+  const [showLink, setShowLink] = useState(false);
+  const [linkCivility, setLinkCivility] = useState("Monsieur");
+  const [linkEmail, setLinkEmail] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkResult, setLinkResult] = useState<{ bookUrl: string; emailSent: boolean } | null>(null);
+
+  async function sendLink() {
+    if (!linkEmail.trim() || !linkUrl.trim()) return;
+    setLinkBusy(true);
+    setLinkResult(null);
+    try {
+      const res = await fetch("/api/book/link", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ email: linkEmail, listingUrl: linkUrl, civility: linkCivility }),
+      });
+      const d = await res.json();
+      if (d.ok) setLinkResult({ bookUrl: d.bookUrl, emailSent: d.emailSent });
+      else alert(d.error ?? "Erreur");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
   function set(key: keyof typeof EMPTY, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -165,6 +191,37 @@ function Home() {
       {result && !result.ok && (
         <div style={{ marginTop: 22, padding: 18, borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>❌ {result.error}</div>
       )}
+
+      <div style={{ marginTop: 26, borderTop: "1px solid #ececec", paddingTop: 18 }}>
+        <button type="button" onClick={() => setShowLink((s) => !s)} style={{ background: "none", border: "none", color: ACCENT, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+          {showLink ? "▲ " : "▼ "}Plutôt envoyer le lien au client (il choisit son créneau)
+        </button>
+        {showLink && (
+          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Tu pré-remplis e-mail + lien annonce. Le client reçoit un mail et choisit son créneau (il met prénom, nom, téléphone).</p>
+            <div>
+              <label style={labelStyle}>Civilité</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {["Monsieur", "Madame"].map((c) => (
+                  <button key={c} type="button" onClick={() => setLinkCivility(c)} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", border: linkCivility === c ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb", background: linkCivility === c ? PINK : "#fff", color: linkCivility === c ? "#fff" : "#6b7280" }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
+            <div><label style={labelStyle}>Lien de l&apos;annonce</label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://www.leboncoin.fr/voitures/..." /></div>
+            <button onClick={sendLink} disabled={linkBusy || !linkEmail.trim() || !linkUrl.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkEmail.trim() || !linkUrl.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
+              {linkBusy ? "Envoi…" : "Envoyer le lien au client"}
+            </button>
+            {linkResult && (
+              <div style={{ padding: 14, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
+                <strong>✅ {linkResult.emailSent ? "Mail envoyé au client" : "Lien généré"}</strong>
+                <p style={{ margin: "8px 0 4px", fontSize: 12, color: "#166534" }}>Lien (à copier si besoin) :</p>
+                <input readOnly value={linkResult.bookUrl} onFocus={(e) => e.currentTarget.select()} style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #bbf7d0", boxSizing: "border-box" }} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

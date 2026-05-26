@@ -39,6 +39,28 @@ export function verifyToken(token: string): Session | null {
   }
 }
 
+export type BookingPayload = { email: string; listingUrl: string; owner: string; civility?: string };
+
+/** Lien de réservation client signé (valide ~21 jours). */
+export function signBooking(p: BookingPayload): string {
+  const body = Buffer.from(JSON.stringify({ ...p, exp: Date.now() + 21 * 24 * 3600 * 1000 })).toString("base64url");
+  const sig = createHmac("sha256", SECRET).update(body).digest("base64url");
+  return `${body}.${sig}`;
+}
+
+export function verifyBooking(token: string): BookingPayload | null {
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+  if (createHmac("sha256", SECRET).update(body).digest("base64url") !== sig) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body, "base64url").toString());
+    if (!p.exp || p.exp < Date.now()) return null;
+    return { email: p.email, listingUrl: p.listingUrl, owner: p.owner, civility: p.civility };
+  } catch {
+    return null;
+  }
+}
+
 /** Auth d'une requête : token Bearer, ou code PIN (admin maître, rétrocompat). */
 export function getAuth(req: Request): Session | null {
   const bearer = req.headers.get("authorization");
