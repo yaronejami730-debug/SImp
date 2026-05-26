@@ -162,14 +162,6 @@ export default function Reschedule() {
           )}
         </div>
 
-        <div style={{ background: NAVY, padding: "20px 24px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'Cabin','Manrope',Arial,sans-serif", fontSize: 15, fontWeight: 700, color: "#fff" }}>
-            SIMPLICI<span style={{ color: PINK }}>CAR</span>
-          </div>
-          <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 4 }}>
-            Réseau de concessions automobiles en France
-          </div>
-        </div>
       </div>
     </main>
   );

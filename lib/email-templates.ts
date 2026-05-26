@@ -62,7 +62,7 @@ function shell(content: string, buttons = "") {
 </body></html>`;
 }
 
-const addressLine = `<a href="${MAPS}" target="_blank" style="color:#111111;text-decoration:none;font-weight:700">Agence : ${LOCATION}</a>`;
+const addressLine = `<a href="${MAPS}" target="_blank" style="color:#111111;text-decoration:none;font-weight:700">${LOCATION}</a>`;
 
 type ConfirmData = {
   civility?: string; firstName: string; lastName?: string;

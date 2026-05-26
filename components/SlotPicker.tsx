@@ -15,7 +15,7 @@ const label = (d: Date) =>
 
 function upcomingWeekdays(n = 12): Date[] {
   const out: Date[] = [];
-  for (let i = 0; out.length < n && i < 40; i++) {
+  for (let i = 0; out.length < n && i < 200; i++) {
     const x = new Date();
     x.setHours(12, 0, 0, 0);
     x.setDate(x.getDate() + i);
@@ -34,7 +34,8 @@ export default function SlotPicker({
   onChange: (v: { date: string; time: string }) => void;
   allowCustom?: boolean;
 }) {
-  const days = upcomingWeekdays();
+  const [count, setCount] = useState(12);
+  const days = upcomingWeekdays(count);
   const [open, setOpen] = useState<string>(value.date || "");
   const [cache, setCache] = useState<Record<string, DayCache>>({});
 
@@ -137,6 +138,15 @@ export default function SlotPicker({
           </div>
         );
       })}
+      {count < 80 && (
+        <button
+          type="button"
+          onClick={() => setCount((c) => c + 20)}
+          style={{ width: "100%", padding: "11px", background: "#f8f9fa", border: "none", borderTop: "1px solid #f0f1f3", cursor: "pointer", fontSize: 14, fontWeight: 600, color: PINK }}
+        >
+          Voir plus de dates ▾
+        </button>
+      )}
     </div>
   );
 }
