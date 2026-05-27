@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildAppointment, type AppointmentInput } from "@/lib/parse";
-import { createEvent, isSlotFree } from "@/lib/google";
+import { createEvent, isSlotFree, createGoogleContact } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
@@ -77,6 +77,16 @@ export async function POST(req: Request) {
     } catch (e) {
       emailError = e instanceof Error ? e.message : "Erreur e-mail.";
     }
+
+    try {
+      await createGoogleContact({
+        firstName: appt.firstName,
+        lastName: appt.lastName,
+        phone: appt.phone,
+        email: appt.email,
+        note: [appt.platform, appt.listingUrl].filter(Boolean).join(" — "),
+      });
+    } catch { /* non-bloquant */ }
 
     return NextResponse.json({
       ok: true,

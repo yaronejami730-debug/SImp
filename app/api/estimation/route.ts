@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { addEstimation } from "@/lib/estimations";
 import { sendEmail } from "@/lib/brevo";
+import { createGoogleContact } from "@/lib/google";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -72,6 +73,14 @@ export async function POST(req: Request) {
         console.error("admin notify failed", err);
       }
     }
+
+    try {
+      await createGoogleContact({
+        firstName: est.first_name, lastName: est.last_name,
+        phone: est.phone, email: est.email,
+        note: [est.brand, est.model, est.km ? `${est.km} km` : ""].filter(Boolean).join(" "),
+      });
+    } catch { /* non-bloquant */ }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

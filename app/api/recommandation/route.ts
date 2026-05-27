@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import { sendEmail } from "@/lib/brevo";
+import { createGoogleContact } from "@/lib/google";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -49,6 +50,13 @@ export async function POST(req: Request) {
         await sendEmail({ to: ADMIN_EMAIL, subject: `🤝 Recommandation : ${firstName} ${lastName}`, html });
       } catch {}
     }
+
+    try {
+      await createGoogleContact({
+        firstName, lastName, phone, email,
+        note: [mode === "achat" ? "ACHAT" : "VENTE", brand, model, km ? `${km} km` : "", year ? String(year) : ""].filter(Boolean).join(" · ") + " (recommandation)",
+      });
+    } catch { /* non-bloquant */ }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
