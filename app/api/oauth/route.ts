@@ -14,9 +14,7 @@ export const dynamic = "force-dynamic";
  * À supprimer une fois le token récupéré.
  */
 export async function GET(req: Request) {
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  const redirectUri = `${proto}://${host}/api/oauth`;
+  const redirectUri = "https://s-imp.vercel.app/api/oauth";
 
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
