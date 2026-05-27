@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * À supprimer une fois le token récupéré.
  */
 export async function GET(req: Request) {
-  const redirectUri = "https://s-imp.vercel.app/api/oauth";
+  const redirectUri = "https://agenda-rdv.vercel.app/api/oauth";
 
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
