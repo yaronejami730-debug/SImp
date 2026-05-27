@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listEvents, markReminderSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
-import { reminderEmail, cancellationFollowupEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail } from "@/lib/email-templates";
+import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
     }
   }
 
-  // === Séquence de relances après annulation (J+7, J+14, J+30) ===
+  // === Séquence de relances (annulation / réflexion / non-signé) ===
   let followupsSent = 0;
   try {
     const due = await dueFollowups();
@@ -80,15 +80,20 @@ export async function GET(req: Request) {
         const stage = (r.stage + 1) as 1 | 2 | 3;
         const token = signBooking({ email: r.email, listingUrl: r.listing_url, owner: r.owner, civility: r.civility });
         const bookUrl = `${base}/book?t=${encodeURIComponent(token)}`;
-        const mail = cancellationFollowupEmail({
-          stage,
-          civility: r.civility,
-          firstName: r.first_name,
-          lastName: r.last_name,
-          bookUrl,
-        });
+        const unsubUrl = `${base}/unsubscribe?t=${encodeURIComponent(token)}`;
+        const type = r.type ?? "cancel";
+
+        let mail: { subject: string; html: string };
+        if (type === "thinking") {
+          mail = thinkingFollowupEmail({ stage: stage as 1 | 2, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
+        } else if (type === "unsigned") {
+          mail = unsignedFollowupEmail({ stage: stage as 1 | 2 | 3, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
+        } else {
+          mail = cancellationFollowupEmail({ stage: stage as 1 | 2 | 3, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
+        }
+
         await sendEmail({ to: r.email, toName: r.first_name, subject: mail.subject, html: mail.html });
-        await advanceFollowup(r.id, r.stage);
+        await advanceFollowup(r.id, r.stage, type);
         followupsSent++;
       } catch (e) {
         errors.push(e instanceof Error ? e.message : String(e));

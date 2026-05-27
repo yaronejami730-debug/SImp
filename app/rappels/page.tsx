@@ -35,7 +35,17 @@ const waPhone = (raw: string) => {
   if (d.startsWith("0")) return "33" + d.slice(1);
   return d;
 };
-const waUrl = (raw: string) => `https://wa.me/${waPhone(raw)}`;
+const waUrl = (raw: string, text?: string) =>
+  `https://wa.me/${waPhone(raw)}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+
+/** Texte WhatsApp pré-rempli pour confirmation d'un rappel téléphonique. */
+function waMessage(r: { first_name: string; remind_at: string }): string {
+  const dt = new Date(r.remind_at);
+  const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(dt);
+  const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(dt).replace(":", "h");
+  const hello = r.first_name ? `Bonjour ${r.first_name},` : "Bonjour,";
+  return [hello, "", "Nous avons bien pris note de votre demande et sommes ravis de pouvoir échanger avec vous.", "", `Votre rendez-vous téléphonique est confirmé pour le ${date} à ${heure}.`, "Nous restons disponibles pour toute question d'ici là.", "", "Cordialement,", "L'équipe Simplicicar Paris 17"].join("\n");
+}
 
 const parisDate = (d: Date) =>
   new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
@@ -60,7 +70,6 @@ function Rappels() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
-  const [clientEmail, setClientEmail] = useState("");
   const [listingUrl, setListingUrl] = useState("");
   const [note, setNote] = useState("");
   const [remindDate, setRemindDate] = useState("");
@@ -105,11 +114,11 @@ function Rappels() {
       const res = await fetch("/api/reminders", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ firstName, lastName, phone, clientEmail, listingUrl, note, remindAt }),
+        body: JSON.stringify({ firstName, lastName, phone, listingUrl, note, remindAt }),
       });
       const d = await res.json();
       if (d.ok) {
-        setFirstName(""); setLastName(""); setPhone(""); setClientEmail(""); setListingUrl(""); setNote("");
+        setFirstName(""); setLastName(""); setPhone(""); setListingUrl(""); setNote("");
         setRemindDate(""); setRemindTime("09:00");
         load();
       } else alert(d.error ?? "Erreur");
@@ -206,7 +215,7 @@ function Rappels() {
           📞 Appeler
         </a>
         <a
-          href={waUrl(r.phone)}
+          href={waUrl(r.phone, waMessage(r))}
           target="_blank"
           rel="noreferrer"
           style={{
@@ -214,7 +223,7 @@ function Rappels() {
             background: "#25D366", color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600,
           }}
         >
-          💬 WhatsApp
+          💬 Envoyer confirmation WhatsApp
         </a>
         <button
           onClick={() => goToRdv(r)}
@@ -289,10 +298,6 @@ function Rappels() {
           <div>
             <label style={labelStyle}>Téléphone *</label>
             <input style={inputStyle} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" />
-          </div>
-          <div>
-            <label style={labelStyle}>E-mail client (optionnel — reçoit un rappel + ajouté aux contacts Google)</label>
-            <input style={inputStyle} type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="client@exemple.com" />
           </div>
           <div>
             <label style={labelStyle}>Lien de l&apos;annonce</label>

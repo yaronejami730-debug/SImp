@@ -95,10 +95,30 @@ function Agenda() {
 
   const fmt = (iso: string) => new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-  const signBtn = (a: Appt, val: Sign, label: string, color: string) => (
-    <button onClick={() => { const v = a.signStatus === val ? "" : val; setLocal(a.id, { signStatus: v }); save(a.id, { signStatus: v }); }}
-      style={{ flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 600, borderRadius: 7, cursor: "pointer", border: a.signStatus === val ? `1.5px solid ${color}` : "1.5px solid #e5e7eb", background: a.signStatus === val ? color : "#fff", color: a.signStatus === val ? "#fff" : "#6b7280" }}>{label}</button>
-  );
+  const signBtn = (a: Appt, val: Sign, label: string, color: string) => {
+    const locked = !!a.signStatus;       // un statut déjà choisi -> tout est verrouillé
+    const active = a.signStatus === val;
+    return (
+      <button
+        onClick={() => {
+          if (locked) return;            // pas de désélection ni de changement
+          setLocal(a.id, { signStatus: val });
+          save(a.id, { signStatus: val });
+        }}
+        disabled={locked && !active}
+        style={{
+          flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 600, borderRadius: 7,
+          cursor: locked ? "default" : "pointer",
+          border: active ? `1.5px solid ${color}` : "1.5px solid #e5e7eb",
+          background: active ? color : "#fff",
+          color: active ? "#fff" : "#6b7280",
+          opacity: locked && !active ? 0.45 : 1,
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
 
   const card = (a: Appt) => (
     <div key={a.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>

@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
     // Programme la séquence de relances (J+7, J+14, J+30 après).
     if (email) {
-      try { await scheduleFollowup({ email, civility, firstName, lastName, listingUrl, owner }); } catch { /* non-bloquant */ }
+      try { await scheduleFollowup({ email, civility, firstName, lastName, listingUrl, owner, type: "cancel" }); } catch { /* non-bloquant */ }
     }
 
     return NextResponse.json({ ok: true, emailSent });

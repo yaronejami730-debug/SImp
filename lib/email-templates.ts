@@ -40,6 +40,11 @@ function btn(href: string | undefined, label: string, bg: string) {
   return `<tr><td style="padding:6px 0"><a href="${href}" target="_blank" style="display:block;background:${bg};color:#ffffff;text-decoration:none;font-family:${FONT_BODY};font-size:15px;font-weight:600;text-align:center;padding:14px 20px;border-radius:8px">${label}</a></td></tr>`;
 }
 
+function btnOutline(href: string | undefined, label: string, color: string) {
+  if (!href) return "";
+  return `<tr><td style="padding:6px 0"><a href="${href}" target="_blank" style="display:block;background:#ffffff;color:${color};text-decoration:none;font-family:${FONT_BODY};font-size:13px;font-weight:600;text-align:center;padding:12px 20px;border-radius:8px;border:1.5px solid ${color}">${label}</a></td></tr>`;
+}
+
 function shell(content: string, buttons = "") {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Cabin:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></head>
@@ -128,6 +133,7 @@ export function cancellationFollowupEmail(d: {
   stage: 1 | 2 | 3;
   civility?: string; firstName: string; lastName?: string;
   bookUrl: string;
+  unsubUrl?: string;
 }) {
   const hello = `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>`;
   let body = "";
@@ -150,8 +156,87 @@ export function cancellationFollowupEmail(d: {
       <p style="margin:0 0 8px;font-size:15px">Reprenez rendez-vous quand vous voulez :</p>`;
   }
   const content = hello + body + `<p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
-  const buttons = btn(d.bookUrl, "Programmer un rendez-vous", C.primary);
+  const buttons = btn(d.bookUrl, "Programmer un rendez-vous", C.primary) + btnOutline(d.unsubUrl, "Mon véhicule est vendu", C.muted);
   return { subject, html: shell(content, buttons) };
+}
+
+// ─── Relances post-RDV en fonction du statut signature ───
+
+/** Relance pour les "réfléchit". stage 1 = J+3, stage 2 = J+13. */
+export function thinkingFollowupEmail(d: {
+  stage: 1 | 2;
+  civility?: string; firstName: string; lastName?: string;
+  bookUrl: string;
+  unsubUrl?: string;
+}) {
+  const hello = `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>`;
+  let body = "";
+  let subject = "";
+  if (d.stage === 1) {
+    subject = `Toujours en réflexion ? — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Suite à votre passage, nous restons disponibles pour répondre à toutes vos questions sur la vente de votre véhicule.</p>
+      <p style="margin:0 0 16px;font-size:15px">Si vous souhaitez aller plus loin, reprenez rendez-vous quand vous voulez :</p>`;
+  } else {
+    subject = `Nous restons à votre disposition — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Avez-vous pris une décision concernant la vente de votre véhicule ?</p>
+      <p style="margin:0 0 16px;font-size:15px">Notre équipe peut affiner l'estimation, vous proposer une reprise immédiate ou simplement répondre à vos dernières questions.</p>
+      <p style="margin:0 0 8px;font-size:15px">Reprenons rendez-vous quand vous le souhaitez :</p>`;
+  }
+  const content = hello + body + `<p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(d.bookUrl, "Reprendre rendez-vous", C.primary) + btnOutline(d.unsubUrl, "Mon véhicule est vendu", C.muted);
+  return { subject, html: shell(content, buttons) };
+}
+
+/** Relance pour les "pas signés". stage 1 = J+14, stage 2 = J+44, stage 3 = J+119. */
+export function unsignedFollowupEmail(d: {
+  stage: 1 | 2 | 3;
+  civility?: string; firstName: string; lastName?: string;
+  bookUrl: string;
+  unsubUrl?: string;
+}) {
+  const hello = `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>`;
+  let body = "";
+  let subject = "";
+  if (d.stage === 1) {
+    subject = `Votre véhicule est-il toujours à vendre ? — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Vous nous avez rencontrés il y a deux semaines et la vente n'est pas encore finalisée.</p>
+      <p style="margin:0 0 16px;font-size:15px">Si le projet est toujours d'actualité, nous pouvons reprendre là où nous nous sommes arrêtés — sans frais, sans engagement.</p>
+      <p style="margin:0 0 8px;font-size:15px">Reprenons contact :</p>`;
+  } else if (d.stage === 2) {
+    subject = `Le marché évolue — refaisons un point — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Cela fait quelques semaines depuis notre dernier échange.</p>
+      <p style="margin:0 0 16px;font-size:15px">Le marché de l'occasion évolue chaque mois : nous pouvons refaire un point sur la cote actuelle de votre véhicule.</p>
+      <p style="margin:0 0 8px;font-size:15px">Programmez un nouveau rendez-vous :</p>`;
+  } else {
+    subject = `Toujours là pour vous accompagner — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Quelques mois après notre rencontre, nous restons disponibles si vous souhaitez relancer la vente de votre véhicule.</p>
+      <p style="margin:0 0 16px;font-size:15px">Nous serons heureux de vous accompagner pour finaliser la transaction sereinement.</p>
+      <p style="margin:0 0 8px;font-size:15px">Prenez rendez-vous quand vous voulez :</p>`;
+  }
+  const content = hello + body + `<p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(d.bookUrl, "Reprendre rendez-vous", C.primary) + btnOutline(d.unsubUrl, "Mon véhicule est vendu", C.muted);
+  return { subject, html: shell(content, buttons) };
+}
+
+/** Mail envoyé juste après la signature : lien vers le questionnaire /avis. */
+export function signedRatingEmail(d: {
+  civility?: string; firstName: string; lastName?: string;
+  avisUrl?: string;
+}) {
+  const avisHref = d.avisUrl || `${(process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "")}/avis`;
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
+    <p style="margin:0 0 16px;font-size:15px">Merci pour votre confiance — votre vente est finalisée.</p>
+    <p style="margin:0 0 16px;font-size:15px">Pouvez-vous prendre 30 secondes pour <strong>noter votre expérience</strong> ?</p>
+    <p style="margin:0 0 4px;font-size:14px;color:${C.muted}">Votre retour nous aide à toujours mieux vous servir.</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(avisHref, "⭐ Noter l'établissement", C.primary);
+  return { subject: `Notez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
 // ─── Rappel téléphonique (RDV téléphonique programmé via Prospection) ───

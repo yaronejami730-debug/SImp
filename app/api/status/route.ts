@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { patchTracking } from "@/lib/google";
+import { patchTracking, getEvent } from "@/lib/google";
 import { getAuth } from "@/lib/auth";
+import { scheduleFollowup, type FollowupType } from "@/lib/followups";
+import { sendEmail } from "@/lib/brevo";
+import { signedRatingEmail } from "@/lib/email-templates";
+import { signBooking } from "@/lib/auth";
+import { baseUrlFrom } from "@/lib/links";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -21,6 +26,43 @@ export async function POST(req: Request) {
     }
 
     await patchTracking(eid, { present, signStatus, negotiation });
+
+    // Déclenche les actions post-signature (best-effort, n'empêche pas la réponse).
+    if (signStatus && ["thinking", "unsigned", "signed"].includes(signStatus)) {
+      try {
+        const ev = await getEvent(eid);
+        const priv = ev.extendedProperties?.private ?? {};
+        const email = priv.clientEmail;
+        const civility = priv.clientCivility;
+        const firstName = priv.clientFirstName ?? "";
+        const lastName = priv.clientLastName ?? "";
+        const listingUrl = priv.listingUrl ?? "";
+        const owner = priv.owner ?? "";
+
+        if (email) {
+          if (signStatus === "signed") {
+            const mail = signedRatingEmail({ civility, firstName, lastName });
+            await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+          } else {
+            const type: FollowupType = signStatus === "thinking" ? "thinking" : "unsigned";
+            const base = baseUrlFrom();
+            const token = signBooking({ email, listingUrl, owner, civility });
+            await scheduleFollowup({
+              email,
+              civility,
+              firstName,
+              lastName,
+              listingUrl,
+              owner,
+              type,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("post-sign action failed", err);
+      }
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue.";

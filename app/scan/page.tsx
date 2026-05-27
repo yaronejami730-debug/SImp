@@ -33,6 +33,21 @@ const BRAND_CHOICES = [
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, color: "#6b7280", marginBottom: 6, fontWeight: 600 };
 const inputStyle: React.CSSProperties = { width: "100%", padding: 10, fontSize: 14, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box", fontFamily: "inherit", background: "#fff" };
 
+type PvResult = {
+  url: string;
+  title: string;
+  brand: string;
+  model: string;
+  price: number | null;
+  km: number | null;
+  year: number | null;
+  sellerName: string;
+  sellerPhone: string;
+  city: string;
+  postalCode: string;
+  isPro: boolean;
+};
+
 function Scan() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +57,44 @@ function Scan() {
   const [minYear, setMinYear] = useState(2016);
   const [particulierOnly, setParticulierOnly] = useState(true);
   const [includeDismissed, setIncludeDismissed] = useState(false);
+
+  // --- Scan d'une URL paru-vendu (particuliers uniquement) ---
+  const [pvUrl, setPvUrl] = useState("");
+  const [pvBusy, setPvBusy] = useState(false);
+  const [pvErr, setPvErr] = useState("");
+  const [pvResults, setPvResults] = useState<PvResult[]>([]);
+  const [pvInfo, setPvInfo] = useState<{ totalFound: number; skippedPros: number; blocked: number } | null>(null);
+  const [pvAdded, setPvAdded] = useState<Record<string, boolean>>({});
+
+  async function pvScan() {
+    if (!pvUrl.trim()) return;
+    setPvBusy(true); setPvErr(""); setPvResults([]); setPvInfo(null); setPvAdded({});
+    try {
+      const res = await fetch("/api/scan-url", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ url: pvUrl, max: 30 }),
+      });
+      const d = await res.json();
+      if (!d.ok) { setPvErr(d.error ?? "Erreur"); return; }
+      setPvResults(d.results ?? []);
+      setPvInfo({ totalFound: d.totalFound ?? 0, skippedPros: d.skippedPros ?? 0, blocked: d.blocked ?? 0 });
+    } catch (e) { setPvErr(e instanceof Error ? e.message : "Erreur"); }
+    finally { setPvBusy(false); }
+  }
+
+  async function pvAddLead(r: PvResult) {
+    if (!r.sellerPhone) return;
+    const noteBits = [r.title, r.year, r.km ? `${r.km} km` : "", r.price ? `${r.price} €` : "", r.city].filter(Boolean);
+    const res = await fetch("/api/leads", {
+      method: "POST",
+      headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ phone: r.sellerPhone, listingUrl: r.url, note: noteBits.join(" · ") }),
+    });
+    const d = await res.json();
+    if (d.ok) setPvAdded((m) => ({ ...m, [r.url]: true }));
+    else alert(d.error ?? "Erreur ajout lead");
+  }
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
@@ -94,6 +147,86 @@ function Scan() {
 
   return (
     <>
+      {/* ─── Scan URL paru-vendu ─── */}
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 18, marginBottom: 16 }}>
+        <h1 style={{ margin: "0 0 6px", fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: NAVY, textTransform: "uppercase" }}>🔎 Scanner une URL paru-vendu</h1>
+        <p style={{ margin: "0 0 12px", color: "#6b7280", fontSize: 13 }}>
+          Colle une URL de résultats paru-vendu. Le scanner extrait <strong>uniquement les particuliers</strong> (téléphone + ville), pas les pros.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            value={pvUrl}
+            onChange={(e) => setPvUrl(e.target.value)}
+            placeholder="https://www.paruvendu.fr/recherche/voiture-occasion/..."
+            style={{ ...inputStyle, flex: "1 1 280px" }}
+          />
+          <button
+            onClick={pvScan}
+            disabled={pvBusy || !pvUrl.trim()}
+            style={{
+              padding: "10px 18px", borderRadius: 8, border: "none", fontWeight: 600, fontSize: 14, cursor: pvBusy || !pvUrl.trim() ? "not-allowed" : "pointer",
+              background: pvBusy || !pvUrl.trim() ? "#cbd5e1" : PINK, color: "#fff",
+            }}
+          >
+            {pvBusy ? "Scan en cours…" : "🚀 Scanner"}
+          </button>
+        </div>
+        {pvErr && <p style={{ color: "#dc2626", marginTop: 10, fontSize: 13 }}>❌ {pvErr}</p>}
+        {pvInfo && (
+          <p style={{ color: "#6b7280", marginTop: 10, fontSize: 13 }}>
+            {pvInfo.totalFound} annonces analysées · {pvInfo.skippedPros} pros ignorés ·{" "}
+            {pvInfo.blocked > 0 && (
+              <>
+                <strong style={{ color: "#dc2626" }}>{pvInfo.blocked} bloquées (anti-bot)</strong> ·{" "}
+              </>
+            )}
+            <strong style={{ color: pvResults.length ? NAVY : "#6b7280" }}>{pvResults.length} particuliers</strong>
+          </p>
+        )}
+        {pvResults.length > 0 && (
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            {pvResults.map((r) => {
+              const added = pvAdded[r.url];
+              return (
+                <div key={r.url} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#fafbfc" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 700, color: NAVY, fontSize: 15 }}>{r.title || `${r.brand} ${r.model}`.trim()}</div>
+                      <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>
+                        {r.year && <>{r.year} · </>}
+                        {r.km != null && <>{r.km.toLocaleString("fr-FR")} km · </>}
+                        {r.price != null && <strong style={{ color: NAVY }}>{r.price.toLocaleString("fr-FR")} €</strong>}
+                        {r.city && <> · {r.city} {r.postalCode}</>}
+                      </div>
+                      {r.sellerPhone && (
+                        <div style={{ marginTop: 4, fontSize: 14, fontWeight: 600, color: "#16a34a" }}>
+                          📞 {r.sellerPhone}{r.sellerName ? ` — ${r.sellerName}` : ""}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "flex-start" }}>
+                      <a href={r.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, padding: "6px 10px", borderRadius: 6, background: "#fff", border: "1.5px solid #e5e7eb", color: ACCENT, textDecoration: "none", fontWeight: 600 }}>
+                        Annonce →
+                      </a>
+                      <button
+                        onClick={() => pvAddLead(r)}
+                        disabled={added || !r.sellerPhone}
+                        style={{
+                          fontSize: 12, padding: "6px 10px", borderRadius: 6, border: "none", cursor: added || !r.sellerPhone ? "default" : "pointer", fontWeight: 600,
+                          background: added ? "#16a34a" : !r.sellerPhone ? "#e5e7eb" : PINK, color: added ? "#fff" : !r.sellerPhone ? "#9aa6b8" : "#fff",
+                        }}
+                      >
+                        {added ? "✅ Ajouté" : "+ Lead"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 18, marginBottom: 16 }}>
         <h1 style={{ margin: "0 0 14px", fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: NAVY, textTransform: "uppercase" }}>Scan annonces</h1>
         <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 13 }}>Feed des alertes mail LBC / LaCentrale / ParuVendu. Configure tes recherches sauvegardées côté sites, fais-les arriver dans ce flux.</p>
