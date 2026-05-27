@@ -24,7 +24,10 @@ export async function POST(req: Request) {
     );
 
     const base = (process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "");
-    const bookUrl = `${base}/paris-17`;
+    const params = new URLSearchParams();
+    if (friendName) params.set("name", friendName);
+    if (friendEmail) params.set("email", friendEmail);
+    const bookUrl = `${base}/recommandation?${params.toString()}`;
 
     const mail = referralEmail({ friendName: friendName || undefined, bookUrl });
     await sendEmail({ to: friendEmail, toName: friendName, subject: mail.subject, html: mail.html });
