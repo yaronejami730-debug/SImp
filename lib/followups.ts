@@ -1,12 +1,13 @@
 import { getPool } from "./db";
 
-export type FollowupType = "cancel" | "thinking" | "unsigned";
+export type FollowupType = "cancel" | "thinking" | "unsigned" | "signed";
 
 /** Délais en jours par type de relance. */
 export const FOLLOWUP_DELAYS: Record<FollowupType, number[]> = {
   cancel: [7, 14, 30],     // J+7, J+21, J+51
   thinking: [3, 10],       // J+3, J+13
   unsigned: [14, 30, 75],  // J+14, J+44, J+119
+  signed: [3],             // J+3 → mail notation
 };
 
 export type FollowupRow = {

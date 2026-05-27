@@ -239,6 +239,22 @@ export function signedRatingEmail(d: {
   return { subject: `Notez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
+/** Mail de recommandation envoyé au proche (parrainage). */
+export function referralEmail(d: { friendName?: string; bookUrl: string }) {
+  const hello = d.friendName
+    ? `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${d.friendName},</p>`
+    : `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour,</p>`;
+  const content = `
+    ${hello}
+    <p style="margin:0 0 16px;font-size:15px">Un de vos proches a pensé à vous en découvrant <strong>${BUSINESS}</strong> — et il a eu raison !</p>
+    <p style="margin:0 0 16px;font-size:15px">Nous sommes spécialisés dans la vente de véhicules d'occasion : <strong>aucun frais</strong>, un <strong>prix net garanti</strong> dès le départ, et une équipe qui s'occupe de tout.</p>
+    <p style="margin:0 0 16px;font-size:15px">Que vous souhaitiez vendre votre véhicule ou simplement obtenir une estimation gratuite, nous serions ravis d'en discuter avec vous.</p>
+    <p style="margin:0 0 16px;font-size:15px">Prenez rendez-vous en quelques clics — c'est sans engagement :</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()} — Paris 17</p>`;
+  const buttons = btn(d.bookUrl, "Prendre rendez-vous gratuitement", C.primary);
+  return { subject: `Un proche vous recommande ${BUSINESS}`, html: shell(content, buttons) };
+}
+
 // ─── Rappel téléphonique (RDV téléphonique programmé via Prospection) ───
 
 type PhoneRappelOrganizerData = {

@@ -40,13 +40,13 @@ export async function POST(req: Request) {
         const owner = priv.owner ?? "";
 
         if (email) {
-          if (signStatus === "signed") {
-            const mail = signedRatingEmail({ civility, firstName, lastName });
-            await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
-          } else {
-            const type: FollowupType = signStatus === "thinking" ? "thinking" : "unsigned";
-            const base = baseUrlFrom();
-            const token = signBooking({ email, listingUrl, owner, civility });
+          const typeMap: Record<string, FollowupType> = {
+            signed: "signed",
+            thinking: "thinking",
+            unsigned: "unsigned",
+          };
+          const type = typeMap[signStatus];
+          if (type) {
             await scheduleFollowup({
               email,
               civility,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { listEvents, markReminderSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
-import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail } from "@/lib/email-templates";
+import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
@@ -84,7 +84,9 @@ export async function GET(req: Request) {
         const type = r.type ?? "cancel";
 
         let mail: { subject: string; html: string };
-        if (type === "thinking") {
+        if (type === "signed") {
+          mail = signedRatingEmail({ civility: r.civility, firstName: r.first_name, lastName: r.last_name, avisUrl: `${base}/avis` });
+        } else if (type === "thinking") {
           mail = thinkingFollowupEmail({ stage: stage as 1 | 2, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
         } else if (type === "unsigned") {
           mail = unsignedFollowupEmail({ stage: stage as 1 | 2 | 3, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });

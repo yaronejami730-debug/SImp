@@ -141,6 +141,19 @@ export default function AvisPage() {
                 </div>
               </div>
 
+              {recommande === "Oui, sans hésiter" && (
+                <a
+                  href="/parrainage"
+                  style={{
+                    display: "block", textAlign: "center", padding: "14px 20px", borderRadius: 10,
+                    background: "#16a34a", color: "#fff", textDecoration: "none",
+                    fontWeight: 700, fontSize: 15, fontFamily: FONT_BODY,
+                  }}
+                >
+                  🤝 Recommander Simplicicar à un proche
+                </a>
+              )}
+
               <div>
                 <label style={{ display: "block", fontSize: 14, fontWeight: 600, color: NAVY, marginBottom: 6 }}>
                   Un mot pour nous ? (optionnel)
