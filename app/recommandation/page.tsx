@@ -53,11 +53,14 @@ export default function RecommandationPage() {
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [mode, setMode] = useState<"vente" | "achat">("vente");
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const p = new URLSearchParams(window.location.search);
     if (p.get("name")) setFirstName(p.get("name")!);
     if (p.get("email")) setEmail(p.get("email")!);
+    if (p.get("type") === "achat") setMode("achat");
   }, []);
 
   const brand = brandSel === "Autre" ? brandCustom : brandSel;
@@ -91,7 +94,7 @@ export default function RecommandationPage() {
       const res = await fetch("/api/recommandation", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, email, phone, brand, model, km, year, photos }),
+        body: JSON.stringify({ firstName, lastName, email, phone, brand, model, km, year, photos, mode }),
       });
       const d = await res.json();
       if (d.ok) setDone(true);
@@ -127,10 +130,12 @@ export default function RecommandationPage() {
         ) : (
           <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 28, boxShadow: "0 8px 24px rgba(26,39,58,0.06)" }}>
             <h1 style={{ fontFamily: FONT_HEAD, fontSize: 22, color: NAVY, margin: "0 0 6px", textAlign: "center" }}>
-              Estimation gratuite
+              {mode === "achat" ? "Vous souhaitez acheter un véhicule" : "Estimation gratuite"}
             </h1>
             <p style={{ color: "#6b7280", fontSize: 14, textAlign: "center", margin: "0 0 22px" }}>
-              Un proche vous a recommandé Simplicicar. Remplissez ce formulaire, on vous rappelle sous 24h.
+              {mode === "achat"
+                ? "Décrivez le véhicule que vous recherchez, un conseiller vous rappelle sous 24h."
+                : "Un proche vous a recommandé Simplicicar. Remplissez ce formulaire, on vous rappelle sous 24h."}
             </p>
 
             <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
@@ -184,11 +189,11 @@ export default function RecommandationPage() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <label style={labelStyle}>Kilométrage</label>
-                  <input style={inputStyle} inputMode="numeric" value={km} onChange={(e) => setKm(e.target.value.replace(/[^\d ]/g, ""))} placeholder="85 000" />
+                  <label style={labelStyle}>{mode === "achat" ? "Budget max (€)" : "Kilométrage"}</label>
+                  <input style={inputStyle} inputMode="numeric" value={km} onChange={(e) => setKm(e.target.value.replace(/[^\d ]/g, ""))} placeholder={mode === "achat" ? "25 000" : "85 000"} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Année</label>
+                  <label style={labelStyle}>{mode === "achat" ? "Année min souhaitée" : "Année"}</label>
                   <select style={inputStyle} value={year} onChange={(e) => setYear(e.target.value)}>
                     <option value="">—</option>
                     {years.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -196,9 +201,9 @@ export default function RecommandationPage() {
                 </div>
               </div>
 
-              <div style={{ height: 1, background: "#f1f5f9", margin: "4px 0" }} />
+              {mode === "vente" && <div style={{ height: 1, background: "#f1f5f9", margin: "4px 0" }} />}
 
-              <div>
+              {mode === "vente" && <div>
                 <label style={labelStyle}>Photos du véhicule (5 max)</label>
                 <input
                   ref={fileRef}
@@ -242,7 +247,7 @@ export default function RecommandationPage() {
                     ))}
                   </div>
                 )}
-              </div>
+              </div>}
 
               {err && <p style={{ color: "#dc2626", fontSize: 13, margin: 0 }}>❌ {err}</p>}
 
@@ -255,7 +260,7 @@ export default function RecommandationPage() {
                   background: busy || !ready ? "#cbd5e1" : PINK, color: "#fff", marginTop: 4,
                 }}
               >
-                {busy ? "Envoi…" : "Obtenir mon estimation gratuite →"}
+                {busy ? "Envoi…" : "Se faire recontacter rapidement →"}
               </button>
 
               <p style={{ fontSize: 11, color: "#9aa6b8", margin: "4px 0 0", textAlign: "center" }}>

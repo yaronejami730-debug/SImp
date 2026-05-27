@@ -15,6 +15,7 @@ const inputStyle: React.CSSProperties = {
 export default function ParrainagePage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [referrerName, setReferrerName] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
@@ -30,7 +31,7 @@ export default function ParrainagePage() {
       const res = await fetch("/api/parrainage", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ friendEmail: email, friendName: name }),
+        body: JSON.stringify({ friendEmail: email, friendName: name, referrerName }),
       });
       const d = await res.json();
       if (d.ok) setDone(true);
@@ -70,6 +71,10 @@ export default function ParrainagePage() {
             </p>
 
             <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 6, fontWeight: 600 }}>Votre prénom (le parrain)</label>
+                <input style={inputStyle} value={referrerName} onChange={(e) => setReferrerName(e.target.value)} placeholder="Votre prénom" />
+              </div>
               <div>
                 <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 6, fontWeight: 600 }}>Prénom de votre proche</label>
                 <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Jean" />

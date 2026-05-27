@@ -21,6 +21,7 @@ export async function POST(req: Request) {
   const km = Number(String(body.km ?? "").replace(/\D/g, "")) || null;
   const year = Number(body.year) || null;
   const photos = Array.isArray(body.photos) ? (body.photos as string[]).slice(0, 5) : [];
+  const mode = String(body.mode ?? "vente");
 
   if (!firstName || !lastName) return NextResponse.json({ error: "Nom et prénom requis." }, { status: 400 });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ error: "E-mail invalide." }, { status: 400 });
@@ -29,8 +30,8 @@ export async function POST(req: Request) {
   try {
     await getPool().query(
       `insert into estimations (first_name, last_name, email, phone, brand, model, km, year, photos, source, referral)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'recommandation',true)`,
-      [firstName, lastName, email, phone, brand, model, km, year, photos],
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)`,
+      [firstName, lastName, email, phone, brand, model, km, year, photos, `recommandation-${mode}`],
     );
 
     if (ADMIN_EMAIL) {
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
         ? `<p><strong>${photos.length} photo(s)</strong> jointe(s) — voir le dashboard.</p>`
         : "";
       const html = `
-        <h2>Nouvelle estimation via recommandation</h2>
+        <h2>Nouvelle demande via recommandation (${mode === "achat" ? "ACHAT" : "VENTE"})</h2>
         <p><strong>${firstName} ${lastName}</strong></p>
         <p>📧 ${email}<br/>📞 ${phone}</p>
         <p>Véhicule : <strong>${brand} ${model}</strong>${year ? ` — ${year}` : ""}${km ? ` — ${km.toLocaleString("fr-FR")} km` : ""}</p>

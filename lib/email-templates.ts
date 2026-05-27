@@ -240,18 +240,21 @@ export function signedRatingEmail(d: {
 }
 
 /** Mail de recommandation envoyé au proche (parrainage). */
-export function referralEmail(d: { friendName?: string; bookUrl: string }) {
+export function referralEmail(d: { friendName?: string; referrerName?: string; sellUrl: string; buyUrl: string }) {
   const hello = d.friendName
     ? `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${d.friendName},</p>`
     : `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour,</p>`;
+  const referrerLine = d.referrerName
+    ? `<strong>${d.referrerName}</strong> a pensé à vous en découvrant <strong>${BUSINESS}</strong>.`
+    : `Un de vos proches a pensé à vous en découvrant <strong>${BUSINESS}</strong>.`;
   const content = `
     ${hello}
-    <p style="margin:0 0 16px;font-size:15px">Un de vos proches a pensé à vous en découvrant <strong>${BUSINESS}</strong> — et il a eu raison !</p>
+    <p style="margin:0 0 16px;font-size:15px">${referrerLine}</p>
     <p style="margin:0 0 16px;font-size:15px">Nous sommes spécialisés dans la vente de véhicules d'occasion : <strong>aucun frais</strong>, un <strong>prix net garanti</strong> dès le départ, et une équipe qui s'occupe de tout.</p>
-    <p style="margin:0 0 16px;font-size:15px">Que vous souhaitiez vendre votre véhicule ou simplement obtenir une estimation gratuite, nous serions ravis d'en discuter avec vous.</p>
-    <p style="margin:0 0 16px;font-size:15px">Prenez rendez-vous en quelques clics — c'est sans engagement :</p>
+    <p style="margin:0 0 16px;font-size:15px">Que vous souhaitiez <strong>vendre</strong> votre véhicule ou <strong>acheter</strong> un véhicule, nous serions ravis d'en discuter avec vous.</p>
+    <p style="margin:0 0 16px;font-size:15px">Faites-vous recontacter rapidement par l'un de nos conseillers :</p>
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()} — Paris 17</p>`;
-  const buttons = btn(d.bookUrl, "Prendre rendez-vous gratuitement", C.primary);
+  const buttons = btn(d.sellUrl, "🚗 Je vends mon véhicule", C.primary) + btn(d.buyUrl, "🛒 Je veux acheter un véhicule", C.navy);
   return { subject: `Un proche vous recommande ${BUSINESS}`, html: shell(content, buttons) };
 }
 
