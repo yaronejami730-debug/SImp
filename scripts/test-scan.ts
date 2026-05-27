@@ -1,5 +1,6 @@
 
 
+
 import { parseAlertEmail } from "../lib/scan";
 
 // Sample LBC alert email (synthetic but representative of LBC's actual structure).
