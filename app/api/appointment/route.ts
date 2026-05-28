@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { buildAppointment, type AppointmentInput } from "@/lib/parse";
 import { createEvent, isSlotFree, createGoogleContact } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
+import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { SLOT_MIN } from "@/lib/slots";
@@ -77,6 +78,15 @@ export async function POST(req: Request) {
     } catch (e) {
       emailError = e instanceof Error ? e.message : "Erreur e-mail.";
     }
+
+    // 3b. SMS confirmation (non-bloquant).
+    try {
+      const d = new Date(appt.startDateTime);
+      const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
+      const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
+      const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location}. Infos: ${whatsappUrl()} STOP au 36180`;
+      await sendSMS({ to: appt.phone, text });
+    } catch { /* non-bloquant */ }
 
     try {
       await createGoogleContact({

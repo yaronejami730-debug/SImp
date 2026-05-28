@@ -36,9 +36,10 @@ function Home() {
   const [showLink, setShowLink] = useState(false);
   const [linkCivility, setLinkCivility] = useState("Monsieur");
   const [linkEmail, setLinkEmail] = useState("");
+  const [linkPhone, setLinkPhone] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);
-  const [linkResult, setLinkResult] = useState<{ bookUrl: string; emailSent: boolean } | null>(null);
+  const [linkResult, setLinkResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
 
   async function sendLink() {
     if (!linkEmail.trim() || !linkUrl.trim()) return;
@@ -48,10 +49,10 @@ function Home() {
       const res = await fetch("/api/book/link", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ email: linkEmail, listingUrl: linkUrl, civility: linkCivility }),
+        body: JSON.stringify({ email: linkEmail, listingUrl: linkUrl, civility: linkCivility, phone: linkPhone }),
       });
       const d = await res.json();
-      if (d.ok) setLinkResult({ bookUrl: d.bookUrl, emailSent: d.emailSent });
+      if (d.ok) setLinkResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
       else alert(d.error ?? "Erreur");
     } finally {
       setLinkBusy(false);
@@ -216,13 +217,14 @@ function Home() {
               </div>
             </div>
             <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
+            <div><label style={labelStyle}>Téléphone (optionnel, pour SMS)</label><input style={inputStyle} type="tel" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
             <div><label style={labelStyle}>Lien de l&apos;annonce</label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); setLinkUrl(extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" /></div>
             <button onClick={sendLink} disabled={linkBusy || !linkEmail.trim() || !linkUrl.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkEmail.trim() || !linkUrl.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
               {linkBusy ? "Envoi…" : "Envoyer le lien au client"}
             </button>
             {linkResult && (
               <div style={{ padding: 14, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
-                <strong>✅ {linkResult.emailSent ? "Mail envoyé au client" : "Lien généré"}</strong>
+                <strong>✅ {linkResult.emailSent ? "Mail envoyé" : "Lien généré"}{linkResult.smsSent ? " + SMS envoyé" : ""}</strong>
                 <p style={{ margin: "8px 0 4px", fontSize: 12, color: "#166534" }}>Lien (à copier si besoin) :</p>
                 <input readOnly value={linkResult.bookUrl} onFocus={(e) => e.currentTarget.select()} style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #bbf7d0", boxSizing: "border-box" }} />
               </div>
