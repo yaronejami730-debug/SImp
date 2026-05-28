@@ -9,7 +9,7 @@ const NAVY = "#1a273a";
 const PINK = "#DB407A";
 const ACCENT = "#24B9D7";
 
-type Lead = { id: number; phone: string; listing_url: string; note: string | null; created_at: string };
+type Lead = { id: number; phone: string; listing_url: string; note: string | null; lead_ref: string; created_at: string };
 
 const waPhone = (raw: string) => {
   const d = raw.replace(/\D/g, "");
@@ -137,7 +137,10 @@ function Prospection() {
           <div key={l.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, color: NAVY, fontSize: 16 }}>{l.phone}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                  <a href={`/lead/${l.lead_ref}`} style={{ fontSize: 11, fontWeight: 700, color: PINK, background: "#fdf2f8", padding: "2px 8px", borderRadius: 999, textDecoration: "none" }}>{l.lead_ref}</a>
+                  <span style={{ fontWeight: 700, color: NAVY, fontSize: 16 }}>{l.phone}</span>
+                </div>
                 <a href={l.listing_url} target="_blank" rel="noreferrer" style={{ color: ACCENT, fontSize: 14, textDecoration: "none", fontWeight: 600 }}>{platformOf(l.listing_url)} — ouvrir l&apos;annonce →</a>
                 {l.note && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{l.note}</div>}
                 <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 2 }}>{new Date(l.created_at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>

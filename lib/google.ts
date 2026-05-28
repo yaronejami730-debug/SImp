@@ -31,6 +31,7 @@ export async function createGoogleContact(opts: {
   phone: string;
   email?: string;
   note?: string;
+  websites?: string[];
 }): Promise<string> {
   const auth = googleAuth();
   const people = google.people({ version: "v1", auth });
@@ -40,9 +41,37 @@ export async function createGoogleContact(opts: {
       phoneNumbers: opts.phone ? [{ value: opts.phone, type: "mobile" }] : [],
       emailAddresses: opts.email ? [{ value: opts.email }] : [],
       biographies: opts.note ? [{ value: opts.note, contentType: "TEXT_PLAIN" }] : [],
+      urls: (opts.websites ?? []).filter(Boolean).map((u) => ({ value: u })),
     },
   });
   return res.data.resourceName ?? "";
+}
+
+/** Met à jour un contact Google existant (par resourceName). */
+export async function updateGoogleContact(resourceName: string, opts: {
+  firstName?: string;
+  lastName?: string;
+  websites?: string[];
+}): Promise<void> {
+  const auth = googleAuth();
+  const people = google.people({ version: "v1", auth });
+  const existing = await people.people.get({ resourceName, personFields: "names,urls,metadata" });
+  const etag = existing.data.etag;
+  const updateFields: string[] = [];
+  const body: Record<string, unknown> = { etag };
+  if (opts.firstName !== undefined || opts.lastName !== undefined) {
+    body.names = [{ givenName: opts.firstName ?? "", familyName: opts.lastName ?? "" }];
+    updateFields.push("names");
+  }
+  if (opts.websites) {
+    body.urls = opts.websites.filter(Boolean).map((u) => ({ value: u }));
+    updateFields.push("urls");
+  }
+  await people.people.updateContact({
+    resourceName,
+    updatePersonFields: updateFields.join(","),
+    requestBody: body,
+  });
 }
 
 function calendarClient(): calendar_v3.Calendar {

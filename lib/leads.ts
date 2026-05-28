@@ -6,14 +6,23 @@ export type Lead = {
   listing_url: string;
   note: string | null;
   status: string;
+  lead_ref: string;
   created_at: string;
 };
 
+/** Génère le prochain identifiant SP-YYYY-NNN. */
+async function nextRef(): Promise<string> {
+  const { rows } = await getPool().query<{ n: string }>("select nextval('lead_ref_seq') as n");
+  const year = new Date().getFullYear();
+  return `SP-${year}-${String(rows[0].n).padStart(3, "0")}`;
+}
+
 /** Ajoute un lead de prospection (lien + téléphone, sans RDV). */
 export async function addLead(phone: string, listingUrl: string, note?: string): Promise<Lead> {
+  const ref = await nextRef();
   const { rows } = await getPool().query<Lead>(
-    `insert into leads (phone, listing_url, note) values ($1, $2, $3) returning *`,
-    [phone.trim(), listingUrl.trim(), note?.trim() || null],
+    `insert into leads (phone, listing_url, note, lead_ref) values ($1, $2, $3, $4) returning *`,
+    [phone.trim(), listingUrl.trim(), note?.trim() || null, ref],
   );
   return rows[0];
 }
@@ -34,6 +43,15 @@ export async function searchLeads(phoneQuery?: string): Promise<Lead[]> {
     `select * from leads order by created_at desc limit 100`,
   );
   return rows;
+}
+
+/** Récupère un lead par sa référence (SP-2026-001). */
+export async function getLeadByRef(ref: string): Promise<Lead | null> {
+  const { rows } = await getPool().query<Lead>(
+    `select * from leads where lead_ref = $1`,
+    [ref],
+  );
+  return rows[0] ?? null;
 }
 
 /** Supprime un lead. */

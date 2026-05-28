@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { addLead, searchLeads, deleteLead } from "@/lib/leads";
 import { getAuth } from "@/lib/auth";
+import { createGoogleContact } from "@/lib/google";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -34,6 +35,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Téléphone et lien requis." }, { status: 400 });
     }
     const lead = await addLead(phone, listingUrl, note);
+    const base = (process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "");
+    try {
+      await createGoogleContact({
+        firstName: lead.lead_ref,
+        phone: lead.phone,
+        websites: [lead.listing_url, `${base}/lead/${lead.lead_ref}`].filter(Boolean),
+      });
+    } catch { /* non-bloquant */ }
     return NextResponse.json({ ok: true, lead });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
