@@ -207,7 +207,8 @@ function Agenda() {
         </div>
       </div>
 
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher par téléphone du client" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 20 }} />
+      {/* tabIndex -1 empêche le focus auto sur mobile */}
+      <input tabIndex={-1} onFocus={(e) => e.target.tabIndex = 0} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher par téléphone du client" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 20 }} />
 
       {err && <p style={{ color: "#dc2626" }}>❌ {err}</p>}
       {section("Aujourd'hui", groups.auj)}
