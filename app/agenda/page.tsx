@@ -16,10 +16,11 @@ type Appt = {
   email: string; phone: string; platform: string; listingUrl: string; location: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
+  parkingRequested: boolean; parkingSent: boolean;
 };
 
 const histLabel = (t: string) =>
-  ({ created: "Rendez-vous créé + mail de confirmation", rescheduled: "Reprogrammé", reminder_24h: "Rappel 24h envoyé", reminder_2h: "Rappel 2h envoyé" } as Record<string, string>)[t] ?? t;
+  ({ created: "Rendez-vous créé + mail de confirmation", rescheduled: "Reprogrammé", reminder_24h: "Rappel 24h envoyé", reminder_2h: "Rappel 2h envoyé", parking_requested: "Place de parking réservée", parking_cancelled: "Réservation parking annulée", parking_sent: "Mail parking envoyé au client" } as Record<string, string>)[t] ?? t;
 
 const parisDate = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
@@ -52,6 +53,21 @@ function Agenda() {
   }
   async function save(id: string, patch: { present?: boolean; signStatus?: Sign; negotiation?: number }) {
     await fetch("/api/status", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: id, ...patch }) }).catch(() => {});
+  }
+  async function toggleParking(a: Appt) {
+    const next = !a.parkingRequested;
+    setLocal(a.id, { parkingRequested: next });
+    try {
+      const res = await fetch("/api/parking", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: a.id, requested: next }) });
+      const d = await res.json();
+      if (!d.ok) {
+        setLocal(a.id, { parkingRequested: !next });
+        alert(d.error ?? "Erreur");
+      }
+    } catch (e) {
+      setLocal(a.id, { parkingRequested: !next });
+      alert(e instanceof Error ? e.message : "Erreur");
+    }
   }
   async function cancel(a: Appt) {
     if (!confirm(`Annuler le RDV de ${a.firstName} ${a.lastName} ? Un mail d'annulation sera envoyé.`)) return;
@@ -165,6 +181,9 @@ function Agenda() {
         </details>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={() => toggleParking(a)} title={a.parkingSent ? "Mail parking déjà envoyé au client" : a.parkingRequested ? "Mail parking sera envoyé 2h avant le RDV" : "Réserver une place dans le parking sécurisé"} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: a.parkingRequested ? PINK : "#fff", color: a.parkingRequested ? "#fff" : NAVY, border: `1.5px solid ${a.parkingRequested ? PINK : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          🅿️ {a.parkingSent ? "Parking envoyé" : a.parkingRequested ? "Parking réservé" : "Réserver parking"}
+        </button>
         <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", padding: "9px 12px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>Reprogrammer</a>
         <button onClick={() => cancel(a)} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
       </div>

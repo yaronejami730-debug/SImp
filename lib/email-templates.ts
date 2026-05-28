@@ -117,6 +117,28 @@ export function rescheduledEmail(d: ConfirmData) {
   return { subject: `Rendez-vous reprogrammé — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
+/** Pré-RDV : annonce ludique que la place de parking est déjà bloquée pour le client.
+ *  Avantage Simplicicar : pas besoin de tourner dans Paris pour se garer. */
+export function parkingReservationEmail(d: {
+  civility?: string; firstName: string; lastName?: string;
+  startDateTime?: string;
+}) {
+  const when = d.startDateTime ? fmtLong(d.startDateTime) : null;
+  const rdvLine = when
+    ? `<p style="margin:0 0 16px;font-size:15px">Dans le cadre de votre rendez-vous prévu le <strong>${when.date} à ${when.heure}</strong>, comme convenu, nous tenions à vous informer d'un petit confort réservé pour vous.</p>`
+    : `<p style="margin:0 0 16px;font-size:15px">Dans le cadre de votre rendez-vous à venir, comme convenu, nous tenions à vous informer d'un petit confort réservé pour vous.</p>`;
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
+    ${rdvLine}
+    <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">🅿️ Une place de parking est réservée à votre nom.</p>
+    <p style="margin:0 0 16px;font-size:15px">Dans le cas où vous décidez de nous confier votre véhicule, vous pourrez en bénéficier dans notre <strong>parking sécurisé privé</strong>, en conciergerie.</p>
+    <p style="margin:0 0 16px;font-size:15px">Adresse : ${addressLine}</p>
+    <p style="margin:0 0 4px;font-size:15px">À très bientôt 👋</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(WAZE, "🧭 Itinéraire vers l'agence", C.navy);
+  return { subject: `Votre place de parking est réservée — ${BUSINESS}`, html: shell(content, buttons) };
+}
+
 /** Mail envoyé au client pour qu'il choisisse lui-même son créneau. */
 export function bookingInviteEmail(d: { bookUrl: string }) {
   const content = `

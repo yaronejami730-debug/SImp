@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { listEvents, markReminderSent } from "@/lib/google";
+import { listEvents, markReminderSent, markParkingSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
-import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail } from "@/lib/email-templates";
+import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
@@ -33,6 +33,7 @@ export async function GET(req: Request) {
 
   const base = baseUrlFrom();
   let sent = 0;
+  let parkingSentCount = 0;
   const errors: string[] = [];
 
   for (const ev of events) {
@@ -66,6 +67,32 @@ export async function GET(req: Request) {
       await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
       await markReminderSent(ev.id, kind);
       sent++;
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // === Mail parking : envoyé ~2h avant le RDV si parkingRequested et pas encore envoyé ===
+  for (const ev of events) {
+    const startIso = ev.start?.dateTime;
+    if (!startIso || !ev.id) continue;
+    const msUntil = new Date(startIso).getTime() - now.getTime();
+    if (msUntil <= 0 || msUntil > H2) continue;
+    const priv = ev.extendedProperties?.private ?? {};
+    if (priv.parkingRequested !== "1" || priv.parkingSent === "1") continue;
+    const email = priv.clientEmail;
+    const firstName = priv.clientFirstName ?? "";
+    if (!email) continue;
+    try {
+      const mail = parkingReservationEmail({
+        civility: priv.clientCivility,
+        firstName,
+        lastName: priv.clientLastName,
+        startDateTime: startIso,
+      });
+      await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+      await markParkingSent(ev.id);
+      parkingSentCount++;
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e));
     }
@@ -150,5 +177,5 @@ export async function GET(req: Request) {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
-  return NextResponse.json({ ok: true, checked: events.length, sent, followupsSent, phoneRappelsSent, errors });
+  return NextResponse.json({ ok: true, checked: events.length, sent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
 }

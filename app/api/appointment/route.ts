@@ -96,7 +96,9 @@ export async function POST(req: Request) {
         email: appt.email,
         note: [appt.platform, appt.listingUrl].filter(Boolean).join(" — "),
       });
-    } catch { /* non-bloquant */ }
+    } catch (err) {
+      console.error("createGoogleContact failed in /api/appointment", err);
+    }
 
     return NextResponse.json({
       ok: true,

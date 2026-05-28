@@ -262,6 +262,8 @@ export type AppointmentItem = {
   civility: string;
   createdAt: string | null;
   history: { t: string; at: string; info?: string }[];
+  parkingRequested: boolean;
+  parkingSent: boolean;
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -295,6 +297,8 @@ export async function listAppointments(
       civility: p.clientCivility ?? "",
       createdAt: ev.created ?? null,
       history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),
+      parkingRequested: p.parkingRequested === "1",
+      parkingSent: p.parkingSent === "1",
     };
   });
 }
@@ -363,6 +367,36 @@ export async function appendHistory(eventId: string, t: string, info?: string) {
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: { extendedProperties: { private: { history: JSON.stringify(hist.slice(-40)) } } },
+  });
+}
+
+/** Active/désactive la réservation parking pour un RDV. */
+export async function setParkingRequested(eventId: string, requested: boolean) {
+  const hist = await readHistory(eventId);
+  hist.push({ t: requested ? "parking_requested" : "parking_cancelled", at: new Date().toISOString() });
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: {
+      extendedProperties: {
+        private: {
+          parkingRequested: requested ? "1" : "",
+          ...(requested ? {} : { parkingSent: "" }),
+          history: JSON.stringify(hist.slice(-40)),
+        } as unknown as { [k: string]: string },
+      },
+    },
+  });
+}
+
+/** Marque que le mail parking a été envoyé. */
+export async function markParkingSent(eventId: string) {
+  const hist = await readHistory(eventId);
+  hist.push({ t: "parking_sent", at: new Date().toISOString() });
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { parkingSent: "1", history: JSON.stringify(hist.slice(-40)) } } },
   });
 }
 
