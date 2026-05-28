@@ -21,24 +21,27 @@ const people = google.people({ version: "v1", auth });
 const CAL_ID = env.GOOGLE_CALENDAR_ID || "primary";
 const DRY = process.argv.includes("--dry");
 
-// Plage : depuis 6 mois en arrière jusqu'à demain.
-const timeMin = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+// Plage : depuis 3 ans en arrière jusqu'à demain.
+const timeMin = new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000).toISOString();
 const timeMax = new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString();
 
 console.log(`Scan RDV simplici-rdv ${timeMin.slice(0, 10)} → ${timeMax.slice(0, 10)}${DRY ? " [DRY-RUN]" : ""}\n`);
 
+// Tous les events avec extendedProperties.private (app simplici-rdv OU clientEmail/clientPhone).
 const events = [];
 let pageToken;
 do {
   const res = await calendar.events.list({
     calendarId: CAL_ID,
     timeMin, timeMax,
-    privateExtendedProperty: ["app=simplici-rdv"],
     singleEvents: true,
     maxResults: 250,
     pageToken,
   });
-  events.push(...(res.data.items ?? []));
+  for (const ev of res.data.items ?? []) {
+    const p = ev.extendedProperties?.private;
+    if (p?.app === "simplici-rdv" || p?.clientPhone || p?.clientEmail) events.push(ev);
+  }
   pageToken = res.data.nextPageToken;
 } while (pageToken);
 

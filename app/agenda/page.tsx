@@ -56,6 +56,7 @@ function Agenda() {
   }
   async function toggleParking(a: Appt) {
     const next = !a.parkingRequested;
+    if (next && !confirm(`Envoyer le mail de réservation parking à ${a.firstName} ${a.lastName} (${a.email}) ?`)) return;
     setLocal(a.id, { parkingRequested: next });
     try {
       const res = await fetch("/api/parking", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: a.id, requested: next }) });
@@ -63,6 +64,17 @@ function Agenda() {
       if (!d.ok) {
         setLocal(a.id, { parkingRequested: !next });
         alert(d.error ?? "Erreur");
+        return;
+      }
+      if (next) {
+        if (d.emailSent) {
+          setLocal(a.id, { parkingSent: true });
+          alert("✅ Mail parking envoyé à " + a.email);
+        } else {
+          alert("Réservation enregistrée, mais mail non envoyé : " + (d.emailError ?? "raison inconnue"));
+        }
+      } else {
+        setLocal(a.id, { parkingSent: false });
       }
     } catch (e) {
       setLocal(a.id, { parkingRequested: !next });
