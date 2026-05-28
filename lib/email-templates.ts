@@ -26,8 +26,8 @@ function fmtLong(dt: string | Date) {
 }
 
 function greet(d: { civility?: string; firstName: string; lastName?: string }) {
-  if (d.civility && d.lastName) return `${d.civility} ${d.lastName}`;
-  return d.firstName;
+  if (d.lastName) return `${d.civility ?? "Monsieur"} ${d.lastName}`;
+  return `${d.civility ?? "Monsieur"} ${d.firstName}`;
 }
 
 function socialIcon(href: string, name: string, file: string) {
