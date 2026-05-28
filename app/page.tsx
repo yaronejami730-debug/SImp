@@ -65,11 +65,11 @@ function Home() {
   const ready = form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && form.listingUrl.trim() && form.date && form.time;
 
   useEffect(() => {
-    const prefill = typeof window !== "undefined" ? sessionStorage.getItem("prefillListingUrl") : null;
-    if (prefill) {
-      sessionStorage.removeItem("prefillListingUrl");
-      setForm((f) => ({ ...f, listingUrl: prefill }));
-    }
+    if (typeof window === "undefined") return;
+    const prefillUrl = sessionStorage.getItem("prefillListingUrl");
+    const prefillPhone = sessionStorage.getItem("prefillPhone");
+    if (prefillUrl) { sessionStorage.removeItem("prefillListingUrl"); setForm((f) => ({ ...f, listingUrl: prefillUrl })); }
+    if (prefillPhone) { sessionStorage.removeItem("prefillPhone"); setForm((f) => ({ ...f, phone: prefillPhone })); }
   }, []);
 
   useEffect(() => {
