@@ -105,6 +105,29 @@ function LeadDetail() {
           💬 WhatsApp
         </a>
       </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+        <button
+          onClick={() => {
+            sessionStorage.setItem("prefillPhone", lead.phone);
+            if (lead.listing_url) sessionStorage.setItem("prefillListingUrl", lead.listing_url);
+            window.location.href = "/";
+          }}
+          style={{ flex: "1 1 auto", padding: "13px 16px", borderRadius: 10, background: PINK, color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 600 }}
+        >
+          📅 Convertir en rendez-vous
+        </button>
+        <button
+          onClick={() => {
+            sessionStorage.setItem("prefillReminderPhone", lead.phone);
+            if (lead.listing_url) sessionStorage.setItem("prefillReminderUrl", lead.listing_url);
+            window.location.href = "/rappels";
+          }}
+          style={{ flex: "1 1 auto", padding: "13px 16px", borderRadius: 10, background: NAVY, color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 600 }}
+        >
+          📞 Programmer un rappel téléphonique
+        </button>
+      </div>
     </div>
   );
 }
