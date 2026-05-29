@@ -80,13 +80,19 @@ export async function POST(req: Request) {
     }
 
     // 3b. SMS confirmation (non-bloquant).
+    let smsSent = false;
+    let smsError: string | undefined;
     try {
       const d = new Date(appt.startDateTime);
       const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
       const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location}. Infos: ${whatsappUrl()} STOP au 36180`;
       await sendSMS({ to: appt.phone, text });
-    } catch { /* non-bloquant */ }
+      smsSent = true;
+    } catch (e) {
+      smsError = e instanceof Error ? e.message : "Erreur SMS.";
+      console.error("sendSMS failed in /api/appointment", e);
+    }
 
     try {
       await createGoogleContact({
@@ -106,6 +112,8 @@ export async function POST(req: Request) {
       eventLink: event.htmlLink,
       emailSent,
       emailError,
+      smsSent,
+      smsError,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue.";

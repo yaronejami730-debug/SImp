@@ -14,6 +14,10 @@ type Result = {
   eventLink?: string;
   appointment?: { firstName: string; lastName: string; email: string; platform: string; location: string; startDateTime: string };
   error?: string;
+  emailSent?: boolean;
+  emailError?: string;
+  smsSent?: boolean;
+  smsError?: string;
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
@@ -195,6 +199,10 @@ function Home() {
             <li>{new Date(result.appointment.startDateTime).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "full", timeStyle: "short" })}</li>
           </ul>
           {result.eventLink && <a href={result.eventLink} target="_blank" rel="noreferrer" style={{ color: PINK, fontWeight: 600, display: "inline-block", marginTop: 10 }}>Ouvrir dans Google Agenda →</a>}
+          <div style={{ marginTop: 10, fontSize: 13 }}>
+            <div style={{ color: result.emailSent ? "#166534" : "#dc2626" }}>{result.emailSent ? "✅ Mail confirmation envoyé" : `❌ Mail non envoyé${result.emailError ? ` : ${result.emailError}` : ""}`}</div>
+            <div style={{ color: result.smsSent ? "#166534" : "#dc2626" }}>{result.smsSent ? "✅ SMS confirmation envoyé" : `❌ SMS non envoyé${result.smsError ? ` : ${result.smsError}` : ""}`}</div>
+          </div>
         </div>
       )}
       {result && !result.ok && (
