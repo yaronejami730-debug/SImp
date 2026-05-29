@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { addReminder, listReminders, updateReminderStatus, deleteReminder, setReminderEventId, getReminderEventId } from "@/lib/reminders";
 import { createReminderEvent, deleteEvent, createGoogleContact } from "@/lib/google";
+import { sendSMS } from "@/lib/allmysms";
 import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 30;
@@ -84,7 +85,21 @@ export async function POST(req: Request) {
     } catch (err) {
       console.error("createGoogleContact failed (vérifie le scope `contacts` du refresh token)", err);
     }
-    return NextResponse.json({ ok: true, reminder });
+    // SMS confirmation du rappel au client (non-bloquant).
+    let smsSent = false;
+    let smsError: string | undefined;
+    try {
+      const d = new Date(reminder.remind_at);
+      const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
+      const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
+      const text = `Simplicicar: votre rappel est confirme ${date} a ${heure}. On vous appelle. STOP au 36180`;
+      await sendSMS({ to: reminder.phone, text });
+      smsSent = true;
+    } catch (err) {
+      smsError = err instanceof Error ? err.message : "Erreur SMS.";
+      console.error("sendSMS failed in /api/reminders", err);
+    }
+    return NextResponse.json({ ok: true, reminder, smsSent, smsError });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

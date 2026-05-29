@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       const d = new Date(appt.startDateTime);
       const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
-      const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location}. Infos: ${whatsappUrl()} STOP au 36180`;
+      const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location}. STOP au 36180`;
       await sendSMS({ to: appt.phone, text });
       smsSent = true;
     } catch (e) {

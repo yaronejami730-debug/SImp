@@ -121,6 +121,8 @@ function Rappels() {
         setFirstName(""); setLastName(""); setPhone(""); setListingUrl(""); setNote("");
         setRemindDate(""); setRemindTime("09:00");
         load();
+        if (d.smsSent) alert("✅ Rappel créé + SMS envoyé au client");
+        else alert(`✅ Rappel créé. SMS NON envoyé : ${d.smsError ?? "raison inconnue"}`);
       } else alert(d.error ?? "Erreur");
     } finally { setAdding(false); }
   }
