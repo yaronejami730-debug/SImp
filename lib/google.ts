@@ -264,6 +264,7 @@ export type AppointmentItem = {
   history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean;
   parkingSent: boolean;
+  cancelled: boolean;
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -299,6 +300,7 @@ export async function listAppointments(
       history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),
       parkingRequested: p.parkingRequested === "1",
       parkingSent: p.parkingSent === "1",
+      cancelled: p.cancelled === "1",
     };
   });
 }
@@ -367,6 +369,21 @@ export async function appendHistory(eventId: string, t: string, info?: string) {
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: { extendedProperties: { private: { history: JSON.stringify(hist.slice(-40)) } } },
+  });
+}
+
+/** Marque un RDV comme annulé (sans le supprimer) + ajoute à l'historique. */
+export async function markCancelled(eventId: string) {
+  const hist = await readHistory(eventId);
+  hist.push({ t: "cancelled", at: new Date().toISOString() });
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: {
+      summary: undefined,
+      colorId: "11", // rouge (calendar color "Tomate")
+      extendedProperties: { private: { cancelled: "1", history: JSON.stringify(hist.slice(-40)) } },
+    },
   });
 }
 

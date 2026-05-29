@@ -11,6 +11,7 @@ const TABS = [
   { key: "agenda", label: "Agenda", href: "/agenda" },
   { key: "prospection", label: "Prospection", href: "/prospection" },
   { key: "rappels", label: "Rappels", href: "/rappels" },
+  { key: "statistiques", label: "Stats", href: "/statistiques" },
 ];
 
 export default function Nav({ active }: { active: string }) {

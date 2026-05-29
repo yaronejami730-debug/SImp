@@ -16,7 +16,7 @@ type Appt = {
   email: string; phone: string; platform: string; listingUrl: string; location: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
-  parkingRequested: boolean; parkingSent: boolean;
+  parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
 };
 
 const histLabel = (t: string) =>
@@ -85,7 +85,7 @@ function Agenda() {
     if (!confirm(`Annuler le RDV de ${a.firstName} ${a.lastName} ? Un mail d'annulation sera envoyé.`)) return;
     const res = await fetch("/api/cancel", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: a.id }) });
     const d = await res.json();
-    if (d.ok) setAppts((prev) => prev.filter((x) => x.id !== a.id));
+    if (d.ok) setLocal(a.id, { cancelled: true });
     else alert("Erreur : " + (d.error ?? ""));
   }
 
@@ -96,8 +96,9 @@ function Agenda() {
     const tmrw = parisDate(new Date(now.getTime() + 86400000));
     const q = onlyDigits(search);
     const filtered = appts.filter((a) => a.startDateTime).filter((a) => (q ? onlyDigits(a.phone).includes(q) : true)).sort((a, b) => (a.startDateTime! < b.startDateTime! ? -1 : 1));
-    const g: Record<string, Appt[]> = { auj: [], dem: [], avenir: [], hier: [], passes: [] };
+    const g: Record<string, Appt[]> = { auj: [], dem: [], avenir: [], hier: [], passes: [], annules: [] };
     for (const a of filtered) {
+      if (a.cancelled) { g.annules.push(a); continue; }
       const d = parisDate(new Date(a.startDateTime!));
       if (d === today) g.auj.push(a);
       else if (d === tmrw) g.dem.push(a);
@@ -106,6 +107,7 @@ function Agenda() {
       else g.passes.push(a);
     }
     g.passes.reverse();
+    g.annules.reverse();
     const total = appts.reduce((s, a) => s + commission(a), 0);
     const monthKey = today.slice(0, 7);
     const m = { rdv: 0, signed: 0, present: 0, thinking: 0, comm: 0 };
@@ -149,10 +151,11 @@ function Agenda() {
   };
 
   const card = (a: Appt) => (
-    <div key={a.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
+    <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
+      {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>ANNULÉ</div>}
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <div style={{ fontWeight: 700, color: NAVY }}>{a.firstName} {a.lastName}</div>
+          <div style={{ fontWeight: 700, color: NAVY, textDecoration: a.cancelled ? "line-through" : "none" }}>{a.firstName} {a.lastName}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{a.phone} · {a.email}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
           {a.listingUrl && <a href={a.listingUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "none", fontWeight: 600 }}>🔗 Voir l&apos;annonce</a>}
@@ -192,13 +195,15 @@ function Agenda() {
           </div>
         </details>
       )}
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button onClick={() => toggleParking(a)} title={a.parkingSent ? "Mail parking déjà envoyé au client" : a.parkingRequested ? "Mail parking sera envoyé 2h avant le RDV" : "Réserver une place dans le parking sécurisé"} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: a.parkingRequested ? PINK : "#fff", color: a.parkingRequested ? "#fff" : NAVY, border: `1.5px solid ${a.parkingRequested ? PINK : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-          🅿️ {a.parkingSent ? "Parking envoyé" : a.parkingRequested ? "Parking réservé" : "Réserver parking"}
-        </button>
-        <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", padding: "9px 12px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>Reprogrammer</a>
-        <button onClick={() => cancel(a)} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
-      </div>
+      {!a.cancelled && (
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button onClick={() => toggleParking(a)} title={a.parkingSent ? "Mail parking déjà envoyé au client" : a.parkingRequested ? "Mail parking sera envoyé 2h avant le RDV" : "Réserver une place dans le parking sécurisé"} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: a.parkingRequested ? PINK : "#fff", color: a.parkingRequested ? "#fff" : NAVY, border: `1.5px solid ${a.parkingRequested ? PINK : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            🅿️ {a.parkingSent ? "Parking envoyé" : a.parkingRequested ? "Parking réservé" : "Réserver parking"}
+          </button>
+          <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", padding: "9px 12px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>Reprogrammer</a>
+          <button onClick={() => cancel(a)} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
+        </div>
+      )}
     </div>
   );
 
@@ -247,6 +252,7 @@ function Agenda() {
       {section("À venir", groups.avenir)}
       {section("Hier", groups.hier)}
       {section("Passés", groups.passes)}
+      {section("Annulés", groups.annules)}
       {appts.length === 0 && !loading && <p style={{ color: "#6b7280", textAlign: "center" }}>Aucun rendez-vous.</p>}
     </>
   );

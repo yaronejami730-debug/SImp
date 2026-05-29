@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getEvent, deleteEvent } from "@/lib/google";
+import { getEvent, markCancelled } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { cancelledEmail } from "@/lib/email-templates";
 import { whatsappUrl } from "@/lib/links";
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
       /* event déjà absent ? on tente quand même la suppression */
     }
 
-    await deleteEvent(eid);
+    await markCancelled(eid);
 
     let emailSent = false;
     if (email && startDateTime) {
