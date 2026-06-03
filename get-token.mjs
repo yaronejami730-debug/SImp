@@ -36,7 +36,10 @@ const oauth2 = new google.auth.OAuth2(
 const url = oauth2.generateAuthUrl({
   access_type: "offline",
   prompt: "consent",
-  scope: ["https://www.googleapis.com/auth/calendar"],
+  scope: [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/contacts",
+  ],
 });
 
 console.log("\n1) Ouvre ce lien dans ton navigateur et autorise :\n");
