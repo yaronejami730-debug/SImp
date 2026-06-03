@@ -27,6 +27,7 @@ export async function POST(req: Request) {
       "time",
     ];
     const missing = required.filter((k) => !body[k] || !String(body[k]).trim());
+    // carBrand / carModel facultatifs : pas dans `required`.
     if (missing.length) {
       return NextResponse.json(
         { error: `Champs manquants : ${missing.join(", ")}.` },

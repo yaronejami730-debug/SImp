@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import SlotPicker from "@/components/SlotPicker";
 import Shell from "@/components/Shell";
+import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders } from "@/lib/client";
 import { extractUrl } from "@/lib/parse";
 
@@ -21,7 +22,7 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", carBrand: "", carModel: "", carFinish: "", date: "", time: "" };
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: 12, fontSize: 15, borderRadius: 8,
@@ -166,6 +167,10 @@ function Home() {
               </div>
             </div>
           )}
+        </div>
+        <div>
+          <label style={labelStyle}>Véhicule</label>
+          <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
         </div>
         <div>
           <label style={labelStyle}>Créneau du rendez-vous</label>

@@ -13,7 +13,8 @@ const NEGO_RATE = 0.1;
 type Sign = "" | "signed" | "thinking" | "unsigned";
 type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
-  email: string; phone: string; platform: string; listingUrl: string; location: string;
+  email: string; phone: string; platform: string; listingUrl: string;
+  carBrand: string; carModel: string; carFinish: string; location: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
@@ -96,7 +97,7 @@ function Agenda() {
     const tmrw = parisDate(new Date(now.getTime() + 86400000));
     const q = onlyDigits(search);
     const filtered = appts.filter((a) => a.startDateTime).filter((a) => (q ? onlyDigits(a.phone).includes(q) : true)).sort((a, b) => (a.startDateTime! < b.startDateTime! ? -1 : 1));
-    const g: Record<string, Appt[]> = { auj: [], dem: [], avenir: [], hier: [], passes: [], annules: [] };
+    const g: Record<string, Appt[]> = { auj: [], dem: [], avenir: [], hier: [], passSigned: [], passThinking: [], passUnsigned: [], passOther: [], annules: [] };
     for (const a of filtered) {
       if (a.cancelled) { g.annules.push(a); continue; }
       const d = parisDate(new Date(a.startDateTime!));
@@ -104,9 +105,17 @@ function Agenda() {
       else if (d === tmrw) g.dem.push(a);
       else if (d === yest) g.hier.push(a);
       else if (a.startDateTime! > now.toISOString()) g.avenir.push(a);
-      else g.passes.push(a);
+      else {
+        if (a.signStatus === "signed") g.passSigned.push(a);
+        else if (a.signStatus === "thinking") g.passThinking.push(a);
+        else if (a.signStatus === "unsigned") g.passUnsigned.push(a);
+        else g.passOther.push(a);
+      }
     }
-    g.passes.reverse();
+    g.passSigned.reverse();
+    g.passThinking.reverse();
+    g.passUnsigned.reverse();
+    g.passOther.reverse();
     g.annules.reverse();
     const total = appts.reduce((s, a) => s + commission(a), 0);
     const monthKey = today.slice(0, 7);
@@ -150,13 +159,19 @@ function Agenda() {
     );
   };
 
+  const sectionLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: "#9aa6b8", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 14, marginBottom: 6 };
+  const vehicleLabel = (a: Appt) => [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
+
   const card = (a: Appt) => (
     <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
       {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>ANNULÉ</div>}
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <div style={{ fontWeight: 700, color: NAVY, textDecoration: a.cancelled ? "line-through" : "none" }}>{a.firstName} {a.lastName}</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>{a.phone} · {a.email}</div>
+          <a href={`/client/${encodeURIComponent(a.id)}`} style={{ fontWeight: 700, color: NAVY, textDecoration: a.cancelled ? "line-through" : "none", fontSize: 15 }}>
+            {a.firstName} {a.lastName} <span style={{ fontSize: 11, color: PINK, fontWeight: 500 }}>→ fiche</span>
+          </a>
+          {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}</div>}
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
           {a.listingUrl && <a href={a.listingUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "none", fontWeight: 600 }}>🔗 Voir l&apos;annonce</a>}
         </div>
@@ -165,10 +180,12 @@ function Agenda() {
           {a.signStatus === "signed" && <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 14, marginTop: 2 }}>{eur(commission(a))}</div>}
         </div>
       </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14, cursor: "pointer" }}>
+
+      <div style={sectionLabel}>Statut du RDV</div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
         <input type="checkbox" checked={a.present} onChange={(e) => { setLocal(a.id, { present: e.target.checked }); save(a.id, { present: e.target.checked }); }} /> Client présent
       </label>
-      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         {signBtn(a, "signed", "✅ Signé", "#16a34a")}
         {signBtn(a, "thinking", "🤔 Réfléchit", "#ca8a04")}
         {signBtn(a, "unsigned", "❌ Pas signé", "#dc2626")}
@@ -180,6 +197,7 @@ function Agenda() {
           <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
         </div>
       )}
+
       {a.history.length > 0 && (
         <details style={{ marginTop: 12 }}>
           <summary style={{ cursor: "pointer", fontSize: 13, color: "#6b7280", fontWeight: 600 }}>Historique ({a.history.length})</summary>
@@ -195,14 +213,25 @@ function Agenda() {
           </div>
         </details>
       )}
+
       {!a.cancelled && (
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={() => toggleParking(a)} title={a.parkingSent ? "Mail parking déjà envoyé au client" : a.parkingRequested ? "Mail parking sera envoyé 2h avant le RDV" : "Réserver une place dans le parking sécurisé"} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: a.parkingRequested ? PINK : "#fff", color: a.parkingRequested ? "#fff" : NAVY, border: `1.5px solid ${a.parkingRequested ? PINK : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-            🅿️ {a.parkingSent ? "Parking envoyé" : a.parkingRequested ? "Parking réservé" : "Réserver parking"}
-          </button>
-          <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", padding: "9px 12px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600 }}>Reprogrammer</a>
-          <button onClick={() => cancel(a)} style={{ flex: 1, padding: "9px 12px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
-        </div>
+        <>
+          <div style={sectionLabel}>Actions rapides</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => toggleParking(a)} title={a.parkingSent ? "Mail parking déjà envoyé au client" : a.parkingRequested ? "Mail parking envoyé immédiatement au client" : "Réserve une place et envoie le mail parking au client maintenant"} style={{ flex: "1 1 30%", padding: "9px 12px", borderRadius: 8, background: a.parkingRequested ? PINK : "#fff", color: a.parkingRequested ? "#fff" : NAVY, border: `1.5px solid ${a.parkingRequested ? PINK : "#e5e7eb"}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              🅿️ {a.parkingSent ? "Parking envoyé" : "Mail parking"}
+            </button>
+            <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" title="Ouvre la page pour changer le créneau (envoie un mail de reprogrammation au client)" style={{ flex: "1 1 30%", textAlign: "center", padding: "9px 12px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>
+              📅 Reprogrammer
+            </a>
+            <a href={`/client/${encodeURIComponent(a.id)}`} title="Fiche client complète (renvoyer mail/SMS, historique, etc.)" style={{ flex: "1 1 30%", textAlign: "center", padding: "9px 12px", borderRadius: 8, background: "#fff", color: PINK, textDecoration: "none", fontSize: 13, fontWeight: 600, border: `1.5px solid ${PINK}` }}>
+              👤 Fiche client
+            </a>
+            <button onClick={() => cancel(a)} title="Annule le RDV (envoie un mail d'annulation au client)" style={{ flex: "1 1 100%", padding: "9px 12px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              ❌ Annuler le RDV
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -251,7 +280,10 @@ function Agenda() {
       {section("Demain", groups.dem)}
       {section("À venir", groups.avenir)}
       {section("Hier", groups.hier)}
-      {section("Passés", groups.passes)}
+      {section("✅ Passés — Signés", groups.passSigned)}
+      {section("🤔 Passés — Réfléchit", groups.passThinking)}
+      {section("❌ Passés — Pas signés", groups.passUnsigned)}
+      {section("Passés — sans statut", groups.passOther)}
       {section("Annulés", groups.annules)}
       {appts.length === 0 && !loading && <p style={{ color: "#6b7280", textAlign: "center" }}>Aucun rendez-vous.</p>}
     </>

@@ -12,6 +12,9 @@ export const appointmentSchema = z.object({
       "Nom de la plateforme de l'annonce : LeBonCoin, LaCentrale, SeLoger, ou autre",
     ),
   listingUrl: z.string().describe("Lien (URL) de l'annonce"),
+  carBrand: z.string().describe("Marque du véhicule (ex: Renault)").default(""),
+  carModel: z.string().describe("Modèle du véhicule (ex: Clio)").default(""),
+  carFinish: z.string().describe("Finition / version (ex: GT Line, Intens, dCi 110)").default(""),
   location: z.string().describe("Adresse ou lieu du rendez-vous"),
   startDateTime: z
     .string()
@@ -34,6 +37,9 @@ export type AppointmentInput = {
   email: string;
   phone: string;
   listingUrl: string;
+  carBrand?: string;
+  carModel?: string;
+  carFinish?: string;
   location?: string; // optionnel : si absent, lieu fixe par défaut
   date: string; // "YYYY-MM-DD"
   time: string; // "HH:MM"
@@ -106,6 +112,9 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     phone: input.phone.trim(),
     platform: platformFromUrl(input.listingUrl),
     listingUrl: input.listingUrl.trim(),
+    carBrand: input.carBrand?.trim() || "",
+    carModel: input.carModel?.trim() || "",
+    carFinish: input.carFinish?.trim() || "",
     location: input.location?.trim() || DEFAULT_LOCATION,
     startDateTime: toParisISO(input.date, input.time),
   };

@@ -106,18 +106,20 @@ export async function createEvent(a: Appointment, owner = "") {
   const start = new Date(a.startDateTime);
   const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 min par défaut
 
+  const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
   const res = await cal.events.insert({
     calendarId: CALENDAR_ID,
     requestBody: {
-      summary: `RDV ${a.firstName} ${a.lastName} — ${BUSINESS}`,
+      summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       description: [
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
         `Téléphone : ${a.phone}`,
+        vehicle ? `Véhicule : ${vehicle}` : "",
         `Plateforme : ${a.platform}`,
         `Annonce : ${a.listingUrl}`,
         `Lieu : ${a.location}`,
-      ].join("\n"),
+      ].filter(Boolean).join("\n"),
       location: a.location,
       start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
       end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
@@ -132,6 +134,9 @@ export async function createEvent(a: Appointment, owner = "") {
           clientLastName: a.lastName,
           platform: a.platform,
           listingUrl: a.listingUrl,
+          carBrand: a.carBrand ?? "",
+          carModel: a.carModel ?? "",
+          carFinish: a.carFinish ?? "",
           history: JSON.stringify([{ t: "created", at: new Date().toISOString() }]),
         },
       },
@@ -254,6 +259,9 @@ export type AppointmentItem = {
   phone: string;
   platform: string;
   listingUrl: string;
+  carBrand: string;
+  carModel: string;
+  carFinish: string;
   location: string;
   present: boolean;
   signStatus: "" | "signed" | "thinking" | "unsigned";
@@ -290,6 +298,9 @@ export async function listAppointments(
       phone: p.clientPhone ?? "",
       platform: p.platform ?? "",
       listingUrl: p.listingUrl ?? "",
+      carBrand: p.carBrand ?? "",
+      carModel: p.carModel ?? "",
+      carFinish: p.carFinish ?? "",
       location: ev.location ?? "",
       present: p.present === "1",
       signStatus: (p.signStatus as AppointmentItem["signStatus"]) ?? "",
@@ -302,6 +313,51 @@ export async function listAppointments(
       parkingSent: p.parkingSent === "1",
       cancelled: p.cancelled === "1",
     };
+  });
+}
+
+/** Met à jour la marque/modèle du véhicule sur un RDV. */
+export async function patchVehicle(eventId: string, fields: { carBrand?: string; carModel?: string; carFinish?: string }) {
+  const cal = calendarClient();
+  const priv: Record<string, string> = {};
+  if (fields.carBrand !== undefined) priv.carBrand = fields.carBrand;
+  if (fields.carModel !== undefined) priv.carModel = fields.carModel;
+  if (fields.carFinish !== undefined) priv.carFinish = fields.carFinish;
+  await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
+  });
+}
+
+/** Lit la liste des photos (paths Supabase) stockée sur l'event. */
+export async function readPhotos(eventId: string): Promise<string[]> {
+  try {
+    const ev = await getEvent(eventId);
+    const raw = ev.extendedProperties?.private?.photos;
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+/** Écrit la liste des photos sur l'event. */
+export async function writePhotos(eventId: string, paths: string[]) {
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { photos: JSON.stringify(paths.slice(-50)) } } },
+  });
+}
+
+/** Met à jour les coordonnées du client (téléphone, email) sur un RDV. */
+export async function patchContact(eventId: string, fields: { phone?: string; email?: string }) {
+  const cal = calendarClient();
+  const priv: Record<string, string> = {};
+  if (fields.phone !== undefined) priv.clientPhone = fields.phone;
+  if (fields.email !== undefined) priv.clientEmail = fields.email;
+  await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
   });
 }
 
