@@ -14,6 +14,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   civility: string; cancelled: boolean; bcSigned: boolean; vehicleSold: boolean;
+  photos: string[];
 };
 
 type Client = {
@@ -24,6 +25,7 @@ type Client = {
   appts: Appt[];
   lastAppt: Appt;
   signedCount: number;
+  photos: string[]; // toutes photos cumulées des RDVs
 };
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
@@ -62,6 +64,7 @@ function CRM() {
         if (v && !existing.vehicles.includes(v)) existing.vehicles.push(v);
         if (a.signStatus === "signed") existing.signedCount++;
         if ((existing.lastAppt.startDateTime ?? "") < (a.startDateTime ?? "")) existing.lastAppt = a;
+        for (const ph of a.photos || []) if (!existing.photos.includes(ph)) existing.photos.push(ph);
       } else {
         map.set(key, {
           key,
@@ -71,6 +74,7 @@ function CRM() {
           appts: [a],
           lastAppt: a,
           signedCount: a.signStatus === "signed" ? 1 : 0,
+          photos: [...(a.photos || [])],
         });
       }
     }
@@ -135,11 +139,18 @@ function CRM() {
         {clients.map((c) => (
           <a key={c.key} href={`/client/${encodeURIComponent(c.lastAppt.id)}`} style={{ display: "block", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, textDecoration: "none", color: "inherit" }}>
             <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <div style={{ fontWeight: 700, color: NAVY, fontSize: 15 }}>{c.firstName} {c.lastName}</div>
-                {c.vehicles.length > 0 && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {c.vehicles.join(" · ")}</div>}
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{c.phone || "—"} · {c.email || "—"}</div>
-                {isAdmin && c.lastAppt.owner && <div style={{ fontSize: 11, color: "#9aa6b8" }}>par {c.lastAppt.owner}</div>}
+              <div style={{ display: "flex", gap: 12, flex: 1, minWidth: 0 }}>
+                {c.photos.length > 0 && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.photos[0]} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1px solid #e5e7eb" }} />
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: NAVY, fontSize: 15 }}>{c.firstName} {c.lastName}</div>
+                  {c.vehicles.length > 0 && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {c.vehicles.join(" · ")}</div>}
+                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>{c.phone || "—"} · {c.email || "—"}</div>
+                  {c.photos.length > 1 && <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 2 }}>📷 {c.photos.length} photos</div>}
+                  {isAdmin && c.lastAppt.owner && <div style={{ fontSize: 11, color: "#9aa6b8" }}>par {c.lastAppt.owner}</div>}
+                </div>
               </div>
               <div style={{ textAlign: "right" }}>
                 {statusBadge(c.lastAppt.signStatus)}

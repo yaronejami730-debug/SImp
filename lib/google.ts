@@ -277,6 +277,7 @@ export type AppointmentItem = {
   bcSignedAt: string | null;
   vehicleSold: boolean;
   soldAt: string | null;
+  photos: string[];
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -320,6 +321,7 @@ export async function listAppointments(
       bcSignedAt: p.bcSignedAt || null,
       vehicleSold: p.vehicleSold === "1",
       soldAt: p.soldAt || null,
+      photos: (() => { try { return JSON.parse(p.photos ?? "[]"); } catch { return []; } })(),
     };
   });
 }

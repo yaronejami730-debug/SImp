@@ -26,7 +26,10 @@ const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", ph
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: 12, fontSize: 15, borderRadius: 8,
-  border: "1.5px solid #e5e7eb", background: "#fff", color: "#232323", boxSizing: "border-box", fontFamily: "inherit",
+  border: "1.5px solid #e5e7eb", background: "#fff", color:
+
+
+    "#232323", boxSizing: "border-box", fontFamily: "inherit",
 };
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 };
 
@@ -138,9 +141,11 @@ function Home() {
           <div style={{ display: "flex", gap: 8 }}>
             {["Monsieur", "Madame"].map((c) => (
               <button key={c} type="button" onClick={() => set("civility", c)}
-                style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
+                style={{
+                  flex: 1, padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer",
                   border: form.civility === c ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
-                  background: form.civility === c ? PINK : "#fff", color: form.civility === c ? "#fff" : "#6b7280" }}>{c}</button>
+                  background: form.civility === c ? PINK : "#fff", color: form.civility === c ? "#fff" : "#6b7280"
+                }}>{c}</button>
             ))}
           </div>
         </div>
