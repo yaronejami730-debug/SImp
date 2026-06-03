@@ -7,7 +7,7 @@ export const FOLLOWUP_DELAYS: Record<FollowupType, number[]> = {
   cancel: [7, 14, 30],     // J+7, J+21, J+51
   thinking: [3, 10],       // J+3, J+13
   unsigned: [14, 30, 75],  // J+14, J+44, J+119
-  signed: [3],             // J+3 → mail notation
+  signed: [14],            // J+14 (2 semaines) → mail notation
 };
 
 export type FollowupRow = {

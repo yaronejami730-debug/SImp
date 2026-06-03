@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getEvent, markReminderSent, patchVehicle, patchContact } from "@/lib/google";
+import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, reminderEmail } from "@/lib/email-templates";
@@ -43,6 +43,7 @@ export async function GET(req: Request, { params }: Params) {
         carBrand: p.carBrand ?? "",
         carModel: p.carModel ?? "",
         carFinish: p.carFinish ?? "",
+        note: p.note ?? "",
         location: ev.location ?? "",
         present: p.present === "1",
         signStatus: p.signStatus ?? "",
@@ -55,6 +56,10 @@ export async function GET(req: Request, { params }: Params) {
         cancelled: p.cancelled === "1",
         reminder24Sent: p.reminder24Sent === "1",
         reminder2Sent: p.reminder2Sent === "1",
+        bcSigned: p.bcSigned === "1",
+        bcSignedAt: p.bcSignedAt || null,
+        vehicleSold: p.vehicleSold === "1",
+        soldAt: p.soldAt || null,
       },
     });
   } catch (e) {
@@ -72,7 +77,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!ownsOrAdmin(ev, s.email, s.role)) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
-    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; phone?: string; email?: string };
+    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; phone?: string; email?: string; note?: string };
     const hasVehicle = body.carBrand !== undefined || body.carModel !== undefined || body.carFinish !== undefined;
     const hasContact = body.phone !== undefined || body.email !== undefined;
     if (hasVehicle) {
@@ -80,6 +85,9 @@ export async function PATCH(req: Request, { params }: Params) {
     }
     if (hasContact) {
       await patchContact(id, { phone: body.phone?.trim(), email: body.email?.trim() });
+    }
+    if (body.note !== undefined) {
+      await patchNote(id, body.note);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {

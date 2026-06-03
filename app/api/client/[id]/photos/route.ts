@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getEvent, readPhotos, writePhotos } from "@/lib/google";
-import { uploadPhoto, deletePhoto, publicUrlFor } from "@/lib/storage";
+import { uploadPhoto, deletePhoto } from "@/lib/storage";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -23,8 +23,9 @@ export async function GET(req: Request, { params }: Params) {
   try {
     const ev = await getEvent(id);
     if (!ownsOrAdmin(ev, s.email, s.role)) return NextResponse.json({ error: "Interdit." }, { status: 403 });
-    const paths = await readPhotos(id);
-    return NextResponse.json({ ok: true, photos: paths.map((p) => ({ path: p, url: publicUrlFor(p) })) });
+    const urls = await readPhotos(id);
+    // Path == URL avec Vercel Blob
+    return NextResponse.json({ ok: true, photos: urls.map((u) => ({ path: u, url: u })) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
@@ -46,15 +47,15 @@ export async function POST(req: Request, { params }: Params) {
     if (!file.type.startsWith("image/")) return NextResponse.json({ error: "Seules les images sont acceptées." }, { status: 400 });
 
     const buf = Buffer.from(await file.arrayBuffer());
-    const { path, publicUrl } = await uploadPhoto({
+    const { publicUrl } = await uploadPhoto({
       folder: id,
       filename: file.name || "photo.jpg",
       body: buf,
       contentType: file.type,
     });
     const existing = await readPhotos(id);
-    await writePhotos(id, [...existing, path]);
-    return NextResponse.json({ ok: true, photo: { path, url: publicUrl } });
+    await writePhotos(id, [...existing, publicUrl]);
+    return NextResponse.json({ ok: true, photo: { path: publicUrl, url: publicUrl } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

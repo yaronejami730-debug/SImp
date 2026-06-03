@@ -273,6 +273,10 @@ export type AppointmentItem = {
   parkingRequested: boolean;
   parkingSent: boolean;
   cancelled: boolean;
+  bcSigned: boolean;
+  bcSignedAt: string | null;
+  vehicleSold: boolean;
+  soldAt: string | null;
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -312,6 +316,10 @@ export async function listAppointments(
       parkingRequested: p.parkingRequested === "1",
       parkingSent: p.parkingSent === "1",
       cancelled: p.cancelled === "1",
+      bcSigned: p.bcSigned === "1",
+      bcSignedAt: p.bcSignedAt || null,
+      vehicleSold: p.vehicleSold === "1",
+      soldAt: p.soldAt || null,
     };
   });
 }
@@ -339,12 +347,28 @@ export async function readPhotos(eventId: string): Promise<string[]> {
   } catch { return []; }
 }
 
-/** Écrit la liste des photos sur l'event. */
+/** Écrit la liste des photos sur l'event.
+ *  ⚠️ extendedProperties limite chaque valeur à 1024 chars → on cap à ~6 URLs Blob. */
 export async function writePhotos(eventId: string, paths: string[]) {
+  let kept = paths.slice(-12);
+  let json = JSON.stringify(kept);
+  while (json.length > 1020 && kept.length > 0) {
+    kept = kept.slice(1);
+    json = JSON.stringify(kept);
+  }
   await calendarClient().events.patch({
     calendarId: CALENDAR_ID,
     eventId,
-    requestBody: { extendedProperties: { private: { photos: JSON.stringify(paths.slice(-50)) } } },
+    requestBody: { extendedProperties: { private: { photos: json } } },
+  });
+}
+
+/** Met à jour la note interne (texte libre) d'un RDV. */
+export async function patchNote(eventId: string, note: string) {
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { note: note.slice(0, 1000) } } },
   });
 }
 
@@ -361,16 +385,24 @@ export async function patchContact(eventId: string, fields: { phone?: string; em
   });
 }
 
-/** Met à jour les champs de suivi (présent / signature / négociation) d'un RDV. */
+/** Met à jour les champs de suivi (présent / signature / négo / BC / vendu) d'un RDV. */
 export async function patchTracking(
   eventId: string,
-  fields: { present?: boolean; signStatus?: string; negotiation?: number },
+  fields: { present?: boolean; signStatus?: string; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean },
 ) {
   const cal = calendarClient();
   const priv: Record<string, string> = {};
   if (fields.present !== undefined) priv.present = fields.present ? "1" : "0";
   if (fields.signStatus !== undefined) priv.signStatus = fields.signStatus;
   if (fields.negotiation !== undefined) priv.negotiation = String(fields.negotiation);
+  if (fields.bcSigned !== undefined) {
+    priv.bcSigned = fields.bcSigned ? "1" : "";
+    priv.bcSignedAt = fields.bcSigned ? new Date().toISOString() : "";
+  }
+  if (fields.vehicleSold !== undefined) {
+    priv.vehicleSold = fields.vehicleSold ? "1" : "";
+    priv.soldAt = fields.vehicleSold ? new Date().toISOString() : "";
+  }
   await cal.events.patch({
     calendarId: CALENDAR_ID,
     eventId,

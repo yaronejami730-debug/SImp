@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { patchTracking, getEvent } from "@/lib/google";
 import { getAuth } from "@/lib/auth";
-import { scheduleFollowup, type FollowupType } from "@/lib/followups";
+import { scheduleFollowup, cancelFollowup, type FollowupType } from "@/lib/followups";
 import { sendEmail } from "@/lib/brevo";
 import { signedRatingEmail } from "@/lib/email-templates";
 import { signBooking } from "@/lib/auth";
@@ -15,31 +15,30 @@ export async function POST(req: Request) {
   if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
-    const { eid, present, signStatus, negotiation } = (await req.json()) as {
+    const { eid, present, signStatus, negotiation, bcSigned, vehicleSold } = (await req.json()) as {
       eid?: string;
       present?: boolean;
       signStatus?: string;
       negotiation?: number;
+      bcSigned?: boolean;
+      vehicleSold?: boolean;
     };
     if (!eid) {
       return NextResponse.json({ error: "Identifiant manquant." }, { status: 400 });
     }
 
-    await patchTracking(eid, { present, signStatus, negotiation });
+    await patchTracking(eid, { present, signStatus, negotiation, bcSigned, vehicleSold });
 
     // Déclenche les actions post-signature (best-effort, n'empêche pas la réponse).
-    if (signStatus && ["thinking", "unsigned", "signed"].includes(signStatus)) {
+    if (signStatus !== undefined) {
       try {
         const ev = await getEvent(eid);
         const priv = ev.extendedProperties?.private ?? {};
         const email = priv.clientEmail;
-        const civility = priv.clientCivility;
-        const firstName = priv.clientFirstName ?? "";
-        const lastName = priv.clientLastName ?? "";
-        const listingUrl = priv.listingUrl ?? "";
-        const owner = priv.owner ?? "";
-
         if (email) {
+          // Reset : changement de statut annule TOUTES les relances précédentes.
+          await cancelFollowup(email);
+
           const typeMap: Record<string, FollowupType> = {
             signed: "signed",
             thinking: "thinking",
@@ -49,11 +48,11 @@ export async function POST(req: Request) {
           if (type) {
             await scheduleFollowup({
               email,
-              civility,
-              firstName,
-              lastName,
-              listingUrl,
-              owner,
+              civility: priv.clientCivility,
+              firstName: priv.clientFirstName ?? "",
+              lastName: priv.clientLastName ?? "",
+              listingUrl: priv.listingUrl ?? "",
+              owner: priv.owner ?? "",
               type,
             });
           }

@@ -9,6 +9,7 @@ const LOGO = "/logo.png";
 const TABS = [
   { key: "rdv", label: "Prise de RDV", href: "/" },
   { key: "agenda", label: "Agenda", href: "/agenda" },
+  { key: "crm", label: "CRM", href: "/crm" },
   { key: "prospection", label: "Prospection", href: "/prospection" },
   { key: "rappels", label: "Rappels", href: "/rappels" },
   { key: "statistiques", label: "Stats", href: "/statistiques" },

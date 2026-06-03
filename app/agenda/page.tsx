@@ -18,6 +18,8 @@ type Appt = {
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
+  bcSigned: boolean; bcSignedAt: string | null;
+  vehicleSold: boolean; soldAt: string | null;
 };
 
 const histLabel = (t: string) =>
@@ -27,6 +29,7 @@ const parisDate = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Eur
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 const commission = (a: Appt) => (a.signStatus === "signed" ? BASE_COMMISSION + NEGO_RATE * (a.negotiation || 0) : 0);
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const safeUrl = (u: string) => /^https?:\/\//i.test(u) ? u : `https://${u}`;
 
 function Agenda() {
   const me = getUser();
@@ -52,7 +55,7 @@ function Agenda() {
   function setLocal(id: string, patch: Partial<Appt>) {
     setAppts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   }
-  async function save(id: string, patch: { present?: boolean; signStatus?: Sign; negotiation?: number }) {
+  async function save(id: string, patch: { present?: boolean; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean }) {
     await fetch("/api/status", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: id, ...patch }) }).catch(() => {});
   }
   async function toggleParking(a: Appt) {
@@ -95,10 +98,19 @@ function Agenda() {
     const today = parisDate(now);
     const yest = parisDate(new Date(now.getTime() - 86400000));
     const tmrw = parisDate(new Date(now.getTime() + 86400000));
-    const q = onlyDigits(search);
-    const filtered = appts.filter((a) => a.startDateTime).filter((a) => (q ? onlyDigits(a.phone).includes(q) : true)).sort((a, b) => (a.startDateTime! < b.startDateTime! ? -1 : 1));
-    const g: Record<string, Appt[]> = { auj: [], dem: [], avenir: [], hier: [], passSigned: [], passThinking: [], passUnsigned: [], passOther: [], annules: [] };
+    const q = search.trim().toLowerCase();
+    const qd = onlyDigits(q);
+    const matches = (a: Appt) => {
+      if (!q) return true;
+      if (qd && onlyDigits(a.phone).includes(qd)) return true;
+      const hay = `${a.firstName} ${a.lastName} ${a.email} ${a.carBrand} ${a.carModel} ${a.carFinish} ${a.platform}`.toLowerCase();
+      return hay.includes(q);
+    };
+    const filtered = appts.filter((a) => a.startDateTime).filter(matches).sort((a, b) => (a.startDateTime! < b.startDateTime! ? -1 : 1));
+    const g: Record<string, Appt[]> = { sold: [], bc: [], auj: [], dem: [], avenir: [], hier: [], passSigned: [], passThinking: [], passUnsigned: [], passOther: [], annules: [] };
     for (const a of filtered) {
+      if (a.vehicleSold) g.sold.push(a);
+      else if (a.bcSigned) g.bc.push(a);
       if (a.cancelled) { g.annules.push(a); continue; }
       const d = parisDate(new Date(a.startDateTime!));
       if (d === today) g.auj.push(a);
@@ -112,6 +124,8 @@ function Agenda() {
         else g.passOther.push(a);
       }
     }
+    g.sold.reverse();
+    g.bc.reverse();
     g.passSigned.reverse();
     g.passThinking.reverse();
     g.passUnsigned.reverse();
@@ -119,7 +133,7 @@ function Agenda() {
     g.annules.reverse();
     const total = appts.reduce((s, a) => s + commission(a), 0);
     const monthKey = today.slice(0, 7);
-    const m = { rdv: 0, signed: 0, present: 0, thinking: 0, comm: 0 };
+    const m = { rdv: 0, signed: 0, present: 0, thinking: 0, bc: 0, sold: 0, comm: 0 };
     const owners: Record<string, number> = {};
     for (const a of appts) {
       if (!a.startDateTime) continue;
@@ -128,6 +142,8 @@ function Agenda() {
       if (a.present) m.present++;
       if (a.signStatus === "thinking") m.thinking++;
       if (a.signStatus === "signed") { m.signed++; m.comm += commission(a); owners[a.owner || "—"] = (owners[a.owner || "—"] || 0) + commission(a); }
+      if (a.bcSigned) m.bc++;
+      if (a.vehicleSold) m.sold++;
     }
     return { groups: g, total, month: m, byOwner: owners };
   }, [appts, search]);
@@ -135,23 +151,20 @@ function Agenda() {
   const fmt = (iso: string) => new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
   const signBtn = (a: Appt, val: Sign, label: string, color: string) => {
-    const locked = !!a.signStatus;       // un statut déjà choisi -> tout est verrouillé
     const active = a.signStatus === val;
     return (
       <button
         onClick={() => {
-          if (locked) return;            // pas de désélection ni de changement
-          setLocal(a.id, { signStatus: val });
-          save(a.id, { signStatus: val });
+          const next = active ? "" : val; // toggle : reclique = désélection
+          setLocal(a.id, { signStatus: next });
+          save(a.id, { signStatus: next });
         }}
-        disabled={locked && !active}
         style={{
           flex: 1, padding: "7px 4px", fontSize: 12, fontWeight: 600, borderRadius: 7,
-          cursor: locked ? "default" : "pointer",
+          cursor: "pointer",
           border: active ? `1.5px solid ${color}` : "1.5px solid #e5e7eb",
           background: active ? color : "#fff",
           color: active ? "#fff" : "#6b7280",
-          opacity: locked && !active ? 0.45 : 1,
         }}
       >
         {label}
@@ -173,11 +186,13 @@ function Agenda() {
           {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}</div>}
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
-          {a.listingUrl && <a href={a.listingUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "none", fontWeight: 600 }}>🔗 Voir l&apos;annonce</a>}
+          {a.listingUrl && <a href={safeUrl(a.listingUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "underline", fontWeight: 600, display: "inline-block", marginTop: 2 }}>🔗 Voir l&apos;annonce</a>}
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{a.startDateTime ? fmt(a.startDateTime) : "—"}</div>
           {a.signStatus === "signed" && <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 14, marginTop: 2 }}>{eur(commission(a))}</div>}
+          {a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#16a34a", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>🏁 VENDU</div>}
+          {a.bcSigned && !a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#2563eb", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>📝 BC SIGNÉ</div>}
         </div>
       </div>
 
@@ -191,11 +206,21 @@ function Agenda() {
         {signBtn(a, "unsigned", "❌ Pas signé", "#dc2626")}
       </div>
       {a.signStatus === "signed" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-          <span style={{ fontSize: 13, color: "#6b7280" }}>Négo €</span>
-          <input type="number" value={a.negotiation || ""} onChange={(e) => setLocal(a.id, { negotiation: Number(e.target.value) })} onBlur={(e) => save(a.id, { negotiation: Number(e.target.value) })} placeholder="0" style={{ width: 110, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }} />
-          <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
-        </div>
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+            <span style={{ fontSize: 13, color: "#6b7280" }}>Négo €</span>
+            <input type="number" value={a.negotiation || ""} onChange={(e) => setLocal(a.id, { negotiation: Number(e.target.value) })} onBlur={(e) => save(a.id, { negotiation: Number(e.target.value) })} placeholder="0" style={{ width: 110, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }} />
+            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "8px 10px", borderRadius: 7, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 13, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer" }}>
+            <input type="checkbox" checked={a.bcSigned} onChange={(e) => { setLocal(a.id, { bcSigned: e.target.checked }); save(a.id, { bcSigned: e.target.checked }); }} />
+            📝 Bon de commande signé
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, padding: "8px 10px", borderRadius: 7, background: a.vehicleSold ? "#f0fdf4" : "#fff", border: `1.5px solid ${a.vehicleSold ? "#16a34a" : "#e5e7eb"}`, fontSize: 13, fontWeight: 600, color: a.vehicleSold ? "#166534" : NAVY, cursor: "pointer" }}>
+            <input type="checkbox" checked={a.vehicleSold} onChange={(e) => { setLocal(a.id, { vehicleSold: e.target.checked }); save(a.id, { vehicleSold: e.target.checked }); }} />
+            🏁 Véhicule vendu (livré / payé)
+          </label>
+        </>
       )}
 
       {a.history.length > 0 && (
@@ -247,8 +272,8 @@ function Agenda() {
     <>
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Ce mois-ci</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, textAlign: "center" }}>
-          {[{ n: month.rdv, l: "RDV", c: NAVY }, { n: month.present, l: "Présents", c: NAVY }, { n: month.signed, l: "Signés", c: "#16a34a" }, { n: month.thinking, l: "Réfléchit", c: "#ca8a04" }].map((s) => (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, textAlign: "center" }}>
+          {[{ n: month.rdv, l: "RDV", c: NAVY }, { n: month.present, l: "Présents", c: NAVY }, { n: month.signed, l: "Signés", c: "#16a34a" }, { n: month.thinking, l: "Réfléchit", c: "#ca8a04" }, { n: month.bc, l: "BC signés", c: "#2563eb" }, { n: month.sold, l: "Vendus 🏁", c: "#16a34a" }].map((s) => (
             <div key={s.l}><div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: s.c }}>{s.n}</div><div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase" }}>{s.l}</div></div>
           ))}
         </div>
@@ -273,9 +298,11 @@ function Agenda() {
       </div>
 
       {/* tabIndex -1 empêche le focus auto sur mobile */}
-      <input tabIndex={-1} onFocus={(e) => e.target.tabIndex = 0} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher par téléphone du client" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 20 }} />
+      <input tabIndex={-1} onFocus={(e) => e.target.tabIndex = 0} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher (nom, prénom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 20 }} />
 
       {err && <p style={{ color: "#dc2626" }}>❌ {err}</p>}
+      {section("🏁 Véhicules vendus", groups.sold)}
+      {section("📝 BC signés (pas encore vendus)", groups.bc)}
       {section("Aujourd'hui", groups.auj)}
       {section("Demain", groups.dem)}
       {section("À venir", groups.avenir)}

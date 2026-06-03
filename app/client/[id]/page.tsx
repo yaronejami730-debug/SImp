@@ -15,10 +15,13 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   civility: string; email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
+  note: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   reminder24Sent: boolean; reminder2Sent: boolean;
+  bcSigned: boolean; bcSignedAt: string | null;
+  vehicleSold: boolean; soldAt: string | null;
 };
 
 const histLabel = (t: string) =>
@@ -31,6 +34,7 @@ const histLabel = (t: string) =>
     parking_cancelled: "Réservation parking annulée",
     parking_sent: "Mail parking envoyé au client",
     cancelled: "RDV annulé",
+    note: "💬 Note",
   } as Record<string, string>)[t] ?? t;
 
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -51,13 +55,16 @@ function ClientPage({ id }: { id: string }) {
   const [draftEmail, setDraftEmail] = useState("");
   const [photos, setPhotos] = useState<{ path: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteDirty, setNoteDirty] = useState(false);
+  const [timelineDraft, setTimelineDraft] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
     try {
       const r = await fetch(`/api/client/${encodeURIComponent(id)}`, { headers: authHeaders() });
       const d = await r.json();
-      if (d.ok) setA(d.appointment);
+      if (d.ok) { setA(d.appointment); setNoteDraft(d.appointment.note ?? ""); setNoteDirty(false); }
       else setErr(d.error ?? "Erreur");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erreur");
@@ -126,7 +133,7 @@ function ClientPage({ id }: { id: string }) {
     } finally { setBusy(""); }
   }
 
-  async function saveStatus(patch: { present?: boolean; signStatus?: Sign; negotiation?: number }) {
+  async function saveStatus(patch: { present?: boolean; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean }) {
     if (!a) return;
     setA({ ...a, ...patch });
     await fetch("/api/status", {
@@ -152,6 +159,36 @@ function ClientPage({ id }: { id: string }) {
         setFlash({ kind: "ok", msg: next ? (d.emailSent ? `✅ Mail parking envoyé à ${a.email}` : "Réservation OK, mail non envoyé") : "Réservation parking annulée" });
         load();
       } else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
+  }
+
+  async function saveNote() {
+    if (!a) return;
+    setBusy("note");
+    try {
+      const r = await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+        method: "PATCH",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ note: noteDraft }),
+      });
+      const d = await r.json();
+      if (d.ok) { setA({ ...a, note: noteDraft }); setNoteDirty(false); setFlash({ kind: "ok", msg: "Note enregistrée" }); }
+      else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
+  }
+
+  async function addTimelineNote() {
+    if (!a || !timelineDraft.trim()) return;
+    setBusy("timeline");
+    try {
+      const r = await fetch(`/api/client/${encodeURIComponent(a.id)}/timeline`, {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ text: timelineDraft }),
+      });
+      const d = await r.json();
+      if (d.ok) { setTimelineDraft(""); load(); }
+      else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
     } finally { setBusy(""); }
   }
 
@@ -244,19 +281,16 @@ function ClientPage({ id }: { id: string }) {
   };
 
   const signBtn = (val: Sign, label: string, color: string) => {
-    const locked = !!a.signStatus;
     const active = a.signStatus === val;
     return (
       <button
-        onClick={() => { if (locked) return; saveStatus({ signStatus: val }); }}
-        disabled={locked && !active}
+        onClick={() => saveStatus({ signStatus: active ? "" : val })}
         style={{
           flex: 1, padding: "10px 6px", fontSize: 13, fontWeight: 600, borderRadius: 8,
-          cursor: locked ? "default" : "pointer",
+          cursor: "pointer",
           border: active ? `1.5px solid ${color}` : "1.5px solid #e5e7eb",
           background: active ? color : "#fff",
           color: active ? "#fff" : "#6b7280",
-          opacity: locked && !active ? 0.45 : 1,
         }}
       >
         {label}
@@ -286,7 +320,7 @@ function ClientPage({ id }: { id: string }) {
               <button onClick={() => { setDraftPhone(a.phone); setDraftEmail(a.email); setEditContact(true); }} style={{ padding: "7px 12px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                 ✏️ Modifier téléphone / e-mail
               </button>
-              {a.listingUrl && <a href={a.listingUrl} target="_blank" rel="noreferrer" style={{ color: PINK, fontSize: 13, fontWeight: 600, textDecoration: "none" }}>🔗 Voir l&apos;annonce</a>}
+              {a.listingUrl && <a href={/^https?:\/\//i.test(a.listingUrl) ? a.listingUrl : `https://${a.listingUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: PINK, fontSize: 13, fontWeight: 600, textDecoration: "underline" }}>🔗 Voir l&apos;annonce</a>}
             </div>
           </>
         ) : (
@@ -371,6 +405,30 @@ function ClientPage({ id }: { id: string }) {
         )}
       </div>
 
+      {/* === NOTES === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>📝 Notes internes</h2>
+        <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280" }}>Note libre sur ce client / RDV. Visible uniquement en interne. Max 1000 caractères.</p>
+        <textarea
+          value={noteDraft}
+          onChange={(e) => { setNoteDraft(e.target.value); setNoteDirty(true); }}
+          placeholder="Ex: client intéressé par garantie 12 mois, rappeler le 15…"
+          rows={5}
+          maxLength={1000}
+          style={{ width: "100%", padding: 12, fontSize: 14, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+        />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+          <span style={{ fontSize: 11, color: "#9aa6b8" }}>{noteDraft.length}/1000</span>
+          <button
+            onClick={saveNote}
+            disabled={!noteDirty || busy === "note"}
+            style={{ padding: "9px 16px", borderRadius: 7, background: !noteDirty || busy === "note" ? "#cbd5e1" : PINK, color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: !noteDirty ? "default" : "pointer" }}
+          >
+            {busy === "note" ? "Enregistrement…" : noteDirty ? "Enregistrer la note" : "✓ Note enregistrée"}
+          </button>
+        </div>
+      </div>
+
       {/* === COMMUNICATION === */}
       <div style={card}>
         <h2 style={sectionTitle}>✉️ Communication client</h2>
@@ -427,37 +485,69 @@ function ClientPage({ id }: { id: string }) {
           {signBtn("unsigned", "❌ Pas signé", "#dc2626")}
         </div>
         {a.signStatus === "signed" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 13, color: "#6b7280" }}>Montant négocié €</span>
-            <input
-              type="number"
-              value={a.negotiation || ""}
-              onChange={(e) => setA({ ...a, negotiation: Number(e.target.value) })}
-              onBlur={(e) => saveStatus({ negotiation: Number(e.target.value) })}
-              placeholder="0"
-              style={{ width: 120, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }}
-            />
-            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
-          </div>
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 13, color: "#6b7280" }}>Montant négocié €</span>
+              <input
+                type="number"
+                value={a.negotiation || ""}
+                onChange={(e) => setA({ ...a, negotiation: Number(e.target.value) })}
+                onBlur={(e) => saveStatus({ negotiation: Number(e.target.value) })}
+                placeholder="0"
+                style={{ width: 120, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }}
+              />
+              <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer", marginBottom: 8 }}>
+              <input type="checkbox" checked={a.bcSigned} onChange={(e) => saveStatus({ bcSigned: e.target.checked })} />
+              <div style={{ flex: 1 }}>
+                📝 Bon de commande signé
+                {a.bcSigned && a.bcSignedAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#1d4ed8", marginTop: 2 }}>Signé le {new Date(a.bcSignedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
+              </div>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.vehicleSold ? "#f0fdf4" : "#fff", border: `1.5px solid ${a.vehicleSold ? "#16a34a" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.vehicleSold ? "#166534" : NAVY, cursor: "pointer" }}>
+              <input type="checkbox" checked={a.vehicleSold} onChange={(e) => saveStatus({ vehicleSold: e.target.checked })} />
+              <div style={{ flex: 1 }}>
+                🏁 Véhicule vendu (livré / payé)
+                {a.vehicleSold && a.soldAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#166534", marginTop: 2 }}>Vendu le {new Date(a.soldAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
+              </div>
+            </label>
+          </>
         )}
       </div>
 
-      {/* === HISTORIQUE === */}
-      {a.history.length > 0 && (
-        <div style={card}>
-          <h2 style={sectionTitle}>📜 Historique</h2>
-          <div style={{ borderLeft: `2px solid ${PINK}`, paddingLeft: 12 }}>
+      {/* === TIMELINE === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>📜 Timeline</h2>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Chronologie des événements + ajout de notes datées (ex: &laquo; appelé, ne répond pas &raquo;).</p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <input
+            value={timelineDraft}
+            onChange={(e) => setTimelineDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addTimelineNote(); }}
+            placeholder="Ajouter une note datée…"
+            style={{ flex: 1, padding: 10, fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }}
+          />
+          <button onClick={addTimelineNote} disabled={!timelineDraft.trim() || busy === "timeline"} style={{ padding: "10px 14px", borderRadius: 7, background: !timelineDraft.trim() ? "#cbd5e1" : PINK, color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: !timelineDraft.trim() ? "default" : "pointer" }}>
+            {busy === "timeline" ? "…" : "Ajouter"}
+          </button>
+        </div>
+        {a.history.length === 0 ? (
+          <p style={{ fontSize: 13, color: "#9aa6b8", fontStyle: "italic", margin: 0 }}>Aucun événement.</p>
+        ) : (
+          <div style={{ borderLeft: `2px solid ${PINK}`, paddingLeft: 14 }}>
             {a.history.slice().reverse().map((h, i) => (
-              <div key={i} style={{ fontSize: 13, color: "#6b7280", padding: "4px 0" }}>
-                <span style={{ color: NAVY, fontWeight: 600 }}>{histLabel(h.t)}</span>
-                {h.t === "rescheduled" && h.info ? ` → ${new Date(h.info).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}` : ""}
-                {" · "}
-                {new Date(h.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}
+              <div key={i} style={{ position: "relative", padding: "8px 0", borderBottom: i < a.history.length - 1 ? "1px solid #f0f1f3" : "none" }}>
+                <div style={{ position: "absolute", left: -19, top: 12, width: 8, height: 8, borderRadius: "50%", background: PINK }} />
+                <div style={{ fontSize: 13, color: NAVY, fontWeight: 600 }}>{histLabel(h.t)}</div>
+                {h.t === "note" && h.info && <div style={{ fontSize: 13, color: "#232323", marginTop: 2, whiteSpace: "pre-wrap" }}>{h.info}</div>}
+                {h.t === "rescheduled" && h.info && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>→ {new Date(h.info).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
+                <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 2 }}>{new Date(h.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* === ZONE DANGEREUSE === */}
       {!a.cancelled && (
