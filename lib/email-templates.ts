@@ -139,6 +139,19 @@ export function parkingReservationEmail(d: {
   return { subject: `Votre place de parking est réservée — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
+/** Mail personnalisé : corps libre, mêmes shell/footer que les autres. */
+export function customEmail(d: { civility?: string; firstName: string; lastName?: string; subject: string; body: string }) {
+  const safeBody = d.body
+    .split(/\n{2,}/)
+    .map((p) => `<p style="margin:0 0 14px;font-size:15px">${p.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
+    ${safeBody}
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  return { subject: d.subject || `Message — ${BUSINESS}`, html: shell(content) };
+}
+
 /** Mail envoyé au client pour qu'il choisisse lui-même son créneau. */
 export function bookingInviteEmail(d: { bookUrl: string }) {
   const content = `

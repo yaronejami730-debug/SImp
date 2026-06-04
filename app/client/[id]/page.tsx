@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders } from "@/lib/client";
+import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -53,6 +54,9 @@ function ClientPage({ id }: { id: string }) {
   const [editContact, setEditContact] = useState(false);
   const [draftPhone, setDraftPhone] = useState("");
   const [draftEmail, setDraftEmail] = useState("");
+  const [customMailOpen, setCustomMailOpen] = useState(false);
+  const [customSubject, setCustomSubject] = useState("");
+  const [customBody, setCustomBody] = useState("");
   const [photos, setPhotos] = useState<{ path: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
@@ -174,6 +178,23 @@ function ClientPage({ id }: { id: string }) {
       const d = await r.json();
       if (d.ok) { setA({ ...a, note: noteDraft }); setNoteDirty(false); setFlash({ kind: "ok", msg: "Note enregistrée" }); }
       else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
+  }
+
+  async function sendCustomMail() {
+    if (!a || !customBody.trim()) return;
+    setBusy("custom_mail"); setFlash(null);
+    try {
+      const r = await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ action: "send_custom_mail", subject: customSubject, body: customBody }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        setFlash({ kind: "ok", msg: d.message ?? "Mail envoyé" });
+        setCustomMailOpen(false); setCustomSubject(""); setCustomBody("");
+      } else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
     } finally { setBusy(""); }
   }
 
@@ -447,6 +468,48 @@ function ClientPage({ id }: { id: string }) {
             "Mail rappel (envoyé automatiquement 2h avant)",
             "send_reminder_2h",
             { outline: true, color: PINK, disabled: !a.email || a.cancelled }
+          )}
+        </div>
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #e5e7eb" }}>
+          {!customMailOpen ? (
+            <button onClick={() => setCustomMailOpen(true)} disabled={!a.email} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, background: "#fff", border: `1.5px solid ${PINK}`, color: PINK, fontSize: 14, fontWeight: 600, cursor: a.email ? "pointer" : "not-allowed", opacity: a.email ? 1 : 0.5 }}>
+              ✉️ Envoyer un mail personnalisé
+            </button>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>📋 Templates rapides (clique pour pré-remplir)</label>
+                <select
+                  onChange={(e) => {
+                    const tpl = MAIL_TEMPLATES.find((t) => t.key === e.target.value);
+                    if (!tpl) return;
+                    const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
+                    setCustomSubject(fillVars(tpl.subject, { firstName: a.firstName, lastName: a.lastName, vehicle }));
+                    setCustomBody(fillVars(tpl.body, { firstName: a.firstName, lastName: a.lastName, vehicle }));
+                    e.target.value = "";
+                  }}
+                  style={{ width: "100%", padding: 10, fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb", boxSizing: "border-box", background: "#fff" }}
+                  defaultValue=""
+                >
+                  <option value="">— Choisir un template —</option>
+                  {TEMPLATE_CATEGORIES.map((cat) => (
+                    <optgroup key={cat} label={cat}>
+                      {MAIL_TEMPLATES.filter((t) => t.category === cat).map((t) => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <input value={customSubject} onChange={(e) => setCustomSubject(e.target.value)} placeholder="Objet du mail (optionnel)" style={{ padding: 11, fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+              <textarea value={customBody} onChange={(e) => setCustomBody(e.target.value)} rows={10} placeholder="Texte libre. Le mail aura le même design Simplicicar (logo, footer). Bonjour [Civilité Nom] sera ajouté automatiquement avant ton message." style={{ padding: 11, fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={sendCustomMail} disabled={busy === "custom_mail" || !customBody.trim()} style={{ flex: 1, padding: "11px 14px", borderRadius: 7, background: !customBody.trim() ? "#cbd5e1" : PINK, color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: !customBody.trim() ? "default" : "pointer" }}>
+                  {busy === "custom_mail" ? "Envoi…" : `📧 Envoyer à ${a.email}`}
+                </button>
+                <button onClick={() => { setCustomMailOpen(false); setCustomBody(""); setCustomSubject(""); }} style={{ padding: "11px 14px", borderRadius: 7, background: "#fff", color: "#6b7280", border: "1.5px solid #e5e7eb", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
+              </div>
+            </div>
           )}
         </div>
       </div>

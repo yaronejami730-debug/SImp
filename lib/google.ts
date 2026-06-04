@@ -111,6 +111,7 @@ export async function createEvent(a: Appointment, owner = "") {
     calendarId: CALENDAR_ID,
     requestBody: {
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
+      colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
       description: [
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
@@ -172,6 +173,7 @@ export async function createReminderEvent(opts: {
     sendUpdates: "none", // on envoie nos propres mails via Brevo, pas l'invite Google
     requestBody: {
       summary: `📞 Rappel ${name}`,
+      colorId: "3", // Grape = violet (rappel téléphonique)
       description: [
         `Téléphone : ${opts.phone}`,
         opts.clientEmail ? `E-mail : ${opts.clientEmail}` : "",
@@ -387,6 +389,19 @@ export async function patchContact(eventId: string, fields: { phone?: string; em
   });
 }
 
+/** Couleur Google Calendar selon statut.
+ *  9=Blueberry bleu / 10=Basil vert / 6=Tangerine orange / 8=Graphite gris / 11=Tomato rouge / 3=Grape violet */
+export function colorIdForStatus(opts: {
+  cancelled?: boolean; signStatus?: string;
+  bcSigned?: boolean; vehicleSold?: boolean;
+}): string {
+  if (opts.cancelled) return "11"; // rouge
+  if (opts.vehicleSold || opts.bcSigned || opts.signStatus === "signed") return "10"; // vert
+  if (opts.signStatus === "thinking") return "6"; // orange
+  if (opts.signStatus === "unsigned") return "8"; // gris
+  return "9"; // bleu (pris, sans statut)
+}
+
 /** Met à jour les champs de suivi (présent / signature / négo / BC / vendu) d'un RDV. */
 export async function patchTracking(
   eventId: string,
@@ -405,10 +420,26 @@ export async function patchTracking(
     priv.vehicleSold = fields.vehicleSold ? "1" : "";
     priv.soldAt = fields.vehicleSold ? new Date().toISOString() : "";
   }
+  // Calcule couleur à partir de l'état projeté
+  let colorId: string | undefined;
+  if (fields.signStatus !== undefined || fields.bcSigned !== undefined || fields.vehicleSold !== undefined) {
+    const ev = await getEvent(eventId);
+    const p = ev.extendedProperties?.private ?? {};
+    const next = {
+      cancelled: p.cancelled === "1",
+      signStatus: fields.signStatus ?? p.signStatus ?? "",
+      bcSigned: fields.bcSigned ?? p.bcSigned === "1",
+      vehicleSold: fields.vehicleSold ?? p.vehicleSold === "1",
+    };
+    colorId = colorIdForStatus(next);
+  }
   await cal.events.patch({
     calendarId: CALENDAR_ID,
     eventId,
-    requestBody: { extendedProperties: { private: priv } },
+    requestBody: {
+      extendedProperties: { private: priv },
+      ...(colorId ? { colorId } : {}),
+    },
   });
 }
 

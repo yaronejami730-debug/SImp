@@ -18,6 +18,20 @@ function Comptes() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
+
+  async function syncColors() {
+    if (!confirm("Réappliquer les couleurs Google Agenda sur tous les RDV et rappels (±1 an) ?")) return;
+    setSyncBusy(true); setSyncMsg("");
+    try {
+      const r = await fetch("/api/admin/sync-colors", { method: "POST", headers: authHeaders() });
+      const d = await r.json();
+      if (d.ok) setSyncMsg(`✅ ${d.updated} events recolorés (${d.rdvCount} RDV + ${d.reminderCount} rappels analysés sur ${d.checked}).`);
+      else setSyncMsg("❌ " + (d.error ?? "Erreur"));
+    } catch (e) { setSyncMsg("❌ " + (e instanceof Error ? e.message : "Erreur")); }
+    finally { setSyncBusy(false); }
+  }
 
   async function load() {
     setErr("");
@@ -47,8 +61,20 @@ function Comptes() {
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
 
+  const renderHeader = (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+      <h2 style={{ margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5 }}>🎨 Synchroniser couleurs Google Agenda</h2>
+      <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280" }}>Applique les couleurs : 🔵 bleu (RDV pris) · 🟢 vert (signé/BC/vendu) · 🟠 orange (réfléchit) · ⚫ gris (pas signé) · 🔴 rouge (annulé) · 🟣 violet (rappels téléphoniques). Affecte RDV et rappels des 12 derniers/prochains mois.</p>
+      <button onClick={syncColors} disabled={syncBusy} style={{ padding: "10px 18px", borderRadius: 8, background: syncBusy ? "#cbd5e1" : PINK, color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: syncBusy ? "not-allowed" : "pointer" }}>
+        {syncBusy ? "Sync en cours…" : "🎨 Synchroniser maintenant"}
+      </button>
+      {syncMsg && <p style={{ marginTop: 10, fontSize: 13, color: syncMsg.startsWith("✅") ? "#166534" : "#dc2626", fontWeight: 600 }}>{syncMsg}</p>}
+    </div>
+  );
+
   return (
     <>
+      {renderHeader}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Nouveau collaborateur</div>
         <div style={{ display: "grid", gap: 10 }}>

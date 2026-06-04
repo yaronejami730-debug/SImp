@@ -3,7 +3,7 @@ import { getAuth } from "@/lib/auth";
 import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { confirmationEmail, reminderEmail } from "@/lib/email-templates";
+import { confirmationEmail, reminderEmail, customEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 
 export const maxDuration = 30;
@@ -95,15 +95,17 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 }
 
-/** POST { action } → renvoie un mail/SMS lié au RDV.
+/** POST { action, ... } → renvoie un mail/SMS lié au RDV.
  *  Actions : "resend_confirmation_mail" | "resend_confirmation_sms"
  *          | "send_reminder_24h" | "send_reminder_2h"
+ *          | "send_custom_mail" (avec { subject, body })
  */
 export async function POST(req: Request, { params }: Params) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const { id } = await params;
-  const { action } = (await req.json()) as { action?: string };
+  const payload = (await req.json()) as { action?: string; subject?: string; body?: string };
+  const action = payload.action;
   if (!action) return NextResponse.json({ error: "action manquante." }, { status: 400 });
 
   try {
@@ -156,6 +158,15 @@ export async function POST(req: Request, { params }: Params) {
         await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
         if (ev.id) await markReminderSent(ev.id, kind);
         return NextResponse.json({ ok: true, message: `Rappel ${kind} envoyé à ${email}.` });
+      }
+      case "send_custom_mail": {
+        if (!email) return NextResponse.json({ error: "Pas d'e-mail client." }, { status: 400 });
+        const subject = (payload.subject || "").trim();
+        const body = (payload.body || "").trim();
+        if (!body) return NextResponse.json({ error: "Corps du mail vide." }, { status: 400 });
+        const mail = customEmail({ civility, firstName, lastName, subject, body });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        return NextResponse.json({ ok: true, message: `Mail personnalisé envoyé à ${email}.` });
       }
       default:
         return NextResponse.json({ error: `Action inconnue : ${action}` }, { status: 400 });

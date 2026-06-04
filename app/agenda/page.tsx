@@ -21,6 +21,10 @@ type Appt = {
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
 };
+type Reminder = {
+  id: number; first_name: string; last_name: string; phone: string;
+  listing_url: string; note: string; remind_at: string; status: string; owner: string;
+};
 
 const histLabel = (t: string) =>
   ({ created: "Rendez-vous créé + mail de confirmation", rescheduled: "Reprogrammé", reminder_24h: "Rappel 24h envoyé", reminder_2h: "Rappel 2h envoyé", parking_requested: "Place de parking réservée", parking_cancelled: "Réservation parking annulée", parking_sent: "Mail parking envoyé au client" } as Record<string, string>)[t] ?? t;
@@ -35,6 +39,7 @@ function Agenda() {
   const me = getUser();
   const isAdmin = me?.role === "admin";
   const [appts, setAppts] = useState<Appt[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -44,10 +49,13 @@ function Agenda() {
   async function load() {
     setLoading(true); setErr("");
     try {
-      const res = await fetch("/api/appointments", { headers: authHeaders() });
-      const d = await res.json();
-      if (d.ok) setAppts(d.appointments);
-      else setErr(d.error ?? "Erreur");
+      const [r1, r2] = await Promise.all([
+        fetch("/api/appointments", { headers: authHeaders() }).then((r) => r.json()),
+        fetch("/api/reminders", { headers: authHeaders() }).then((r) => r.json()).catch(() => ({ ok: false })),
+      ]);
+      if (r1.ok) setAppts(r1.appointments);
+      else setErr(r1.error ?? "Erreur");
+      if (r2.ok) setReminders(r2.reminders);
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
   }
@@ -93,60 +101,75 @@ function Agenda() {
     else alert("Erreur : " + (d.error ?? ""));
   }
 
-  const { groups, total, month, byOwner } = useMemo(() => {
-    const now = new Date();
-    const today = parisDate(now);
-    const yest = parisDate(new Date(now.getTime() - 86400000));
-    const tmrw = parisDate(new Date(now.getTime() + 86400000));
+  // Filtre recherche (garde annulés pour les voir en rouge)
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const qd = onlyDigits(q);
-    const matches = (a: Appt) => {
+    return appts.filter((a) => {
+      if (!a.startDateTime) return false;
       if (!q) return true;
       if (qd && onlyDigits(a.phone).includes(qd)) return true;
       const hay = `${a.firstName} ${a.lastName} ${a.email} ${a.carBrand} ${a.carModel} ${a.carFinish} ${a.platform}`.toLowerCase();
       return hay.includes(q);
-    };
-    const filtered = appts.filter((a) => a.startDateTime).filter(matches).sort((a, b) => (a.startDateTime! < b.startDateTime! ? -1 : 1));
-    const g: Record<string, Appt[]> = { sold: [], bc: [], auj: [], dem: [], avenir: [], hier: [], passSigned: [], passThinking: [], passUnsigned: [], passOther: [], annules: [] };
-    for (const a of filtered) {
-      if (a.vehicleSold) g.sold.push(a);
-      else if (a.bcSigned) g.bc.push(a);
-      if (a.cancelled) { g.annules.push(a); continue; }
-      const d = parisDate(new Date(a.startDateTime!));
-      if (d === today) g.auj.push(a);
-      else if (d === tmrw) g.dem.push(a);
-      else if (d === yest) g.hier.push(a);
-      else if (a.startDateTime! > now.toISOString()) g.avenir.push(a);
-      else {
-        if (a.signStatus === "signed") g.passSigned.push(a);
-        else if (a.signStatus === "thinking") g.passThinking.push(a);
-        else if (a.signStatus === "unsigned") g.passUnsigned.push(a);
-        else g.passOther.push(a);
-      }
-    }
-    g.sold.reverse();
-    g.bc.reverse();
-    g.passSigned.reverse();
-    g.passThinking.reverse();
-    g.passUnsigned.reverse();
-    g.passOther.reverse();
-    g.annules.reverse();
-    const total = appts.reduce((s, a) => s + commission(a), 0);
-    const monthKey = today.slice(0, 7);
-    const m = { rdv: 0, signed: 0, present: 0, thinking: 0, bc: 0, sold: 0, comm: 0 };
-    const owners: Record<string, number> = {};
-    for (const a of appts) {
-      if (!a.startDateTime) continue;
-      if (parisDate(new Date(a.startDateTime)).slice(0, 7) !== monthKey) continue;
-      m.rdv++;
-      if (a.present) m.present++;
-      if (a.signStatus === "thinking") m.thinking++;
-      if (a.signStatus === "signed") { m.signed++; m.comm += commission(a); owners[a.owner || "—"] = (owners[a.owner || "—"] || 0) + commission(a); }
-      if (a.bcSigned) m.bc++;
-      if (a.vehicleSold) m.sold++;
-    }
-    return { groups: g, total, month: m, byOwner: owners };
+    });
   }, [appts, search]);
+
+  // Couleur dominante d'un jour selon priorité : annulé > signé > réfléchit > pris
+  const dayColor = (list: Appt[]): string => {
+    if (list.length === 0) return "transparent";
+    if (list.some((a) => a.cancelled)) return "#dc2626"; // rouge
+    if (list.some((a) => a.signStatus === "signed" || a.bcSigned || a.vehicleSold)) return "#16a34a"; // vert
+    if (list.some((a) => a.signStatus === "thinking")) return "#f59e0b"; // orange
+    if (list.some((a) => a.signStatus === "unsigned")) return "#6b7280"; // gris
+    return "#2563eb"; // bleu (RDV pris sans statut)
+  };
+  const statusColor = (a: Appt): string => {
+    if (a.cancelled) return "#dc2626";
+    if (a.signStatus === "signed" || a.bcSigned || a.vehicleSold) return "#16a34a";
+    if (a.signStatus === "thinking") return "#f59e0b";
+    if (a.signStatus === "unsigned") return "#6b7280";
+    return "#2563eb";
+  };
+
+  // Index par jour (YYYY-MM-DD)
+  const byDay = useMemo(() => {
+    const m = new Map<string, Appt[]>();
+    for (const a of filtered) {
+      const d = parisDate(new Date(a.startDateTime!));
+      const list = m.get(d) ?? [];
+      list.push(a);
+      m.set(d, list);
+    }
+    for (const list of m.values()) list.sort((x, y) => (x.startDateTime! < y.startDateTime! ? -1 : 1));
+    return m;
+  }, [filtered]);
+
+  // Rappels par jour
+  const remindersByDay = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const qd = onlyDigits(q);
+    const filt = reminders.filter((r) => {
+      if (r.status !== "pending") return false;
+      if (!q) return true;
+      if (qd && onlyDigits(r.phone).includes(qd)) return true;
+      const hay = `${r.first_name} ${r.last_name} ${r.note}`.toLowerCase();
+      return hay.includes(q);
+    });
+    const m = new Map<string, Reminder[]>();
+    for (const r of filt) {
+      const d = parisDate(new Date(r.remind_at));
+      const list = m.get(d) ?? [];
+      list.push(r);
+      m.set(d, list);
+    }
+    for (const list of m.values()) list.sort((x, y) => x.remind_at < y.remind_at ? -1 : 1);
+    return m;
+  }, [reminders, search]);
+
+  // Mois courant affiché + jour sélectionné
+  const today = parisDate(new Date());
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<string>(today);
 
   const fmt = (iso: string) => new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -176,7 +199,7 @@ function Agenda() {
   const vehicleLabel = (a: Appt) => [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
 
   const card = (a: Appt) => (
-    <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
+    <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderLeft: `4px solid ${statusColor(a)}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
       {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>ANNULÉ</div>}
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div>
@@ -261,57 +284,127 @@ function Agenda() {
     </div>
   );
 
-  const section = (title: string, list: Appt[]) => list.length === 0 ? null : (
-    <div key={title} style={{ marginBottom: 22 }}>
-      <h2 style={{ fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>{title} <span style={{ color: "#9aa6b8" }}>({list.length})</span></h2>
-      <div style={{ display: "grid", gap: 10 }}>{list.map(card)}</div>
-    </div>
-  );
+  // === CALENDRIER MENSUEL ===
+  const baseDate = new Date();
+  baseDate.setDate(1);
+  baseDate.setMonth(baseDate.getMonth() + monthOffset);
+  const year = baseDate.getFullYear();
+  const monthIdx = baseDate.getMonth();
+  const monthName = baseDate.toLocaleString("fr-FR", { month: "long", year: "numeric" });
+
+  // Cellules : 7 cols, commence lundi
+  const firstDay = new Date(year, monthIdx, 1);
+  const startWeekday = (firstDay.getDay() + 6) % 7; // 0=lundi
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+  const cells: ({ date: string; day: number; inMonth: boolean })[] = [];
+  // jours du mois précédent pour combler
+  for (let i = startWeekday - 1; i >= 0; i--) {
+    const d = new Date(year, monthIdx, -i);
+    cells.push({ date: parisDate(d), day: d.getDate(), inMonth: false });
+  }
+  // mois courant
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ date: parisDate(new Date(year, monthIdx, d)), day: d, inMonth: true });
+  }
+  // mois suivant pour compléter à multiple de 7
+  while (cells.length % 7 !== 0 || cells.length < 35) {
+    const d = new Date(year, monthIdx + 1, cells.length - daysInMonth - startWeekday + 1);
+    cells.push({ date: parisDate(d), day: d.getDate(), inMonth: false });
+  }
+
+  const selectedList = byDay.get(selectedDay) ?? [];
+  const dayLabel = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" });
 
   return (
     <>
-      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
-        <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Ce mois-ci</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, textAlign: "center" }}>
-          {[{ n: month.rdv, l: "RDV", c: NAVY }, { n: month.present, l: "Présents", c: NAVY }, { n: month.signed, l: "Signés", c: "#16a34a" }, { n: month.thinking, l: "Réfléchit", c: "#ca8a04" }, { n: month.bc, l: "BC signés", c: "#2563eb" }, { n: month.sold, l: "Vendus 🏁", c: "#16a34a" }].map((s) => (
-            <div key={s.l}><div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: s.c }}>{s.n}</div><div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase" }}>{s.l}</div></div>
-          ))}
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher (nom, prénom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 14 }} />
+
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <button onClick={() => setMonthOffset(monthOffset - 1)} style={{ padding: "6px 12px", borderRadius: 7, background: "#fff", border: "1.5px solid #e5e7eb", fontSize: 14, fontWeight: 600, color: NAVY, cursor: "pointer" }}>‹</button>
+          <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 16, fontWeight: 700, color: NAVY, textTransform: "capitalize" }}>{monthName}</div>
+          <button onClick={() => setMonthOffset(monthOffset + 1)} style={{ padding: "6px 12px", borderRadius: 7, background: "#fff", border: "1.5px solid #e5e7eb", fontSize: 14, fontWeight: 600, color: NAVY, cursor: "pointer" }}>›</button>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #f0f1f3", marginTop: 14, paddingTop: 12 }}>
-          <span style={{ color: "#6b7280", fontSize: 13 }}>Commission du mois</span>
-          <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: "#16a34a" }}>{eur(month.comm)}</span>
-        </div>
-        {isAdmin && Object.keys(byOwner).length > 0 && (
-          <div style={{ borderTop: "1px solid #f0f1f3", marginTop: 10, paddingTop: 10 }}>
-            <div style={{ fontSize: 11, color: "#9aa6b8", textTransform: "uppercase", marginBottom: 6 }}>Par collaborateur (mois)</div>
-            {Object.entries(byOwner).sort((a, b) => b[1] - a[1]).map(([o, v]) => (
-              <div key={o} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
-                <span style={{ color: "#6b7280" }}>{o}</span><span style={{ fontWeight: 600 }}>{eur(v)}</span>
-              </div>
-            ))}
-          </div>
+        {monthOffset !== 0 && (
+          <button onClick={() => { setMonthOffset(0); setSelectedDay(today); }} style={{ width: "100%", marginBottom: 10, padding: "6px 10px", borderRadius: 7, background: PINK, color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>← Aujourd&apos;hui</button>
         )}
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-          <span style={{ color: "#9aa6b8", fontSize: 12 }}>Total tous mois</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#6b7280" }}>{eur(total)}</span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
+          {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => (
+            <div key={i} style={{ textAlign: "center", fontSize: 10, color: "#9aa6b8", fontWeight: 700, padding: 4 }}>{d}</div>
+          ))}
+          {cells.map((c) => {
+            const list = byDay.get(c.date) ?? [];
+            const rems = remindersByDay.get(c.date) ?? [];
+            const isToday = c.date === today;
+            const isSel = c.date === selectedDay;
+            const dotColor = dayColor(list);
+            const hasReminder = rems.length > 0;
+            const totalCount = list.length + rems.length;
+            return (
+              <button
+                key={c.date}
+                onClick={() => setSelectedDay(c.date)}
+                style={{
+                  aspectRatio: "1 / 1.1",
+                  padding: 2,
+                  borderRadius: 7,
+                  border: isSel ? `2px solid ${PINK}` : isToday ? "1.5px solid " + NAVY : "1px solid #f0f1f3",
+                  background: !c.inMonth ? "#fafafa" : isSel ? "#fff5f9" : "#fff",
+                  color: !c.inMonth ? "#cbd5e1" : NAVY,
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "flex-start",
+                  fontSize: 13,
+                  fontWeight: isToday ? 800 : 600,
+                  paddingTop: 4,
+                  position: "relative",
+                }}
+              >
+                <span>{c.day}</span>
+                {totalCount > 0 && (
+                  <span style={{ marginTop: "auto", marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
+                    {list.length > 0 && <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor }} />}
+                    {hasReminder && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#8b5cf6" }} />}
+                    <span style={{ fontSize: 10, fontWeight: 700, color: dotColor !== "transparent" ? dotColor : "#8b5cf6" }}>{totalCount}</span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* tabIndex -1 empêche le focus auto sur mobile */}
-      <input tabIndex={-1} onFocus={(e) => e.target.tabIndex = 0} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher (nom, prénom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 20 }} />
-
       {err && <p style={{ color: "#dc2626" }}>❌ {err}</p>}
-      {section("🏁 Véhicules vendus", groups.sold)}
-      {section("📝 BC signés (pas encore vendus)", groups.bc)}
-      {section("Aujourd'hui", groups.auj)}
-      {section("Demain", groups.dem)}
-      {section("À venir", groups.avenir)}
-      {section("Hier", groups.hier)}
-      {section("✅ Passés — Signés", groups.passSigned)}
-      {section("🤔 Passés — Réfléchit", groups.passThinking)}
-      {section("❌ Passés — Pas signés", groups.passUnsigned)}
-      {section("Passés — sans statut", groups.passOther)}
-      {section("Annulés", groups.annules)}
+
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>
+          {selectedDay === today ? "Aujourd'hui" : ""} <span style={{ color: NAVY, textTransform: "capitalize" }}>{dayLabel(selectedDay)}</span> <span style={{ color: "#9aa6b8" }}>({selectedList.length + (remindersByDay.get(selectedDay)?.length ?? 0)})</span>
+        </h2>
+        {(remindersByDay.get(selectedDay) ?? []).map((r) => (
+          <div key={`rem-${r.id}`} style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderLeft: "4px solid #8b5cf6", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>📞 Rappel téléphonique</div>
+                <div style={{ fontWeight: 700, color: NAVY, fontSize: 14, marginTop: 2 }}>{r.first_name} {r.last_name}</div>
+                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{r.phone}</div>
+                {r.note && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2, fontStyle: "italic" }}>{r.note}</div>}
+                {r.listing_url && <a href={r.listing_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#8b5cf6", textDecoration: "underline" }}>🔗 Annonce</a>}
+              </div>
+              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: NAVY }}>
+                {new Date(r.remind_at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+          </div>
+        ))}
+        {selectedList.length === 0 && (remindersByDay.get(selectedDay) ?? []).length === 0 ? (
+          <p style={{ color: "#9aa6b8", textAlign: "center", padding: 20, background: "#fff", border: "1px solid #f0f1f3", borderRadius: 10, fontSize: 14, fontStyle: "italic" }}>Rien ce jour.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>{selectedList.map(card)}</div>
+        )}
+      </div>
+
       {appts.length === 0 && !loading && <p style={{ color: "#6b7280", textAlign: "center" }}>Aucun rendez-vous.</p>}
     </>
   );
