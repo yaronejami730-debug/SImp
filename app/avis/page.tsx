@@ -20,9 +20,13 @@ export default function AvisPage() {
   const [commentaire, setCommentaire] = useState("");
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState("");
+  const [name, setName] = useState("");
+  const [identified, setIdentified] = useState(false);
 
   useEffect(() => {
-    setToken(new URLSearchParams(window.location.search).get("t") ?? "");
+    const t = new URLSearchParams(window.location.search).get("t") ?? "";
+    setToken(t);
+    setIdentified(!!t); // lien du mail = client déjà identifié
   }, []);
 
   // Referral state
@@ -38,7 +42,7 @@ export default function AvisPage() {
       const res = await fetch("/api/avis", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rating, q_accueil: accueil, q_recommande: recommande, commentaire, t: token }),
+        body: JSON.stringify({ rating, q_accueil: accueil, q_recommande: recommande, commentaire, t: token, firstName: name }),
       });
       const d = await res.json();
       if (d.ok) setStep("done");
@@ -100,6 +104,19 @@ export default function AvisPage() {
             </div>
 
             <div style={{ display: "grid", gap: 16 }}>
+              {!identified && (
+                <div>
+                  <label style={{ display: "block", fontSize: 14, fontWeight: 600, color: NAVY, marginBottom: 6 }}>
+                    Votre nom et prénom
+                  </label>
+                  <input
+                    style={inputStyle}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Jean Dupont"
+                  />
+                </div>
+              )}
               <div>
                 <label style={{ display: "block", fontSize: 14, fontWeight: 600, color: NAVY, marginBottom: 6 }}>
                   Comment avez-vous trouvé l&apos;accueil ?
