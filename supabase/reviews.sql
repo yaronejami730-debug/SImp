@@ -4,6 +4,7 @@ create table if not exists reviews (
   last_name text default '',
   email text default '',
   rating integer not null check (rating between 1 and 5),
+  vehicle text default '',
   q_accueil text default '',
   q_recommande text default '',
   commentaire text default '',
@@ -15,6 +16,7 @@ create table if not exists referrals (
   referrer_email text default '',
   referrer_name text default '',
   friend_name text default '',
+  friend_email text default '',
   friend_phone text default '',
   created_at timestamptz default now()
 );

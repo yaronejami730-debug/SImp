@@ -31,9 +31,11 @@ export default function AvisPage() {
 
   // Referral state
   const [friendName, setFriendName] = useState("");
+  const [friendEmail, setFriendEmail] = useState("");
   const [friendPhone, setFriendPhone] = useState("");
   const [refBusy, setRefBusy] = useState(false);
   const [refDone, setRefDone] = useState(false);
+  const refValid = friendName.trim() !== "" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(friendEmail);
 
   async function submit() {
     if (!rating) return;
@@ -51,13 +53,13 @@ export default function AvisPage() {
   }
 
   async function submitReferral() {
-    if (!friendName.trim() || friendPhone.replace(/\D/g, "").length < 9) return;
+    if (!refValid) return;
     setRefBusy(true);
     try {
       const res = await fetch("/api/parrainage", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ friendName, friendPhone }),
+        body: JSON.stringify({ friendName, friendEmail, friendPhone }),
       });
       const d = await res.json();
       if (d.ok) setRefDone(true);
@@ -235,23 +237,30 @@ export default function AvisPage() {
                     style={inputStyle}
                     value={friendName}
                     onChange={(e) => setFriendName(e.target.value)}
-                    placeholder="Prénom de votre proche"
+                    placeholder="Nom et prénom de votre proche"
+                  />
+                  <input
+                    style={inputStyle}
+                    type="email"
+                    value={friendEmail}
+                    onChange={(e) => setFriendEmail(e.target.value)}
+                    placeholder="Son adresse e-mail (pour lui envoyer)"
                   />
                   <input
                     style={inputStyle}
                     type="tel"
                     value={friendPhone}
                     onChange={(e) => setFriendPhone(e.target.value)}
-                    placeholder="Son numéro de téléphone"
+                    placeholder="Son numéro de téléphone (optionnel)"
                   />
                   <button
                     onClick={submitReferral}
-                    disabled={refBusy || !friendName.trim() || friendPhone.replace(/\D/g, "").length < 9}
+                    disabled={refBusy || !refValid}
                     style={{
                       padding: "15px 20px", borderRadius: 10, border: "none", fontFamily: FONT_BODY,
                       fontSize: 16, fontWeight: 700,
-                      cursor: refBusy ? "not-allowed" : "pointer",
-                      background: refBusy || !friendName.trim() ? "#cbd5e1" : PINK, color: "#fff",
+                      cursor: refBusy || !refValid ? "not-allowed" : "pointer",
+                      background: refBusy || !refValid ? "#cbd5e1" : PINK, color: "#fff",
                     }}
                   >
                     {refBusy ? "Envoi…" : "🤝 Parrainer quelqu'un"}

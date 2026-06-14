@@ -12,6 +12,7 @@ export async function POST(req: Request) {
 
   const friendEmail = String(body.friendEmail ?? "").trim().toLowerCase();
   const friendName = String(body.friendName ?? "").trim();
+  const friendPhone = String(body.friendPhone ?? "").trim();
   const referrerName = String(body.referrerName ?? "").trim();
 
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(friendEmail)) {
@@ -20,8 +21,8 @@ export async function POST(req: Request) {
 
   try {
     await getPool().query(
-      `insert into referrals (referrer_email, referrer_name, friend_name, friend_phone) values ($1,$2,$3,$4)`,
-      ["", referrerName, friendName, friendEmail],
+      `insert into referrals (referrer_email, referrer_name, friend_name, friend_email, friend_phone) values ($1,$2,$3,$4,$5)`,
+      ["", referrerName, friendName, friendEmail, friendPhone],
     );
 
     const base = (process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "");
