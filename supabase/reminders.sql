@@ -7,7 +7,7 @@ create table if not exists reminders (
   listing_url text default '',
   note text default '',
   remind_at timestamptz not null,
-  status text not null default 'pending',  -- pending | done | skipped
+  status text not null default 'pending',  -- pending | done | skipped | nrp
   owner text not null default '',          -- email du collaborateur
   lead_id bigint references leads(id) on delete set null,
   event_id text default '',                -- id de l'événement Google Agenda
@@ -16,6 +16,7 @@ create table if not exists reminders (
 alter table reminders add column if not exists event_id text default '';
 alter table reminders add column if not exists client_email text default '';
 alter table reminders add column if not exists notified_at timestamptz;
+alter table reminders add column if not exists nrp_count int not null default 0;  -- nb de fois "ne répond pas"
 
 create index if not exists reminders_status_idx on reminders (status, remind_at);
 create index if not exists reminders_owner_idx on reminders (owner, status);

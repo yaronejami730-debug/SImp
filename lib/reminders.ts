@@ -8,7 +8,8 @@ export type Reminder = {
   listing_url: string;
   note: string;
   remind_at: string;
-  status: string; // pending | done | skipped
+  status: string; // pending | done | skipped | nrp
+  nrp_count: number; // nb de tentatives "ne répond pas"
   owner: string;
   lead_id: number | null;
   event_id: string;
@@ -66,6 +67,15 @@ export async function listReminders(owner?: string): Promise<Reminder[]> {
 /** Met à jour le statut d'un rappel (done / skipped / pending). */
 export async function updateReminderStatus(id: number, status: string): Promise<void> {
   await getPool().query(`update reminders set status = $2 where id = $1`, [id, status]);
+}
+
+/** Marque "ne répond pas" : incrémente le compteur, passe le statut à 'nrp'. */
+export async function incrementNrp(id: number): Promise<number> {
+  const { rows } = await getPool().query<{ nrp_count: number }>(
+    `update reminders set nrp_count = nrp_count + 1, status = 'nrp' where id = $1 returning nrp_count`,
+    [id],
+  );
+  return rows[0]?.nrp_count ?? 0;
 }
 
 /** Supprime un rappel. */

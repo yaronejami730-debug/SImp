@@ -18,6 +18,7 @@ type Reminder = {
   note: string;
   remind_at: string;
   status: string;
+  nrp_count: number;
   owner: string;
   lead_id: number | null;
   created_at: string;
@@ -137,6 +138,16 @@ function Rappels() {
     });
   }
 
+  // "Ne répond pas" : incrémente le compteur (optimiste) puis sync serveur.
+  async function markNrp(id: number) {
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, status: "nrp", nrp_count: (r.nrp_count ?? 0) + 1 } : r)));
+    await fetch("/api/reminders", {
+      method: "PATCH",
+      headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ id, status: "nrp" }),
+    });
+  }
+
   async function del(id: number) {
     if (!confirm("Supprimer ce rappel ?")) return;
     setReminders((prev) => prev.filter((r) => r.id !== id));
@@ -244,6 +255,16 @@ function Rappels() {
           }}
         >
           ✅ Fait
+        </button>
+        <button
+          onClick={() => markNrp(r.id)}
+          title="Ne répond pas"
+          style={{
+            flex: "0 1 auto", padding: "9px 10px", borderRadius: 8, border: "1.5px solid #fed7aa", cursor: "pointer",
+            background: "#fff7ed", color: "#c2410c", fontSize: 13, fontWeight: 600,
+          }}
+        >
+          📵 NRP{r.nrp_count > 0 ? ` ${r.nrp_count}` : ""}
         </button>
         <button
           onClick={() => setStatus(r.id, "skipped")}

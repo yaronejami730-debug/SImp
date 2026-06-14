@@ -266,7 +266,7 @@ export function signedRatingEmail(d: {
   const avisHref = d.avisUrl || `${(process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "")}/avis`;
   const content = `
     <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
-    <p style="margin:0 0 16px;font-size:15px">Merci pour votre confiance — votre vente est finalisée.</p>
+    <p style="margin:0 0 16px;font-size:15px">Merci de nous avoir confié votre véhicule.</p>
     <p style="margin:0 0 16px;font-size:15px">Pouvez-vous prendre 30 secondes pour <strong>noter votre expérience</strong> ?</p>
     <p style="margin:0 0 4px;font-size:14px;color:${C.muted}">Votre retour nous aide à toujours mieux vous servir.</p>
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;

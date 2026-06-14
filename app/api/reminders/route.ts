@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addReminder, listReminders, updateReminderStatus, deleteReminder, setReminderEventId, getReminderEventId } from "@/lib/reminders";
+import { addReminder, listReminders, updateReminderStatus, incrementNrp, deleteReminder, setReminderEventId, getReminderEventId } from "@/lib/reminders";
 import { createReminderEvent, deleteEvent, createGoogleContact } from "@/lib/google";
 import { sendSMS } from "@/lib/allmysms";
 import { getAuth } from "@/lib/auth";
@@ -112,8 +112,12 @@ export async function PATCH(req: Request) {
 
   try {
     const { id, status } = (await req.json()) as { id?: number; status?: string };
-    if (!id || !status || !["pending", "done", "skipped"].includes(status)) {
-      return NextResponse.json({ error: "id et status (pending/done/skipped) requis." }, { status: 400 });
+    if (!id || !status || !["pending", "done", "skipped", "nrp"].includes(status)) {
+      return NextResponse.json({ error: "id et status (pending/done/skipped/nrp) requis." }, { status: 400 });
+    }
+    if (status === "nrp") {
+      const nrpCount = await incrementNrp(id);
+      return NextResponse.json({ ok: true, nrpCount });
     }
     await updateReminderStatus(id, status);
     return NextResponse.json({ ok: true });

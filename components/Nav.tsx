@@ -75,6 +75,17 @@ export default function Nav({ active }: { active: string }) {
         )}
         {user?.role === "admin" && (
           <a
+            href="/templates"
+            style={{
+              flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
+              background: active === "templates" ? PINK : "#fff", color: active === "templates" ? "#fff" : NAVY, border: "1px solid " + (active === "templates" ? PINK : "#e5e7eb"),
+            }}
+          >
+            📧 Templates
+          </a>
+        )}
+        {user?.role === "admin" && (
+          <a
             href="/comptes"
             style={{
               flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
