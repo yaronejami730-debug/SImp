@@ -15,7 +15,7 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
-  present: boolean; signStatus: Sign; negotiation: number; owner: string;
+  present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
@@ -208,7 +208,7 @@ function Agenda() {
           </a>
           {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}</div>}
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
+          <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{a.commercial ? ` · 👤 ${a.commercial}` : ""}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
           {a.listingUrl && <a href={safeUrl(a.listingUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "underline", fontWeight: 600, display: "inline-block", marginTop: 2 }}>🔗 Voir l&apos;annonce</a>}
         </div>
         <div style={{ textAlign: "right" }}>
@@ -284,6 +284,29 @@ function Agenda() {
     </div>
   );
 
+  const reminderCard = (r: Reminder) => (
+    <div key={`rem-${r.id}`} style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderLeft: "4px solid #8b5cf6", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>📞 Rappel téléphonique</div>
+          <div style={{ fontWeight: 700, color: NAVY, fontSize: 14, marginTop: 2 }}>{r.first_name} {r.last_name}</div>
+          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{r.phone}</div>
+          {r.note && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2, fontStyle: "italic" }}>{r.note}</div>}
+          {r.listing_url && <a href={r.listing_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#8b5cf6", textDecoration: "underline" }}>🔗 Annonce</a>}
+        </div>
+        <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: NAVY }}>
+          {new Date(r.remind_at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+        </div>
+      </div>
+    </div>
+  );
+
+  // Recherche globale : quand on tape une recherche, on liste TOUS les résultats
+  // de l'agenda (toutes dates confondues), pas seulement le jour sélectionné.
+  const searchActive = search.trim() !== "";
+  const searchAppts = [...filtered].sort((x, y) => (x.startDateTime! < y.startDateTime! ? -1 : 1));
+  const searchRems = [...remindersByDay.values()].flat().sort((x, y) => (x.remind_at < y.remind_at ? -1 : 1));
+
   // === CALENDRIER MENSUEL ===
   const baseDate = new Date();
   baseDate.setDate(1);
@@ -317,7 +340,7 @@ function Agenda() {
 
   return (
     <>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher (nom, prénom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 14 }} />
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher dans tout l'agenda (nom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 14 }} />
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -378,32 +401,32 @@ function Agenda() {
 
       {err && <p style={{ color: "#dc2626" }}>❌ {err}</p>}
 
-      <div style={{ marginBottom: 22 }}>
-        <h2 style={{ fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>
-          {selectedDay === today ? "Aujourd'hui" : ""} <span style={{ color: NAVY, textTransform: "capitalize" }}>{dayLabel(selectedDay)}</span> <span style={{ color: "#9aa6b8" }}>({selectedList.length + (remindersByDay.get(selectedDay)?.length ?? 0)})</span>
-        </h2>
-        {(remindersByDay.get(selectedDay) ?? []).map((r) => (
-          <div key={`rem-${r.id}`} style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderLeft: "4px solid #8b5cf6", borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>📞 Rappel téléphonique</div>
-                <div style={{ fontWeight: 700, color: NAVY, fontSize: 14, marginTop: 2 }}>{r.first_name} {r.last_name}</div>
-                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{r.phone}</div>
-                {r.note && <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2, fontStyle: "italic" }}>{r.note}</div>}
-                {r.listing_url && <a href={r.listing_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#8b5cf6", textDecoration: "underline" }}>🔗 Annonce</a>}
-              </div>
-              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: NAVY }}>
-                {new Date(r.remind_at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })}
-              </div>
-            </div>
-          </div>
-        ))}
-        {selectedList.length === 0 && (remindersByDay.get(selectedDay) ?? []).length === 0 ? (
-          <p style={{ color: "#9aa6b8", textAlign: "center", padding: 20, background: "#fff", border: "1px solid #f0f1f3", borderRadius: 10, fontSize: 14, fontStyle: "italic" }}>Rien ce jour.</p>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>{selectedList.map(card)}</div>
-        )}
-      </div>
+      {searchActive ? (
+        <div style={{ marginBottom: 22 }}>
+          <h2 style={{ fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>
+            🔍 Résultats pour « {search.trim()} » <span style={{ color: "#9aa6b8" }}>({searchAppts.length + searchRems.length})</span>
+          </h2>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#9aa6b8" }}>Recherche sur tout l&apos;agenda (toutes dates). La date du RDV est indiquée sur chaque résultat.</p>
+          {searchRems.map(reminderCard)}
+          {searchAppts.length === 0 && searchRems.length === 0 ? (
+            <p style={{ color: "#9aa6b8", textAlign: "center", padding: 20, background: "#fff", border: "1px solid #f0f1f3", borderRadius: 10, fontSize: 14, fontStyle: "italic" }}>Aucun résultat dans l&apos;agenda.</p>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>{searchAppts.map(card)}</div>
+          )}
+        </div>
+      ) : (
+        <div style={{ marginBottom: 22 }}>
+          <h2 style={{ fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>
+            {selectedDay === today ? "Aujourd'hui" : ""} <span style={{ color: NAVY, textTransform: "capitalize" }}>{dayLabel(selectedDay)}</span> <span style={{ color: "#9aa6b8" }}>({selectedList.length + (remindersByDay.get(selectedDay)?.length ?? 0)})</span>
+          </h2>
+          {(remindersByDay.get(selectedDay) ?? []).map(reminderCard)}
+          {selectedList.length === 0 && (remindersByDay.get(selectedDay) ?? []).length === 0 ? (
+            <p style={{ color: "#9aa6b8", textAlign: "center", padding: 20, background: "#fff", border: "1px solid #f0f1f3", borderRadius: 10, fontSize: 14, fontStyle: "italic" }}>Rien ce jour.</p>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>{selectedList.map(card)}</div>
+          )}
+        </div>
+      )}
 
       {appts.length === 0 && !loading && <p style={{ color: "#6b7280", textAlign: "center" }}>Aucun rendez-vous.</p>}
     </>

@@ -64,6 +64,17 @@ export default function Nav({ active }: { active: string }) {
         ))}
         {user?.role === "admin" && (
           <a
+            href="/avis-admin"
+            style={{
+              flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
+              background: active === "avis-admin" ? PINK : "#fff", color: active === "avis-admin" ? "#fff" : NAVY, border: "1px solid " + (active === "avis-admin" ? PINK : "#e5e7eb"),
+            }}
+          >
+            ⭐ Avis
+          </a>
+        )}
+        {user?.role === "admin" && (
+          <a
             href="/comptes"
             style={{
               flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",

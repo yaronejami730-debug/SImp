@@ -61,6 +61,28 @@ export function verifyBooking(token: string): BookingPayload | null {
   }
 }
 
+export type ReviewPayload = { firstName: string; lastName: string; email: string; vehicle?: string };
+
+/** Lien d'avis signé qui identifie le client (valide ~60 jours). */
+export function signReview(p: ReviewPayload): string {
+  const body = Buffer.from(JSON.stringify({ ...p, exp: Date.now() + 60 * 24 * 3600 * 1000 })).toString("base64url");
+  const sig = createHmac("sha256", SECRET).update(body).digest("base64url");
+  return `${body}.${sig}`;
+}
+
+export function verifyReview(token: string): ReviewPayload | null {
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+  if (createHmac("sha256", SECRET).update(body).digest("base64url") !== sig) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body, "base64url").toString());
+    if (!p.exp || p.exp < Date.now()) return null;
+    return { firstName: p.firstName ?? "", lastName: p.lastName ?? "", email: p.email ?? "", vehicle: p.vehicle ?? "" };
+  } catch {
+    return null;
+  }
+}
+
 /** Auth d'une requête : token Bearer, ou code PIN (admin maître, rétrocompat). */
 export function getAuth(req: Request): Session | null {
   const bearer = req.headers.get("authorization");

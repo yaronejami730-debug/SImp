@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote } from "@/lib/google";
+import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote, patchCommercial } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, reminderEmail, customEmail } from "@/lib/email-templates";
@@ -49,6 +49,7 @@ export async function GET(req: Request, { params }: Params) {
         signStatus: p.signStatus ?? "",
         negotiation: p.negotiation ? Number(p.negotiation) : 0,
         owner: p.owner ?? "",
+        commercial: p.commercial ?? "",
         createdAt: ev.created ?? null,
         history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),
         parkingRequested: p.parkingRequested === "1",
@@ -77,7 +78,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!ownsOrAdmin(ev, s.email, s.role)) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
-    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; phone?: string; email?: string; note?: string };
+    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; phone?: string; email?: string; note?: string; commercial?: string };
     const hasVehicle = body.carBrand !== undefined || body.carModel !== undefined || body.carFinish !== undefined;
     const hasContact = body.phone !== undefined || body.email !== undefined;
     if (hasVehicle) {
@@ -88,6 +89,9 @@ export async function PATCH(req: Request, { params }: Params) {
     }
     if (body.note !== undefined) {
       await patchNote(id, body.note);
+    }
+    if (body.commercial !== undefined) {
+      await patchCommercial(id, body.commercial);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {

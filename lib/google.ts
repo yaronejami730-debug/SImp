@@ -119,6 +119,7 @@ export async function createEvent(a: Appointment, owner = "") {
         vehicle ? `Véhicule : ${vehicle}` : "",
         `Plateforme : ${a.platform}`,
         `Annonce : ${a.listingUrl}`,
+        a.commercial ? `Commercial : ${a.commercial}` : "",
         `Lieu : ${a.location}`,
       ].filter(Boolean).join("\n"),
       location: a.location,
@@ -135,6 +136,7 @@ export async function createEvent(a: Appointment, owner = "") {
           clientLastName: a.lastName,
           platform: a.platform,
           listingUrl: a.listingUrl,
+          commercial: a.commercial ?? "",
           carBrand: a.carBrand ?? "",
           carModel: a.carModel ?? "",
           carFinish: a.carFinish ?? "",
@@ -269,6 +271,7 @@ export type AppointmentItem = {
   signStatus: "" | "signed" | "thinking" | "unsigned";
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
   owner: string; // email du collaborateur ayant créé le RDV
+  commercial: string; // nom du commercial qui gère le RDV
   civility: string;
   createdAt: string | null;
   history: { t: string; at: string; info?: string }[];
@@ -313,6 +316,7 @@ export async function listAppointments(
       signStatus: (p.signStatus as AppointmentItem["signStatus"]) ?? "",
       negotiation: p.negotiation ? Number(p.negotiation) : 0,
       owner: p.owner ?? "",
+      commercial: p.commercial ?? "",
       civility: p.clientCivility ?? "",
       createdAt: ev.created ?? null,
       history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),
@@ -386,6 +390,15 @@ export async function patchContact(eventId: string, fields: { phone?: string; em
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: { extendedProperties: { private: priv } },
+  });
+}
+
+/** Met à jour le commercial qui gère un RDV. */
+export async function patchCommercial(eventId: string, commercial: string) {
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { commercial: commercial.trim() } } },
   });
 }
 

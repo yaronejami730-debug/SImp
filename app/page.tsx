@@ -6,6 +6,7 @@ import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders } from "@/lib/client";
 import { extractUrl } from "@/lib/parse";
+import { COMMERCIAUX, DEFAULT_COMMERCIAL } from "@/lib/commerciaux";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -22,7 +23,7 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", carBrand: "", carModel: "", carFinish: "", date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", carBrand: "", carModel: "", carFinish: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: 12, fontSize: 15, borderRadius: 8,
@@ -176,6 +177,12 @@ function Home() {
         <div>
           <label style={labelStyle}>Véhicule</label>
           <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
+        </div>
+        <div>
+          <label style={labelStyle}>Commercial</label>
+          <select style={inputStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
+            {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div>
           <label style={labelStyle}>Créneau du rendez-vous</label>

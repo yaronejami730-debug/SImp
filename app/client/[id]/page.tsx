@@ -5,6 +5,7 @@ import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders } from "@/lib/client";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
+import { COMMERCIAUX } from "@/lib/commerciaux";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -17,7 +18,7 @@ type Appt = {
   civility: string; email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
   note: string;
-  present: boolean; signStatus: Sign; negotiation: number; owner: string;
+  present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   reminder24Sent: boolean; reminder2Sent: boolean;
@@ -231,6 +232,16 @@ function ClientPage({ id }: { id: string }) {
     } finally { setBusy(""); }
   }
 
+  async function saveCommercial(commercial: string) {
+    if (!a) return;
+    setA({ ...a, commercial });
+    await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+      method: "PATCH",
+      headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ commercial }),
+    }).catch(() => {});
+  }
+
   async function saveVehicle() {
     if (!a) return;
     setBusy("vehicle");
@@ -391,6 +402,20 @@ function ClientPage({ id }: { id: string }) {
             </div>
           </>
         )}
+      </div>
+
+      {/* === COMMERCIAL === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>👤 Commercial</h2>
+        <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280" }}>Le commercial qui gère ce rendez-vous.</p>
+        <select
+          value={COMMERCIAUX.includes(a.commercial as typeof COMMERCIAUX[number]) ? a.commercial : ""}
+          onChange={(e) => saveCommercial(e.target.value)}
+          style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box", background: "#fff", color: NAVY, fontFamily: "inherit" }}
+        >
+          <option value="">— Non attribué —</option>
+          {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
       </div>
 
       {flash && (

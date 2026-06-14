@@ -18,6 +18,7 @@ export type FollowupRow = {
   last_name: string;
   listing_url: string;
   owner: string;
+  vehicle: string;
   stage: number;
   next_send_at: string;
   type: FollowupType;
@@ -31,6 +32,7 @@ export async function scheduleFollowup(opts: {
   lastName?: string;
   listingUrl?: string;
   owner?: string;
+  vehicle?: string;
   type: FollowupType;
 }) {
   const pool = getPool();
@@ -43,8 +45,8 @@ export async function scheduleFollowup(opts: {
   if (!delays?.length) return;
   const next = new Date(Date.now() + delays[0] * 24 * 3600 * 1000);
   await pool.query(
-    `insert into cancellation_followups (email, civility, first_name, last_name, listing_url, owner, stage, next_send_at, type)
-     values ($1,$2,$3,$4,$5,$6,0,$7,$8)`,
+    `insert into cancellation_followups (email, civility, first_name, last_name, listing_url, owner, vehicle, stage, next_send_at, type)
+     values ($1,$2,$3,$4,$5,$6,$7,0,$8,$9)`,
     [
       opts.email,
       opts.civility ?? "",
@@ -52,6 +54,7 @@ export async function scheduleFollowup(opts: {
       opts.lastName ?? "",
       opts.listingUrl ?? "",
       opts.owner ?? "",
+      opts.vehicle ?? "",
       next.toISOString(),
       opts.type,
     ],

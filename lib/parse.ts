@@ -16,6 +16,7 @@ export const appointmentSchema = z.object({
   carModel: z.string().describe("Modèle du véhicule (ex: Clio)").default(""),
   carFinish: z.string().describe("Finition / version (ex: GT Line, Intens, dCi 110)").default(""),
   location: z.string().describe("Adresse ou lieu du rendez-vous"),
+  commercial: z.string().describe("Nom du commercial qui gère le RDV").default(""),
   startDateTime: z
     .string()
     .describe(
@@ -41,6 +42,7 @@ export type AppointmentInput = {
   carModel?: string;
   carFinish?: string;
   location?: string; // optionnel : si absent, lieu fixe par défaut
+  commercial?: string; // nom du commercial (ex: Raphaël Dahan)
   date: string; // "YYYY-MM-DD"
   time: string; // "HH:MM"
 };
@@ -116,6 +118,7 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     carModel: input.carModel?.trim() || "",
     carFinish: input.carFinish?.trim() || "",
     location: input.location?.trim() || DEFAULT_LOCATION,
+    commercial: input.commercial?.trim() || "",
     startDateTime: toParisISO(input.date, input.time),
   };
 }

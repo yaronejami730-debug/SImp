@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { listEvents, markReminderSent, markParkingSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
+import { sendSMS } from "@/lib/allmysms";
 import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
-import { signBooking } from "@/lib/auth";
+import { signBooking, signReview } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
 import { dueReminders, markReminderNotified } from "@/lib/reminders";
 import { getUserByEmail } from "@/lib/users";
@@ -33,8 +34,18 @@ export async function GET(req: Request) {
 
   const base = baseUrlFrom();
   let sent = 0;
+  let smsSent = 0;
   let parkingSentCount = 0;
   const errors: string[] = [];
+
+  // Texte SMS de rappel (24h ou 2h avant le RDV).
+  const reminderSmsText = (startIso: string, location: string, kind: "24h" | "2h") => {
+    const d = new Date(startIso);
+    const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
+    const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
+    const quand = kind === "2h" ? "dans 2h" : "demain";
+    return `Simplicicar: rappel RDV ${quand}, ${date} a ${heure}${location ? ` - ${location}` : ""}. A bientot! STOP au 36180`;
+  };
 
   for (const ev of events) {
     const startIso = ev.start?.dateTime;
@@ -69,6 +80,17 @@ export async function GET(req: Request) {
       sent++;
     } catch (e) {
       errors.push(e instanceof Error ? e.message : String(e));
+    }
+
+    // SMS de rappel (systématique, en plus du mail). Non-bloquant.
+    const phone = priv.clientPhone;
+    if (phone) {
+      try {
+        await sendSMS({ to: phone, text: reminderSmsText(startIso, ev.location ?? "", kind) });
+        smsSent++;
+      } catch (e) {
+        errors.push(`SMS rappel ${kind}: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
 
@@ -112,7 +134,8 @@ export async function GET(req: Request) {
 
         let mail: { subject: string; html: string };
         if (type === "signed") {
-          mail = signedRatingEmail({ civility: r.civility, firstName: r.first_name, lastName: r.last_name, avisUrl: `${base}/avis` });
+          const reviewToken = signReview({ firstName: r.first_name, lastName: r.last_name, email: r.email, vehicle: r.vehicle ?? "" });
+          mail = signedRatingEmail({ civility: r.civility, firstName: r.first_name, lastName: r.last_name, avisUrl: `${base}/avis?t=${encodeURIComponent(reviewToken)}` });
         } else if (type === "thinking") {
           mail = thinkingFollowupEmail({ stage: stage as 1 | 2, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
         } else if (type === "unsigned") {
@@ -177,5 +200,5 @@ export async function GET(req: Request) {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
-  return NextResponse.json({ ok: true, checked: events.length, sent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
+  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
 }

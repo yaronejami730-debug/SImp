@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -19,6 +19,11 @@ export default function AvisPage() {
   const [recommande, setRecommande] = useState("");
   const [commentaire, setCommentaire] = useState("");
   const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState("");
+
+  useEffect(() => {
+    setToken(new URLSearchParams(window.location.search).get("t") ?? "");
+  }, []);
 
   // Referral state
   const [friendName, setFriendName] = useState("");
@@ -33,7 +38,7 @@ export default function AvisPage() {
       const res = await fetch("/api/avis", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rating, q_accueil: accueil, q_recommande: recommande, commentaire }),
+        body: JSON.stringify({ rating, q_accueil: accueil, q_recommande: recommande, commentaire, t: token }),
       });
       const d = await res.json();
       if (d.ok) setStep("done");

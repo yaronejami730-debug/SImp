@@ -53,6 +53,7 @@ export async function POST(req: Request) {
               lastName: priv.clientLastName ?? "",
               listingUrl: priv.listingUrl ?? "",
               owner: priv.owner ?? "",
+              vehicle: [priv.carBrand, priv.carModel, priv.carFinish].filter(Boolean).join(" "),
               type,
             });
           }
