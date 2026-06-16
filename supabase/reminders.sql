@@ -18,6 +18,10 @@ alter table reminders add column if not exists client_email text default '';
 alter table reminders add column if not exists notified_at timestamptz;
 alter table reminders add column if not exists nrp_count int not null default 0;  -- nb de fois "ne répond pas"
 
+-- Sécurité : RLS activé (API REST publique bloquée ; app en connexion directe non impactée).
+alter table reminders enable row level security;
+alter table reminders force row level security;
+
 create index if not exists reminders_status_idx on reminders (status, remind_at);
 create index if not exists reminders_owner_idx on reminders (owner, status);
 create index if not exists reminders_due_idx on reminders (status, notified_at, remind_at);

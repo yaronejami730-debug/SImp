@@ -23,6 +23,11 @@ create table if not exists messages (
   meta jsonb default '{}'::jsonb
 );
 
+-- Sécurité : RLS activé, aucune policy -> l'API REST publique (clé anon) ne peut rien lire/écrire.
+-- L'app se connecte en direct (rôle postgres, BYPASSRLS) : non impactée.
+alter table messages enable row level security;
+alter table messages force row level security;
+
 create index if not exists messages_client_key_idx on messages (client_key, sent_at desc);
 create index if not exists messages_event_idx on messages (event_id, sent_at desc);
 create index if not exists messages_email_idx on messages (to_email, sent_at desc);
