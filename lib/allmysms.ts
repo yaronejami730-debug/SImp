@@ -74,7 +74,8 @@ export async function sendSMS(opts: SendSmsOpts) {
         origin: opts.log.origin,
         bodyText: opts.text,
         provider: "allmysms",
-        providerMessageId: String(json?.smsId ?? json?.id ?? ""),
+        // Réponse v9 : { status, campaignId, smsIds:[{phoneNumber, smsId}], ... }
+        providerMessageId: String(json?.campaignId ?? json?.smsIds?.[0]?.smsId ?? json?.smsId ?? json?.id ?? ""),
         status: "sent",
       });
     }

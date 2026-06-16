@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
       const text = `Simplicicar: votre rappel est confirme ${date} a ${heure}. On vous appelle. STOP au 36180`;
       await sendSMS({ to: reminder.phone, text, log: { templateKey: "sms_rappel_confirm", clientName: `${reminder.first_name} ${reminder.last_name ?? ""}`.trim(), owner: reminder.owner, toEmail: reminder.client_email } });
-      smsSent = true;<<<<<<<<<<<< <QQW
+      smsSent = true;
     } catch (err) {
       smsError = err instanceof Error ? err.message : "Erreur SMS.";
       console.error("sendSMS failed in /api/reminders", err);
