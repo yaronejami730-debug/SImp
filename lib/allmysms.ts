@@ -1,7 +1,17 @@
+type SmsLogCtx = {
+  templateKey?: string;
+  clientName?: string;
+  owner?: string;
+  eventId?: string;
+  toEmail?: string;
+  origin?: "auto" | "manual";
+};
+
 type SendSmsOpts = {
   to: string;
   text: string;
   from?: string;
+  log?: SmsLogCtx; // si fourni -> journalise le SMS (preuve timeline)
 };
 
 /** Normalise un numéro FR vers le format E.164 sans `+` (ex: 33612345678). */
@@ -28,23 +38,64 @@ export async function sendSMS(opts: SendSmsOpts) {
 
   const auth = Buffer.from(`${login}:${apiKey}`).toString("base64");
 
-  const res = await fetch("https://api.allmysms.com/sms/send/", {
-    method: "POST",
-    headers: {
-      authorization: `Basic ${auth}`,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      text: opts.text,
-    }),
-  });
+  // Import dynamique pour éviter une dépendance circulaire (messages -> allmysms).
+  const { logMessage } = await import("./messages");
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`AllMySMS ${res.status}: ${body}`);
+  try {
+    const res = await fetch("https://api.allmysms.com/sms/send/", {
+      method: "POST",
+      headers: {
+        authorization: `Basic ${auth}`,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        text: opts.text,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`AllMySMS ${res.status}: ${body}`);
+    }
+    const json = await res.json();
+
+    if (opts.log) {
+      await logMessage({
+        channel: "sms",
+        toPhone: opts.to,
+        toEmail: opts.log.toEmail,
+        clientName: opts.log.clientName,
+        owner: opts.log.owner,
+        eventId: opts.log.eventId,
+        templateKey: opts.log.templateKey,
+        origin: opts.log.origin,
+        bodyText: opts.text,
+        provider: "allmysms",
+        providerMessageId: String(json?.smsId ?? json?.id ?? ""),
+        status: "sent",
+      });
+    }
+    return json;
+  } catch (e) {
+    if (opts.log) {
+      await logMessage({
+        channel: "sms",
+        toPhone: opts.to,
+        toEmail: opts.log.toEmail,
+        clientName: opts.log.clientName,
+        owner: opts.log.owner,
+        eventId: opts.log.eventId,
+        templateKey: opts.log.templateKey,
+        origin: opts.log.origin,
+        bodyText: opts.text,
+        provider: "allmysms",
+        status: "error",
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+    throw e;
   }
-  return res.json();
 }

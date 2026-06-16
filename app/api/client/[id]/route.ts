@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote, patchCommercial } from "@/lib/google";
+import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote, patchCommercial, appendHistory } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { confirmationEmail, reminderEmail, customEmail } from "@/lib/email-templates";
+import { confirmationEmail, reminderEmail, customEmail, noShowFollowupEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
+import { signBooking } from "@/lib/auth";
+import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -108,7 +110,7 @@ export async function POST(req: Request, { params }: Params) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const { id } = await params;
-  const payload = (await req.json()) as { action?: string; subject?: string; body?: string };
+  const payload = (await req.json()) as { action?: string; subject?: string; body?: string; text?: string };
   const action = payload.action;
   if (!action) return NextResponse.json({ error: "action manquante." }, { status: 400 });
 
@@ -126,6 +128,8 @@ export async function POST(req: Request, { params }: Params) {
     const startIso = ev.start?.dateTime;
     const location = ev.location ?? "";
     const base = baseUrlFrom(req);
+    const clientName = `${firstName} ${lastName}`.trim();
+    const logBase = { clientName, owner: p.owner ?? s.email, eventId: id, origin: "manual" as const };
 
     if (!startIso) return NextResponse.json({ error: "RDV sans date." }, { status: 400 });
 
@@ -138,7 +142,7 @@ export async function POST(req: Request, { params }: Params) {
           whatsappUrl: whatsappUrl(),
           rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined,
         });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: "confirmation" } });
         return NextResponse.json({ ok: true, message: `Mail de confirmation renvoyé à ${email}.` });
       }
       case "resend_confirmation_sms": {
@@ -147,7 +151,7 @@ export async function POST(req: Request, { params }: Params) {
         const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
         const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
         const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${location}. STOP au 36180`;
-        await sendSMS({ to: phone, text });
+        await sendSMS({ to: phone, text, log: { ...logBase, templateKey: "sms_confirmation", toEmail: email } });
         return NextResponse.json({ ok: true, message: `SMS de confirmation renvoyé au ${phone}.` });
       }
       case "send_reminder_24h":
@@ -159,7 +163,7 @@ export async function POST(req: Request, { params }: Params) {
           whatsappUrl: whatsappUrl(),
           rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined,
         });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: kind === "2h" ? "reminder2" : "reminder24" } });
         if (ev.id) await markReminderSent(ev.id, kind);
         return NextResponse.json({ ok: true, message: `Rappel ${kind} envoyé à ${email}.` });
       }
@@ -169,8 +173,33 @@ export async function POST(req: Request, { params }: Params) {
         const body = (payload.body || "").trim();
         if (!body) return NextResponse.json({ error: "Corps du mail vide." }, { status: 400 });
         const mail = customEmail({ civility, firstName, lastName, subject, body });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: "custom" } });
         return NextResponse.json({ ok: true, message: `Mail personnalisé envoyé à ${email}.` });
+      }
+      case "send_custom_sms": {
+        if (!phone) return NextResponse.json({ error: "Pas de téléphone client." }, { status: 400 });
+        const text = (payload.text || "").trim();
+        if (!text) return NextResponse.json({ error: "SMS vide." }, { status: 400 });
+        await sendSMS({ to: phone, text, log: { ...logBase, templateKey: "sms_custom", toEmail: email } });
+        return NextResponse.json({ ok: true, message: `SMS personnalisé envoyé au ${phone}.` });
+      }
+      case "mark_noshow": {
+        if (!email) return NextResponse.json({ error: "Pas d'e-mail client." }, { status: 400 });
+        const vehicle = [p.carBrand, p.carModel, p.carFinish].filter(Boolean).join(" ");
+        const token = signBooking({ email, listingUrl: p.listingUrl, owner: p.owner ?? s.email, civility });
+        const bookUrl = `${base}/book?t=${encodeURIComponent(token)}`;
+        const unsubUrl = `${base}/unsubscribe?t=${encodeURIComponent(token)}`;
+        // 1er mail immédiat (stage 1), ton chaleureux.
+        const mail = noShowFollowupEmail({ stage: 1, civility, firstName, lastName, bookUrl, unsubUrl });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: "noshow" } });
+        // Programme les relances suivantes (tous les 2 jours).
+        await scheduleFollowup({ email, civility, firstName, lastName, listingUrl: p.listingUrl, owner: p.owner ?? s.email, vehicle, type: "noshow" });
+        await appendHistory(id, "noshow", `Absent — séquence de relance lancée par ${s.email}`);
+        return NextResponse.json({ ok: true, message: `Client marqué absent. Mail envoyé à ${email}, relances programmées tous les 2 jours.` });
+      }
+      case "cancel_noshow": {
+        if (email) await cancelFollowupOfType(email, "noshow");
+        return NextResponse.json({ ok: true, message: "Séquence no-show stoppée." });
       }
       default:
         return NextResponse.json({ error: `Action inconnue : ${action}` }, { status: 400 });

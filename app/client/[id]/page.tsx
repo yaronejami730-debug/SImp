@@ -5,6 +5,7 @@ import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders } from "@/lib/client";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
+import { SMS_TEMPLATES, SMS_TEMPLATE_CATEGORIES } from "@/lib/sms-templates-list";
 import { COMMERCIAUX } from "@/lib/commerciaux";
 
 const NAVY = "#1a273a";
@@ -42,6 +43,245 @@ const histLabel = (t: string) =>
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const commission = (a: Appt) => (a.signStatus === "signed" ? BASE_COMMISSION + NEGO_RATE * (a.negotiation || 0) : 0);
 
+// ───────────────── Timeline messages (mails + SMS, preuves) ─────────────────
+const fmtDT = (iso: string) => {
+  const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+  const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${date} à ${heure}`;
+};
+
+type MsgMeta = {
+  key: string; source: "db" | "brevo"; channel: "email" | "sms"; templateKey: string; subject: string; preview: string;
+  toEmail: string; toPhone: string; provider: string; providerMessageId: string; status: string; origin: string; error: string; sentAt: string;
+};
+function OriginTag({ origin }: { origin: string }) {
+  if (origin === "manual") return <span style={{ fontSize: 10.5, fontWeight: 700, color: "#7c3aed", background: "#f3e8ff", padding: "1px 6px", borderRadius: 5 }}>✋ Manuel</span>;
+  if (origin === "auto") return <span style={{ fontSize: 10.5, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", padding: "1px 6px", borderRadius: 5 }}>🤖 Auto</span>;
+  return null;
+}
+type MsgDetail = { channel: "email" | "sms"; templateKey: string; subject: string; bodyHtml: string; bodyText: string; toEmail?: string; toPhone?: string; provider: string; providerMessageId: string; status?: string; error?: string; sentAt?: string };
+type BrevoEvt = { event: string; date: string; ip?: string; reason?: string };
+
+// Libellé de provenance des données (exigé : on cite les prestataires).
+const SOURCE_LABEL: Record<string, string> = {
+  db: "Données issues de la base de données",
+  brevo: "Données issues du système de mailing (Brevo)",
+  allmysms: "Données issues du distributeur SMS (AllMySMS)",
+};
+function SourceTag({ source }: { source: string }) {
+  return <span style={{ fontSize: 10.5, color: "#9aa6b8", fontStyle: "italic" }}>({SOURCE_LABEL[source] ?? source})</span>;
+}
+
+const TPL_LABEL: Record<string, string> = {
+  confirmation: "Confirmation RDV", sms_confirmation: "SMS confirmation",
+  reminder24: "Rappel 24h", reminder2: "Rappel 2h", sms_reminder24: "SMS rappel 24h", sms_reminder2: "SMS rappel 2h",
+  parking: "Parking réservé", rescheduled: "RDV reprogrammé", cancelled: "RDV annulé", custom: "Mail personnalisé", sms_custom: "SMS personnalisé",
+  sms_rappel_confirm: "SMS rappel confirmé", phone_rappel_client: "Rappel tél (client)", phone_rappel_organizer: "Rappel tél (collab)",
+  noshow: "Absent — relance",
+};
+const tplLabel = (k: string) => TPL_LABEL[k] ?? k.replace(/^followup_/, "Relance ").replace(/_/g, " ");
+
+// Traduit un event Brevo en libellé FR.
+const EVT_LABEL: Record<string, { label: string; color: string }> = {
+  requests: { label: "Envoyé", color: "#6b7280" }, request: { label: "Envoyé", color: "#6b7280" },
+  delivered: { label: "Délivré", color: "#16a34a" },
+  opened: { label: "Ouvert", color: "#2563eb" }, uniqueOpened: { label: "1ère ouverture", color: "#2563eb" }, firstOpening: { label: "1ère ouverture", color: "#2563eb" },
+  click: { label: "Clic", color: "#7c3aed" }, clicks: { label: "Clic", color: "#7c3aed" },
+  softBounce: { label: "Échec (soft)", color: "#ca8a04" }, hardBounce: { label: "Échec (hard)", color: "#dc2626" },
+  blocked: { label: "Bloqué", color: "#dc2626" }, spam: { label: "Spam", color: "#dc2626" }, invalid: { label: "Email invalide", color: "#dc2626" }, error: { label: "Erreur", color: "#dc2626" }, deferred: { label: "Différé", color: "#ca8a04" }, unsubscribed: { label: "Désinscrit", color: "#6b7280" },
+};
+const evtInfo = (e: string) => EVT_LABEL[e] ?? { label: e, color: "#6b7280" };
+
+function MessageModal({ meta, onClose }: { meta: MsgMeta; onClose: () => void }) {
+  const [m, setM] = useState<MsgDetail | null>(null);
+  const [events, setEvents] = useState<BrevoEvt[]>([]);
+  const [evErr, setEvErr] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [showPreview, setShowPreview] = useState(false);
+  const smsSource = meta.channel === "sms" ? (meta.source === "db" ? "db" : "allmysms") : meta.source;
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        let url: string;
+        if (meta.source === "brevo") {
+          const uuid = meta.key.replace(/^brevo:/, "");
+          url = `/api/messages/brevo/${encodeURIComponent(uuid)}?mid=${encodeURIComponent(meta.providerMessageId)}`;
+        } else {
+          const dbId = meta.key.replace(/^db:/, "");
+          url = `/api/messages/${dbId}`;
+        }
+        const r = await fetch(url, { headers: authHeaders() });
+        const d = await r.json();
+        if (!alive) return;
+        if (d.ok) { setM(d.message); setEvents(d.events ?? []); setEvErr(d.eventsError ?? ""); }
+      } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [meta]);
+
+  const row = (k: string, v: React.ReactNode) => (
+    <div style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: "1px solid #f1f3f5", fontSize: 13 }}>
+      <div style={{ width: 130, color: "#9aa6b8", flexShrink: 0 }}>{k}</div>
+      <div style={{ color: NAVY, wordBreak: "break-all" }}>{v}</div>
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 50, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, maxWidth: 560, width: "100%", margin: "24px 0", padding: 20, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#6b7280" }}>Chargement…</div>
+        ) : !m ? (
+          <div style={{ textAlign: "center", padding: 30, color: "#dc2626" }}>Message introuvable.</div>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, color: PINK, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  {meta.channel === "sms" ? "📱 SMS" : "📧 Mail"} {meta.templateKey ? `· ${tplLabel(meta.templateKey)}` : ""}
+                </div>
+                <h3 style={{ margin: "4px 0 2px", fontSize: 17, fontWeight: 700, color: NAVY }}>{meta.channel === "sms" ? "SMS envoyé" : (m.subject || meta.subject)}</h3>
+                <SourceTag source={smsSource} />
+              </div>
+              <button onClick={onClose} style={{ border: "none", background: "#f1f3f5", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 15, color: "#6b7280", flexShrink: 0 }}>✕</button>
+            </div>
+
+            <div style={{ background: "#f8fafc", borderRadius: 10, padding: "4px 14px", marginBottom: 14 }}>
+              {row("Envoyé le", fmtDT(m.sentAt ?? meta.sentAt))}
+              {meta.channel === "email" ? row("Destinataire", m.toEmail ?? meta.toEmail) : row("Destinataire", m.toPhone ?? meta.toPhone)}
+              {row("Statut", <StatusBadge status={m.status ?? meta.status} />)}
+              {meta.origin && row("Origine", <span><OriginTag origin={meta.origin} /> {meta.origin === "manual" ? "envoyé manuellement (bouton)" : "envoyé automatiquement"}</span>)}
+              {(m.providerMessageId || meta.providerMessageId) && row("ID message", <span style={{ fontFamily: "monospace", fontSize: 11 }}>{m.providerMessageId || meta.providerMessageId}</span>)}
+              {(m.error || meta.error) && row("Erreur", <span style={{ color: "#dc2626" }}>{m.error || meta.error}</span>)}
+            </div>
+
+            {meta.channel === "sms" ? (
+              <>
+                <div style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 10, padding: 14, fontSize: 14, color: "#064e3b", whiteSpace: "pre-wrap" }}>
+                  {m.bodyText || meta.preview || "—"}
+                </div>
+                <div style={{ marginTop: 8, textAlign: "right" }}><SourceTag source="allmysms" /></div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, margin: "4px 0 4px" }}>📜 Historique de livraison <SourceTag source="brevo" /></div>
+                {evErr ? (
+                  <div style={{ fontSize: 12.5, color: "#ca8a04", marginBottom: 12 }}>⚠️ {evErr}</div>
+                ) : events.length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 12 }}>Aucun event Brevo pour le moment (peut prendre quelques minutes).</div>
+                ) : (
+                  <div style={{ marginBottom: 14 }}>
+                    {events.map((e, i) => {
+                      const info = evtInfo(e.event);
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f1f3f5" }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 4, background: info.color, flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: info.color, width: 110 }}>{info.label}</span>
+                          <span style={{ fontSize: 12, color: "#6b7280", flex: 1 }}>{fmtDT(e.date)}</span>
+                          {e.ip && <span style={{ fontSize: 11, color: "#9aa6b8", fontFamily: "monospace" }}>{e.ip}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <button onClick={() => setShowPreview((v) => !v)} style={{ width: "100%", padding: "10px 14px", borderRadius: 8, background: "#fff", border: `1.5px solid ${PINK}`, color: PINK, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  {showPreview ? "Masquer l'aperçu" : "👁️ Ouvrir l'aperçu du mail"}
+                </button>
+                {showPreview && (
+                  <iframe title="aperçu" srcDoc={m.bodyHtml} style={{ width: "100%", height: 520, border: "1px solid #e5e7eb", borderRadius: 10, marginTop: 10, background: "#fff" }} />
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { t: string; bg: string; c: string }> = {
+    sent: { t: "Envoyé", bg: "#eff6ff", c: "#2563eb" },
+    delivered: { t: "Délivré", bg: "#ecfdf5", c: "#16a34a" },
+    opened: { t: "Ouvert", bg: "#eef2ff", c: "#4f46e5" },
+    error: { t: "Erreur", bg: "#fef2f2", c: "#dc2626" },
+  };
+  const s = map[status] ?? { t: status, bg: "#f1f3f5", c: "#6b7280" };
+  return <span style={{ background: s.bg, color: s.c, fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{s.t}</span>;
+}
+
+function MessageTimeline({ id, refreshKey }: { id: string; refreshKey: number }) {
+  const [msgs, setMsgs] = useState<MsgMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [brevoErr, setBrevoErr] = useState("");
+  const [openMsg, setOpenMsg] = useState<MsgMeta | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`/api/client/${encodeURIComponent(id)}/messages`, { headers: authHeaders() });
+        const d = await r.json();
+        if (alive && d.ok) { setMsgs(d.messages); setBrevoErr(d.brevoError ?? ""); }
+      } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [id, refreshKey]);
+
+  const mails = msgs.filter((m) => m.channel === "email");
+  const sms = msgs.filter((m) => m.channel === "sms");
+
+  const item = (m: MsgMeta) => {
+    const src = m.channel === "sms" ? (m.source === "db" ? "db" : "allmysms") : m.source;
+    return (
+      <button
+        key={m.key}
+        onClick={() => setOpenMsg(m)}
+        style={{ textAlign: "left", width: "100%", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 9, padding: "10px 12px", marginBottom: 8, cursor: "pointer", display: "block" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: NAVY }}>{m.templateKey ? tplLabel(m.templateKey) : (m.channel === "sms" ? "SMS" : "Mail")}</span>
+          <span style={{ display: "flex", gap: 5, alignItems: "center" }}><OriginTag origin={m.origin} /><StatusBadge status={m.status} /></span>
+        </div>
+        <div style={{ fontSize: 12.5, color: "#475569", margin: "4px 0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.preview || "—"}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: "#9aa6b8" }}>{fmtDT(m.sentAt)}</span>
+          <SourceTag source={src} />
+        </div>
+      </button>
+    );
+  };
+
+  const col = (title: string, list: MsgMeta[]) => (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 12, fontWeight: 700, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
+        {title} <span style={{ color: "#9aa6b8" }}>({list.length})</span>
+      </div>
+      {list.length === 0 ? <div style={{ fontSize: 12.5, color: "#9aa6b8", padding: "8px 0" }}>Aucun</div> : list.map(item)}
+    </div>
+  );
+
+  return (
+    <>
+      {loading ? (
+        <div style={{ color: "#9aa6b8", fontSize: 13 }}>Chargement…</div>
+      ) : msgs.length === 0 ? (
+        <div style={{ color: "#9aa6b8", fontSize: 13 }}>Aucun message envoyé pour le moment.</div>
+      ) : (
+        <div style={{ display: "flex", gap: 14 }}>
+          {col("📧 Mails", mails)}
+          {col("📱 SMS", sms)}
+        </div>
+      )}
+      {brevoErr && <div style={{ marginTop: 10, fontSize: 11.5, color: "#ca8a04" }}>⚠️ Récupération Brevo : {brevoErr}</div>}
+      {openMsg && <MessageModal meta={openMsg} onClose={() => setOpenMsg(null)} />}
+    </>
+  );
+}
+
 function ClientPage({ id }: { id: string }) {
   const [a, setA] = useState<Appt | null>(null);
   const [err, setErr] = useState("");
@@ -58,18 +298,21 @@ function ClientPage({ id }: { id: string }) {
   const [customMailOpen, setCustomMailOpen] = useState(false);
   const [customSubject, setCustomSubject] = useState("");
   const [customBody, setCustomBody] = useState("");
+  const [customSmsOpen, setCustomSmsOpen] = useState(false);
+  const [customSmsText, setCustomSmsText] = useState("");
   const [photos, setPhotos] = useState<{ path: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteDirty, setNoteDirty] = useState(false);
   const [timelineDraft, setTimelineDraft] = useState("");
+  const [msgKey, setMsgKey] = useState(0); // force le refresh de la timeline messages
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
     try {
       const r = await fetch(`/api/client/${encodeURIComponent(id)}`, { headers: authHeaders() });
       const d = await r.json();
-      if (d.ok) { setA(d.appointment); setNoteDraft(d.appointment.note ?? ""); setNoteDirty(false); }
+      if (d.ok) { setA(d.appointment); setNoteDraft(d.appointment.note ?? ""); setNoteDirty(false); setMsgKey((k) => k + 1); }
       else setErr(d.error ?? "Erreur");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erreur");
@@ -138,6 +381,33 @@ function ClientPage({ id }: { id: string }) {
     } finally { setBusy(""); }
   }
 
+  async function markPresent() {
+    setBusy("present");
+    try {
+      await saveStatus({ present: true });
+      // Stoppe la séquence no-show si elle tournait.
+      await fetch(`/api/client/${encodeURIComponent(id)}`, {
+        method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ action: "cancel_noshow" }),
+      });
+      load();
+    } finally { setBusy(""); }
+  }
+
+  async function markAbsent() {
+    if (!a) return;
+    if (!confirm(`Marquer ${a.firstName} ${a.lastName} absent et lancer la séquence de relance (mail tous les 2 jours) ?`)) return;
+    setBusy("noshow"); setFlash(null);
+    try {
+      await saveStatus({ present: false });
+      const r = await fetch(`/api/client/${encodeURIComponent(id)}`, {
+        method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ action: "mark_noshow" }),
+      });
+      const d = await r.json();
+      if (d.ok) { setFlash({ kind: "ok", msg: d.message ?? "Absent enregistré" }); load(); }
+      else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
+  }
+
   async function saveStatus(patch: { present?: boolean; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean }) {
     if (!a) return;
     setA({ ...a, ...patch });
@@ -194,7 +464,24 @@ function ClientPage({ id }: { id: string }) {
       const d = await r.json();
       if (d.ok) {
         setFlash({ kind: "ok", msg: d.message ?? "Mail envoyé" });
-        setCustomMailOpen(false); setCustomSubject(""); setCustomBody("");
+        setCustomMailOpen(false); setCustomSubject(""); setCustomBody(""); setMsgKey((k) => k + 1);
+      } else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
+  }
+
+  async function sendCustomSms() {
+    if (!a || !customSmsText.trim()) return;
+    setBusy("custom_sms"); setFlash(null);
+    try {
+      const r = await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ action: "send_custom_sms", text: customSmsText }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        setFlash({ kind: "ok", msg: d.message ?? "SMS envoyé" });
+        setCustomSmsOpen(false); setCustomSmsText(""); setMsgKey((k) => k + 1);
       } else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
     } finally { setBusy(""); }
   }
@@ -537,6 +824,61 @@ function ClientPage({ id }: { id: string }) {
             </div>
           )}
         </div>
+        <div style={{ marginTop: 12, paddingTop: 14, borderTop: "1px dashed #e5e7eb" }}>
+          {!customSmsOpen ? (
+            <button onClick={() => setCustomSmsOpen(true)} disabled={!a.phone} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, background: "#fff", border: `1.5px solid ${NAVY}`, color: NAVY, fontSize: 14, fontWeight: 600, cursor: a.phone ? "pointer" : "not-allowed", opacity: a.phone ? 1 : 0.5 }}>
+              📱 Envoyer un SMS personnalisé
+            </button>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>📋 Templates SMS (clique pour pré-remplir)</label>
+                <select
+                  onChange={(e) => {
+                    const tpl = SMS_TEMPLATES.find((t) => t.key === e.target.value);
+                    if (!tpl) return;
+                    const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
+                    setCustomSmsText(fillVars(tpl.text, { firstName: a.firstName, lastName: a.lastName, vehicle }));
+                    e.target.value = "";
+                  }}
+                  style={{ width: "100%", padding: 10, fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb", boxSizing: "border-box", background: "#fff" }}
+                  defaultValue=""
+                >
+                  <option value="">— Choisir un template —</option>
+                  {SMS_TEMPLATE_CATEGORIES.map((cat) => (
+                    <optgroup key={cat} label={cat}>
+                      {SMS_TEMPLATES.filter((t) => t.category === cat).map((t) => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <textarea
+                value={customSmsText}
+                onChange={(e) => setCustomSmsText(e.target.value)}
+                rows={4}
+                maxLength={612}
+                placeholder="Texte du SMS envoyé au client. Pense à signer (ex: Simplicicar) et à ajouter STOP au 36180 si besoin."
+                style={{ padding: 11, fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb", boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+              />
+              <div style={{ fontSize: 11, color: "#9aa6b8", textAlign: "right" }}>{customSmsText.length} caractères · ~{Math.max(1, Math.ceil(customSmsText.length / 160))} SMS</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={sendCustomSms} disabled={busy === "custom_sms" || !customSmsText.trim()} style={{ flex: 1, padding: "11px 14px", borderRadius: 7, background: !customSmsText.trim() ? "#cbd5e1" : NAVY, color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: !customSmsText.trim() ? "default" : "pointer" }}>
+                  {busy === "custom_sms" ? "Envoi…" : `📱 Envoyer au ${a.phone}`}
+                </button>
+                <button onClick={() => { setCustomSmsOpen(false); setCustomSmsText(""); }} style={{ padding: "11px 14px", borderRadius: 7, background: "#fff", color: "#6b7280", border: "1.5px solid #e5e7eb", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* === TIMELINE MESSAGES (preuves) === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>📨 Timeline — mails &amp; SMS envoyés</h2>
+        <p style={{ margin: "0 0 14px", fontSize: 13, color: "#6b7280" }}>Toutes les preuves d&apos;envoi. Clic sur un message pour voir le détail, le statut Brevo (délivré / ouvert) et l&apos;aperçu.</p>
+        <MessageTimeline id={id} refreshKey={msgKey} />
       </div>
 
       {/* === LOGISTIQUE === */}
@@ -564,9 +906,30 @@ function ClientPage({ id }: { id: string }) {
       <div style={card}>
         <h2 style={sectionTitle}>📊 Statut & commission</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, fontSize: 14, cursor: "pointer" }}>
-          <input type="checkbox" checked={a.present} onChange={(e) => saveStatus({ present: e.target.checked })} /> Client présent au RDV
-        </label>
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {(() => {
+            const isNoShow = a.history.some((h) => h.t === "noshow");
+            const base: React.CSSProperties = { flex: 1, padding: "12px 10px", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" };
+            return (
+              <>
+                <button
+                  onClick={markPresent}
+                  disabled={busy === "present"}
+                  style={{ ...base, border: `1.5px solid ${a.present ? "#16a34a" : "#e5e7eb"}`, background: a.present ? "#16a34a" : "#fff", color: a.present ? "#fff" : NAVY }}
+                >
+                  🙋 Client présent
+                </button>
+                <button
+                  onClick={markAbsent}
+                  disabled={busy === "noshow"}
+                  style={{ ...base, border: `1.5px solid ${isNoShow ? "#dc2626" : "#e5e7eb"}`, background: isNoShow ? "#dc2626" : "#fff", color: isNoShow ? "#fff" : NAVY }}
+                >
+                  {busy === "noshow" ? "Envoi…" : isNoShow ? "🚫 Absent — relances en cours" : "🚫 Ne s'est pas présenté"}
+                </button>
+              </>
+            );
+          })()}
+        </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
           {signBtn("signed", "✅ A signé", "#16a34a")}
           {signBtn("thinking", "🤔 Réfléchit", "#ca8a04")}

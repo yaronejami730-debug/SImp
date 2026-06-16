@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         whatsappUrl: whatsappUrl(),
         rescheduleUrl: event.id ? rescheduleUrl(base, event.id) : undefined,
       });
-      await sendEmail({ to: appt.email, toName: `${appt.firstName} ${appt.lastName}`, subject: mail.subject, html: mail.html });
+      await sendEmail({ to: appt.email, toName: `${appt.firstName} ${appt.lastName}`, subject: mail.subject, html: mail.html, log: { templateKey: "confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: p.owner, eventId: event.id ?? undefined } });
       emailSent = true;
     } catch { /* mail non-bloquant */ }
 

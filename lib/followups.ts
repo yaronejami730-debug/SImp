@@ -1,6 +1,6 @@
 import { getPool } from "./db";
 
-export type FollowupType = "cancel" | "thinking" | "unsigned" | "signed";
+export type FollowupType = "cancel" | "thinking" | "unsigned" | "signed" | "noshow";
 
 /** Délais en jours par type de relance. */
 export const FOLLOWUP_DELAYS: Record<FollowupType, number[]> = {
@@ -8,6 +8,7 @@ export const FOLLOWUP_DELAYS: Record<FollowupType, number[]> = {
   thinking: [3, 10],       // J+3, J+13
   unsigned: [14, 30, 75],  // J+14, J+44, J+119
   signed: [14],            // J+14 (2 semaines) → mail notation
+  noshow: [2, 2, 2, 2, 2], // après le 1er mail immédiat : relance tous les 2 jours, max 6 mails au total (1 + 5)
 };
 
 export type FollowupRow = {
@@ -66,6 +67,14 @@ export async function cancelFollowup(email: string) {
   await getPool().query(
     `update cancellation_followups set done = true where lower(email) = lower($1) and done = false`,
     [email],
+  );
+}
+
+/** Stoppe les relances d'un seul type (ex: noshow quand le client revient). */
+export async function cancelFollowupOfType(email: string, type: FollowupType) {
+  await getPool().query(
+    `update cancellation_followups set done = true where lower(email) = lower($1) and type = $2 and done = false`,
+    [email, type],
   );
 }
 

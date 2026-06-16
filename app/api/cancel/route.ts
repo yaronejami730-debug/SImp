@@ -56,7 +56,7 @@ export async function POST(req: Request) {
           location,
           whatsappUrl: whatsappUrl(),
         });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { templateKey: "cancelled", clientName: `${firstName} ${lastName}`.trim(), owner, eventId: eid, origin: "manual" } });
         emailSent = true;
       } catch {
         /* mail non-bloquant */

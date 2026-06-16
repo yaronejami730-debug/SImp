@@ -34,7 +34,7 @@ export async function POST(req: Request) {
           lastName: priv.clientLastName,
           startDateTime: ev.start?.dateTime ?? undefined,
         });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { templateKey: "parking", clientName: `${firstName} ${priv.clientLastName ?? ""}`.trim(), owner: priv.owner, eventId: eid, origin: "manual" } });
         await markParkingSent(eid);
         emailSent = true;
       } catch (e) {

@@ -258,6 +258,41 @@ export function unsignedFollowupEmail(d: {
   return { subject, html: shell(content, buttons) };
 }
 
+/** Relance "ne s'est pas présenté au RDV". Ton chaleureux et pro, sans culpabiliser.
+ *  Envoyé immédiatement (stage 1) puis tous les 2 jours (stage 2, 3). */
+export function noShowFollowupEmail(d: {
+  stage: number; // 1 = immédiat, puis relances. Au-delà de 3, on réutilise le ton du 3e.
+  civility?: string; firstName: string; lastName?: string;
+  bookUrl: string;
+  unsubUrl?: string;
+}) {
+  const hello = `<p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>`;
+  let body = "";
+  let subject = "";
+  if (d.stage <= 1) {
+    subject = `On vous a manqué — reprogrammons votre rendez-vous`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Nous ne vous avons pas vu à votre rendez-vous, et ce n'est pas grave du tout 😊</p>
+      <p style="margin:0 0 16px;font-size:15px">Entre le travail et le quotidien, on sait à quel point il est parfois difficile d'honorer un créneau. Aucun souci : votre place reste ouverte.</p>
+      <p style="margin:0 0 16px;font-size:15px">Chez ${BUSINESS}, on aime la simplicité. Reprogrammez en quelques secondes, au moment qui vous arrange :</p>`;
+  } else if (d.stage === 2) {
+    subject = `Toujours partant ? Choisissez un nouveau créneau — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">Petit message amical pour reprendre contact 👋</p>
+      <p style="margin:0 0 16px;font-size:15px">Votre projet nous tient à cœur et on serait ravis de vous recevoir. Pas de pression : vous choisissez la date et l'heure qui vous conviennent.</p>
+      <p style="margin:0 0 16px;font-size:15px">Un rendez-vous, c'est simple et sans engagement :</p>`;
+  } else {
+    subject = `On reste disponibles quand vous voulez — ${BUSINESS}`;
+    body = `
+      <p style="margin:0 0 16px;font-size:15px">On comprend tout à fait que le timing n'était pas le bon, et c'est parfaitement normal.</p>
+      <p style="margin:0 0 16px;font-size:15px">Quand vous serez prêt, nous serons là pour vous accompagner sereinement, sans frais ni engagement.</p>
+      <p style="margin:0 0 16px;font-size:15px">Reprogrammez votre rendez-vous quand bon vous semble :</p>`;
+  }
+  const content = hello + body + `<p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(d.bookUrl, "📅 Reprogrammer mon rendez-vous", C.primary) + btnOutline(d.unsubUrl, "Je ne suis plus intéressé", C.muted);
+  return { subject, html: shell(content, buttons) };
+}
+
 /** Mail envoyé juste après la signature : lien vers le questionnaire /avis. */
 export function signedRatingEmail(d: {
   civility?: string; firstName: string; lastName?: string;

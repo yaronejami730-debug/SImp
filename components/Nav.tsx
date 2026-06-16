@@ -75,6 +75,17 @@ export default function Nav({ active }: { active: string }) {
         )}
         {user?.role === "admin" && (
           <a
+            href="/assistant"
+            style={{
+              flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
+              background: active === "assistant" ? PINK : "#fff", color: active === "assistant" ? "#fff" : NAVY, border: "1px solid " + (active === "assistant" ? PINK : "#e5e7eb"),
+            }}
+          >
+            🤖 Assistant
+          </a>
+        )}
+        {user?.role === "admin" && (
+          <a
             href="/templates"
             style={{
               flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",

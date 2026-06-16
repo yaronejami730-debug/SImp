@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         toName: `${appt.firstName} ${appt.lastName}`,
         subject: mail.subject,
         html: mail.html,
+        log: { templateKey: "confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: appt.commercial, eventId: event.id ?? undefined },
       });
       emailSent = true;
     } catch (e) {
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
       const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
       const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location}. STOP au 36180`;
-      await sendSMS({ to: appt.phone, text });
+      await sendSMS({ to: appt.phone, text, log: { templateKey: "sms_confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: appt.commercial, eventId: event.id ?? undefined, toEmail: appt.email } });
       smsSent = true;
     } catch (e) {
       smsError = e instanceof Error ? e.message : "Erreur SMS.";

@@ -71,7 +71,7 @@ export async function POST(req: Request) {
           whatsappUrl: whatsappUrl(),
           rescheduleUrl: rescheduleUrl(base, eid),
         });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { templateKey: "rescheduled", clientName: `${firstName} ${priv?.clientLastName ?? ""}`.trim(), owner: priv?.owner, eventId: eid, origin: "manual" } });
         emailSent = true;
       } catch {
         /* mail non-bloquant */

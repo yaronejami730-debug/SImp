@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { listEvents, markReminderSent, markParkingSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail } from "@/lib/email-templates";
+import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail, noShowFollowupEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking, signReview } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
@@ -74,8 +74,12 @@ export async function GET(req: Request) {
       rescheduleUrl: rescheduleUrl(base, ev.id),
     });
 
+    const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
     try {
-      await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+      await sendEmail({
+        to: email, toName: firstName, subject: mail.subject, html: mail.html,
+        log: { templateKey: kind === "2h" ? "reminder2" : "reminder24", clientName, owner: priv.owner, eventId: ev.id },
+      });
       await markReminderSent(ev.id, kind);
       sent++;
     } catch (e) {
@@ -86,7 +90,10 @@ export async function GET(req: Request) {
     const phone = priv.clientPhone;
     if (phone) {
       try {
-        await sendSMS({ to: phone, text: reminderSmsText(startIso, ev.location ?? "", kind) });
+        await sendSMS({
+          to: phone, text: reminderSmsText(startIso, ev.location ?? "", kind),
+          log: { templateKey: kind === "2h" ? "sms_reminder2" : "sms_reminder24", clientName, owner: priv.owner, eventId: ev.id, toEmail: email },
+        });
         smsSent++;
       } catch (e) {
         errors.push(`SMS rappel ${kind}: ${e instanceof Error ? e.message : String(e)}`);
@@ -112,7 +119,10 @@ export async function GET(req: Request) {
         lastName: priv.clientLastName,
         startDateTime: startIso,
       });
-      await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html });
+      await sendEmail({
+        to: email, toName: firstName, subject: mail.subject, html: mail.html,
+        log: { templateKey: "parking", clientName: `${firstName} ${priv.clientLastName ?? ""}`.trim(), owner: priv.owner, eventId: ev.id },
+      });
       await markParkingSent(ev.id);
       parkingSentCount++;
     } catch (e) {
@@ -140,11 +150,16 @@ export async function GET(req: Request) {
           mail = thinkingFollowupEmail({ stage: stage as 1 | 2, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
         } else if (type === "unsigned") {
           mail = unsignedFollowupEmail({ stage: stage as 1 | 2 | 3, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
+        } else if (type === "noshow") {
+          mail = noShowFollowupEmail({ stage, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
         } else {
           mail = cancellationFollowupEmail({ stage: stage as 1 | 2 | 3, civility: r.civility, firstName: r.first_name, lastName: r.last_name, bookUrl, unsubUrl });
         }
 
-        await sendEmail({ to: r.email, toName: r.first_name, subject: mail.subject, html: mail.html });
+        await sendEmail({
+          to: r.email, toName: r.first_name, subject: mail.subject, html: mail.html,
+          log: { templateKey: `followup_${type}_${stage}`, clientName: `${r.first_name} ${r.last_name ?? ""}`.trim(), owner: r.owner },
+        });
         await advanceFollowup(r.id, r.stage, type);
         followupsSent++;
       } catch (e) {
@@ -179,7 +194,10 @@ export async function GET(req: Request) {
             listingUrl: r.listing_url,
             note: r.note,
           });
-          await sendEmail({ to: r.owner, toName: organizerName, subject: mail.subject, html: mail.html });
+          await sendEmail({
+            to: r.owner, toName: organizerName, subject: mail.subject, html: mail.html,
+            log: { templateKey: "phone_rappel_organizer", clientName: `${r.first_name} ${r.last_name ?? ""}`.trim(), owner: r.owner },
+          });
         }
         // Mail client (si email connu).
         if (r.client_email) {
@@ -188,7 +206,10 @@ export async function GET(req: Request) {
             lastName: r.last_name,
             remindAt: r.remind_at,
           });
-          await sendEmail({ to: r.client_email, toName: r.first_name, subject: mail.subject, html: mail.html });
+          await sendEmail({
+            to: r.client_email, toName: r.first_name, subject: mail.subject, html: mail.html,
+            log: { templateKey: "phone_rappel_client", clientName: `${r.first_name} ${r.last_name ?? ""}`.trim(), owner: r.owner },
+          });
         }
         await markReminderNotified(r.id);
         phoneRappelsSent++;
