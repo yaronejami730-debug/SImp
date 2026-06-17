@@ -37,7 +37,27 @@ const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, color:
 
 function Home() {
   const [form, setForm] = useState(EMPTY);
+  const [commerciaux, setCommerciaux] = useState<string[]>([...COMMERCIAUX]);
   const [loading, setLoading] = useState(false);
+
+  // Commercial par défaut + liste selon l'entité (call center).
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/me", { headers: authHeaders() });
+        const d = await r.json();
+        if (d.ok && d.commerciaux?.length) {
+          setCommerciaux(d.commerciaux);
+          const def = d.callCenter?.defaultCommercial || d.commerciaux[0];
+          if (def) {
+            setForm((f) => ({ ...f, commercial: def }));
+            setLinkCommercial(def);
+            setHesCommercial(def);
+          }
+        }
+      } catch { /* défaut COMMERCIAUX */ }
+    })();
+  }, []);
   const [result, setResult] = useState<Result | null>(null);
   const [preview, setPreview] = useState<{ platform?: string; title?: string | null; image?: string | null } | null>(null);
   const [dups, setDups] = useState<Dup[]>([]);
@@ -230,7 +250,7 @@ function Home() {
         <div>
           <label style={labelStyle}>Commercial</label>
           <select style={inputStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
-            {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+            {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
@@ -296,7 +316,7 @@ function Home() {
             </div>
             <div><label style={labelStyle}>Commercial <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour nous — invisible au client)</span></label>
               <select style={inputStyle} value={linkCommercial} onChange={(e) => setLinkCommercial(e.target.value)}>
-                {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+                {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pré-rempli, optionnel)</span></label>
@@ -347,7 +367,7 @@ function Home() {
             </div>
             <div><label style={labelStyle}>Commercial <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour nous — invisible au client)</span></label>
               <select style={inputStyle} value={hesCommercial} onChange={(e) => setHesCommercial(e.target.value)}>
-                {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+                {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(marque / modèle / finition — pour savoir de quoi il s&apos;agit)</span></label>

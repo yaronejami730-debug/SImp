@@ -1,5 +1,6 @@
 import { google, type calendar_v3 } from "googleapis";
 import type { Appointment } from "./parse";
+import { commercialInviteEmail } from "./commerciaux";
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";
@@ -107,9 +108,8 @@ export async function createEvent(a: Appointment, owner = "") {
   const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 min par défaut
 
   const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
-  const res = await cal.events.insert({
-    calendarId: CALENDAR_ID,
-    requestBody: {
+  const invite = commercialInviteEmail(a.commercial); // ex: Bonamy -> bonamy.mimi@gmail.com
+  const requestBody: calendar_v3.Schema$Event = {
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
       description: [
@@ -123,6 +123,7 @@ export async function createEvent(a: Appointment, owner = "") {
         `Lieu : ${a.location}`,
       ].filter(Boolean).join("\n"),
       location: a.location,
+      attendees: invite ? [{ email: invite }] : undefined,
       start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
       end: { dateTime: end.toISOString(), timeZone: "Europe/Paris" },
       extendedProperties: {
@@ -143,10 +144,20 @@ export async function createEvent(a: Appointment, owner = "") {
           history: JSON.stringify([{ t: "created", at: new Date().toISOString() }]),
         },
       },
-    },
-  });
+  };
 
-  return res.data;
+  // Invite auto (ex: Bonamy -> bonamy.mimi). Si le compte refuse les invités, on réinsère sans.
+  try {
+    const res = await cal.events.insert({ calendarId: CALENDAR_ID, requestBody, sendUpdates: invite ? "all" : undefined });
+    return res.data;
+  } catch (e) {
+    if (requestBody.attendees?.length) {
+      const { attendees, ...noAtt } = requestBody; void attendees;
+      const res = await cal.events.insert({ calendarId: CALENDAR_ID, requestBody: noAtt });
+      return res.data;
+    }
+    throw e;
+  }
 }
 
 /** Crée un événement "rappel téléphonique" (15 min) dans Google Agenda.

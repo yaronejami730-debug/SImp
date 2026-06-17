@@ -22,3 +22,13 @@ export function commercialPhone(name?: string): string {
 export function commercialPhoneStrict(name?: string): string {
   return (name && COMMERCIAL_PHONE[name]) || "";
 }
+
+const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** E-mail à inviter automatiquement sur l'event Google selon le commercial (ex: Bonamy -> bonamy.mimi). */
+export function commercialInviteEmail(name?: string): string {
+  if (!name) return "";
+  const n = norm(name);
+  if (n.includes("bonamy")) return process.env.MOBILE_ATTENDEE_EMAIL ?? "bonamy.mimi@gmail.com";
+  return "";
+}
