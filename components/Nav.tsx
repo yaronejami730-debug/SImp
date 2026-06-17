@@ -14,6 +14,7 @@ const TABS = [
   { key: "prospection", label: "Prospection", href: "/prospection" },
   { key: "rappels", label: "Rappels", href: "/rappels" },
   { key: "relances", label: "Relances", href: "/relances" },
+  { key: "hesitants", label: "Hésitants", href: "/hesitants" },
   { key: "statistiques", label: "Stats", href: "/statistiques" },
 ];
 

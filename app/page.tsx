@@ -56,7 +56,30 @@ function Home() {
   const [linkTime, setLinkTime] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkResult, setLinkResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
-  const linkReady = linkEmail.trim() || linkPhone.trim();
+  const linkReady = (linkEmail.trim() || linkPhone.trim()) && !!linkDate && !!linkTime;
+
+  // Feature "client hésitant" : il ne sait pas quand -> on envoie juste un mail, il choisit.
+  const [showHes, setShowHes] = useState(false);
+  const [hesCivility, setHesCivility] = useState("Monsieur");
+  const [hesEmail, setHesEmail] = useState("");
+  const [hesPhone, setHesPhone] = useState("");
+  const [hesBusy, setHesBusy] = useState(false);
+  const [hesResult, setHesResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
+
+  async function sendHesitant() {
+    if (!hesEmail.trim()) return;
+    setHesBusy(true); setHesResult(null);
+    try {
+      const res = await fetch("/api/book/link", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ email: hesEmail, phone: hesPhone, civility: hesCivility }), // pas de créneau -> le client choisit
+      });
+      const d = await res.json();
+      if (d.ok) setHesResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
+      else alert(d.error ?? "Erreur");
+    } finally { setHesBusy(false); }
+  }
 
   async function sendLink() {
     if (!linkReady) return;
@@ -249,11 +272,11 @@ function Home() {
 
       <div style={{ marginTop: 26, borderTop: "1px solid #ececec", paddingTop: 18 }}>
         <button type="button" onClick={() => setShowLink((s) => !s)} style={{ background: "none", border: "none", color: PINK, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-          {showLink ? "▲ " : "▼ "}📩 Laisser le client choisir son créneau (envoi d&apos;un lien)
+          {showLink ? "▲ " : "▼ "}📞 Appel de mauvaise qualité — j&apos;impose le créneau (le client confirme)
         </button>
         {showLink && (
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Le client reçoit un mail et/ou SMS. Il remplit juste son identité. Tu peux <strong>imposer un créneau</strong> (date + heure ci-dessous) : pratique quand l&apos;appel coupe — il n&apos;a plus qu&apos;à confirmer. Si tu laisses le créneau vide, le client choisit lui-même.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Quand on s&apos;entend mal au téléphone : tu fixes <strong>date + heure</strong> (+ véhicule), le client reçoit un SMS/mail et n&apos;a plus qu&apos;à <strong>confirmer son identité</strong>. Il ne voit ni le commercial, ni la source, ni le lien.</p>
             <div>
               <label style={labelStyle}>Civilité</label>
               <div style={{ display: "flex", gap: 8 }}>
@@ -276,17 +299,50 @@ function Home() {
                 ))}
               </div>
             </div>
-            <div><label style={labelStyle}>Imposer un créneau <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel — sinon le client choisit)</span></label>
+            <div><label style={labelStyle}>Créneau imposé <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(date + heure)</span></label>
               <SlotPicker value={{ date: linkDate, time: linkTime }} onChange={(v) => { setLinkDate(v.date); setLinkTime(v.time); }} />
             </div>
             <button onClick={sendLink} disabled={linkBusy || !linkReady} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkReady ? "#cbd5e1" : NAVY, color: "#fff" }}>
-              {linkBusy ? "Envoi…" : "Envoyer le lien au client"}
+              {linkBusy ? "Envoi…" : "Envoyer le lien (confirmation)"}
             </button>
             {linkResult && (
               <div style={{ padding: 14, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
                 <strong>✅ {linkResult.emailSent ? "Mail envoyé" : "Lien généré"}{linkResult.smsSent ? " + SMS envoyé" : ""}</strong>
                 <p style={{ margin: "8px 0 4px", fontSize: 12, color: "#166534" }}>Lien (à copier si besoin) :</p>
                 <input readOnly value={linkResult.bookUrl} onFocus={(e) => e.currentTarget.select()} style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #bbf7d0", boxSizing: "border-box" }} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 18, borderTop: "1px solid #ececec", paddingTop: 18 }}>
+        <button type="button" onClick={() => setShowHes((s) => !s)} style={{ background: "none", border: "none", color: PINK, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+          {showHes ? "▲ " : "▼ "}🤔 Client hésitant — il ne sait pas quand (il choisit son créneau)
+        </button>
+        {showHes && (
+          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Le client veut venir mais ne sait pas quand. Tu mets <strong>juste son e-mail</strong> : il reçoit « suite à notre conversation téléphonique, choisissez un créneau » et réserve quand il veut. Suivi dans l&apos;onglet <strong>Hésitants</strong>.</p>
+            <div>
+              <label style={labelStyle}>Civilité</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {["Monsieur", "Madame"].map((c) => (
+                  <button key={c} type="button" onClick={() => setHesCivility(c)} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", border: hesCivility === c ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb", background: hesCivility === c ? PINK : "#fff", color: hesCivility === c ? "#fff" : "#6b7280" }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={hesEmail} onChange={(e) => setHesEmail(e.target.value)} placeholder="client@email.com" /></div>
+              <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label><input style={inputStyle} type="tel" value={hesPhone} onChange={(e) => setHesPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
+            </div>
+            <button onClick={sendHesitant} disabled={hesBusy || !hesEmail.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: hesBusy ? "not-allowed" : "pointer", background: hesBusy || !hesEmail.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
+              {hesBusy ? "Envoi…" : "Envoyer l'invitation (choix du créneau)"}
+            </button>
+            {hesResult && (
+              <div style={{ padding: 14, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
+                <strong>✅ {hesResult.emailSent ? "Mail envoyé" : "Lien généré"}{hesResult.smsSent ? " + SMS envoyé" : ""}</strong>
+                <p style={{ margin: "8px 0 4px", fontSize: 12, color: "#166534" }}>Lien (à copier si besoin) :</p>
+                <input readOnly value={hesResult.bookUrl} onFocus={(e) => e.currentTarget.select()} style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #bbf7d0", boxSizing: "border-box" }} />
               </div>
             )}
           </div>

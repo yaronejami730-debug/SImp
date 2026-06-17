@@ -138,6 +138,33 @@ export async function listRelances(owner?: string): Promise<RelanceGroup[]> {
   return rows;
 }
 
+export type BookingInvite = {
+  to_email: string;
+  template_key: string;
+  provider_message_id: string;
+  sent_at: string;
+  owner: string;
+};
+
+/** Dernière invitation booking (choix créneau / confirmation) par e-mail. */
+export async function listBookingInvites(owner?: string): Promise<BookingInvite[]> {
+  const params: string[] = [];
+  let ownerClause = "";
+  if (owner) { params.push(owner); ownerClause = "and owner = $1"; }
+  const { rows } = await getPool().query<BookingInvite>(
+    `select distinct on (to_email)
+            to_email, template_key, provider_message_id, sent_at, owner
+     from messages
+     where channel = 'email'
+       and template_key in ('booking_invite', 'booking_confirm')
+       and to_email <> ''
+       ${ownerClause}
+     order by to_email, sent_at desc`,
+    params,
+  );
+  return rows;
+}
+
 /** Un message par id. */
 export async function getMessage(id: number): Promise<MessageRow | null> {
   const { rows } = await getPool().query<MessageRow>(`select * from messages where id = $1`, [id]);

@@ -3,7 +3,7 @@ import { getAuth, signBooking } from "@/lib/auth";
 import { baseUrlFrom } from "@/lib/links";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { bookingInviteEmail } from "@/lib/email-templates";
+import { bookingInviteEmail, bookingConfirmInviteEmail } from "@/lib/email-templates";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -40,12 +40,13 @@ export async function POST(req: Request) {
     });
     const bookUrl = `${baseUrlFrom(req)}/book?t=${encodeURIComponent(token)}`;
     const fixedSlot = !!(b.date && b.time);
+    const tplKey = fixedSlot ? "booking_confirm" : "booking_invite";
 
     let emailSent = false;
     if (email) {
       try {
-        const mail = bookingInviteEmail({ bookUrl });
-        await sendEmail({ to: email, subject: mail.subject, html: mail.html });
+        const mail = fixedSlot ? bookingConfirmInviteEmail({ bookUrl }) : bookingInviteEmail({ bookUrl });
+        await sendEmail({ to: email, subject: mail.subject, html: mail.html, log: { templateKey: tplKey, owner: auth.email, origin: "manual" } });
         emailSent = true;
       } catch { /* mail non-bloquant */ }
     }
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
         const text = fixedSlot
           ? `Simplicicar: suite a notre echange, merci de confirmer votre RDV en remplissant vos infos ici: ${bookUrl} STOP au 36180`
           : `Simplicicar: choisissez votre creneau pour le rendez-vous ici: ${bookUrl} STOP au 36180`;
-        await sendSMS({ to: phone, text });
+        await sendSMS({ to: phone, text, log: { templateKey: tplKey, owner: auth.email, toEmail: email || undefined, origin: "manual" } });
         smsSent = true;
       } catch { /* SMS non-bloquant */ }
     }

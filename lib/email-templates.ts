@@ -152,15 +152,26 @@ export function customEmail(d: { civility?: string; firstName: string; lastName?
   return { subject: d.subject || `Message — ${BUSINESS}`, html: shell(content) };
 }
 
-/** Mail envoyé au client pour qu'il choisisse lui-même son créneau. */
+/** Mail "client hésitant" : il choisit lui-même son créneau. */
 export function bookingInviteEmail(d: { bookUrl: string }) {
   const content = `
     <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour,</p>
-    <p style="margin:0 0 16px;font-size:15px">Suite à notre conversation, choisissez le créneau qui vous convient pour votre rendez-vous avec ${BUSINESS.toUpperCase()} :</p>
+    <p style="margin:0 0 16px;font-size:15px">Suite à notre conversation téléphonique, choisissez le créneau qui vous convient pour votre rendez-vous avec ${BUSINESS.toUpperCase()} :</p>
     <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
   const buttons = btn(d.bookUrl, "Choisir mon créneau", C.primary);
-  return { subject: `Prenez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
+  return { subject: `Choisissez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
+}
+
+/** Mail "créneau imposé" (appel de mauvaise qualité) : le client confirme juste ses infos. */
+export function bookingConfirmInviteEmail(d: { bookUrl: string }) {
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour,</p>
+    <p style="margin:0 0 16px;font-size:15px">Suite à notre échange téléphonique, et compte tenu de la qualité de l'appel, voici un lien pour <strong>confirmer votre rendez-vous</strong> en quelques secondes : il vous suffit de renseigner vos informations.</p>
+    <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  const buttons = btn(d.bookUrl, "Confirmer mon rendez-vous", C.primary);
+  return { subject: `Confirmez votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
 /** Relance après annulation. stage 1 = J+7, stage 2 = J+14, stage 3 = J+44 (final). */
