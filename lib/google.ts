@@ -570,6 +570,7 @@ export async function markReminderSent(eventId: string, kind: "24h" | "2h" | "15
 // renseigne GOOGLE_MOBILE_CALENDAR_ID. Si absent -> sync ignorée (best-effort).
 const MOBILE_CALENDAR_ID = process.env.GOOGLE_MOBILE_CALENDAR_ID;
 const MOBILE_COLOR = "7"; // Peacock = bleu ciel
+const MOBILE_ATTENDEE = process.env.MOBILE_ATTENDEE_EMAIL ?? "bonamy.mimi@gmail.com"; // invité par défaut des déplacements
 
 export type MobileEventInput = {
   firstName: string; lastName?: string; email?: string; phone?: string;
@@ -596,6 +597,7 @@ function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
     location: a.address || undefined,
     description,
     colorId: MOBILE_COLOR,
+    attendees: MOBILE_ATTENDEE ? [{ email: MOBILE_ATTENDEE }] : undefined,
     start: { dateTime: a.startDateTime, timeZone: "Europe/Paris" },
     end: { dateTime: end, timeZone: "Europe/Paris" },
   };
@@ -605,22 +607,31 @@ export type MobileEventIds = { ownId: string; mobileId: string };
 
 /** Crée le RDV déplacement sur DEUX agendas : le tien (CALENDAR_ID, tagué `mobile`
  *  pour ne PAS bloquer tes créneaux physiques) + celui de Bonamy (MOBILE_CALENDAR_ID). */
-export async function createMobileEvent(a: MobileEventInput): Promise<MobileEventIds> {
+/** Insert avec invité ; si le compte refuse les invités (service account sans DWD), réessaie sans. */
+async function insertWithAttendeeFallback(calendarId: string, body: calendar_v3.Schema$Event): Promise<string> {
   const cal = calendarClient();
-  let ownId = "", mobileId = "";
-  // Ton agenda — tagué mobile pour l'exclure de la dispo physique.
   try {
-    const ownBody = { ...mobileEventBody(a), extendedProperties: { private: { mobile: "1" } } };
-    const res = await cal.events.insert({ calendarId: CALENDAR_ID, requestBody: ownBody });
-    ownId = res.data.id ?? "";
-  } catch (e) { console.error("createMobileEvent (own) failed", e); }
-  // Agenda Bonamy.
-  if (MOBILE_CALENDAR_ID) {
-    try {
-      const res = await cal.events.insert({ calendarId: MOBILE_CALENDAR_ID, requestBody: mobileEventBody(a) });
-      mobileId = res.data.id ?? "";
-    } catch (e) { console.error("createMobileEvent (bonamy) failed", e); }
+    const res = await cal.events.insert({ calendarId, requestBody: body, sendUpdates: "all" });
+    return res.data.id ?? "";
+  } catch (e) {
+    if (body.attendees?.length) {
+      try {
+        const { attendees, ...noAtt } = body; void attendees;
+        const res = await cal.events.insert({ calendarId, requestBody: noAtt });
+        return res.data.id ?? "";
+      } catch (e2) { console.error("insert (no attendee) failed", e2); return ""; }
+    }
+    console.error("insert failed", e);
+    return "";
   }
+}
+
+export async function createMobileEvent(a: MobileEventInput): Promise<MobileEventIds> {
+  const body = mobileEventBody(a);
+  // Ton agenda — tagué mobile pour l'exclure de la dispo physique.
+  const ownId = await insertWithAttendeeFallback(CALENDAR_ID, { ...body, extendedProperties: { private: { mobile: "1" } } });
+  // Agenda Bonamy (si configuré).
+  const mobileId = MOBILE_CALENDAR_ID ? await insertWithAttendeeFallback(MOBILE_CALENDAR_ID, body) : "";
   return { ownId, mobileId };
 }
 
