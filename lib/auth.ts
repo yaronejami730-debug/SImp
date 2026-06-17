@@ -45,6 +45,7 @@ export type BookingPayload = {
   civility?: string;
   listingUrl?: string;
   source?: string;       // LeBonCoin / LaCentrale / Autre (non visible du client)
+  commercial?: string;   // nom du commercial assigné (non visible du client)
   carBrand?: string;     // pré-rempli par le commercial (flux SMS rapide)
   carModel?: string;
   carFinish?: string;
@@ -67,7 +68,7 @@ export function verifyBooking(token: string): BookingPayload | null {
     const p = JSON.parse(Buffer.from(body, "base64url").toString());
     if (!p.exp || p.exp < Date.now()) return null;
     return {
-      owner: p.owner, email: p.email, civility: p.civility, listingUrl: p.listingUrl, source: p.source,
+      owner: p.owner, email: p.email, civility: p.civility, listingUrl: p.listingUrl, source: p.source, commercial: p.commercial,
       carBrand: p.carBrand, carModel: p.carModel, carFinish: p.carFinish, date: p.date, time: p.time,
     };
   } catch {

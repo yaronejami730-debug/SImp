@@ -54,6 +54,7 @@ export async function POST(req: Request) {
       phone: body.phone,
       listingUrl: p.listingUrl,
       source: p.source,
+      commercial: p.commercial,
       carBrand: p.carBrand,
       carModel: p.carModel,
       carFinish: p.carFinish,

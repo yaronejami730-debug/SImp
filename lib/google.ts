@@ -552,10 +552,11 @@ export async function markParkingSent(eventId: string) {
 }
 
 /** Marque qu'un rappel (24h ou 2h) a été envoyé + historique. */
-export async function markReminderSent(eventId: string, kind: "24h" | "2h") {
-  const key = kind === "24h" ? "reminder24Sent" : "reminder2Sent";
+export async function markReminderSent(eventId: string, kind: "24h" | "2h" | "15min") {
+  const key = kind === "24h" ? "reminder24Sent" : kind === "2h" ? "reminder2Sent" : "reminder15Sent";
+  const histType = kind === "24h" ? "reminder_24h" : kind === "2h" ? "reminder_2h" : "reminder_15min";
   const hist = await readHistory(eventId);
-  hist.push({ t: kind === "24h" ? "reminder_24h" : "reminder_2h", at: new Date().toISOString() });
+  hist.push({ t: histType, at: new Date().toISOString() });
   await calendarClient().events.patch({
     calendarId: CALENDAR_ID,
     eventId,

@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   try {
     const b = (await req.json()) as {
-      email?: string; phone?: string; civility?: string; listingUrl?: string; source?: string;
+      email?: string; phone?: string; civility?: string; listingUrl?: string; source?: string; commercial?: string;
       carBrand?: string; carModel?: string; carFinish?: string; date?: string; time?: string;
     };
     const email = b.email?.trim();
@@ -32,6 +32,7 @@ export async function POST(req: Request) {
       civility: b.civility,
       listingUrl: b.listingUrl?.trim() || undefined,
       source: b.source?.trim() || undefined,
+      commercial: b.commercial?.trim() || undefined,
       carBrand: b.carBrand?.trim() || undefined,
       carModel: b.carModel?.trim() || undefined,
       carFinish: b.carFinish?.trim() || undefined,

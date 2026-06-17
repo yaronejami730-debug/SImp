@@ -49,6 +49,7 @@ function Home() {
   const [linkPhone, setLinkPhone] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [linkSource, setLinkSource] = useState("");
+  const [linkCommercial, setLinkCommercial] = useState(DEFAULT_COMMERCIAL);
   const [linkBrand, setLinkBrand] = useState("");
   const [linkModel, setLinkModel] = useState("");
   const [linkFinish, setLinkFinish] = useState("");
@@ -63,6 +64,7 @@ function Home() {
   const [hesCivility, setHesCivility] = useState("Monsieur");
   const [hesEmail, setHesEmail] = useState("");
   const [hesPhone, setHesPhone] = useState("");
+  const [hesCommercial, setHesCommercial] = useState(DEFAULT_COMMERCIAL);
   const [hesBusy, setHesBusy] = useState(false);
   const [hesResult, setHesResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
 
@@ -73,7 +75,7 @@ function Home() {
       const res = await fetch("/api/book/link", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ email: hesEmail, phone: hesPhone, civility: hesCivility }), // pas de créneau -> le client choisit
+        body: JSON.stringify({ email: hesEmail, phone: hesPhone, civility: hesCivility, commercial: hesCommercial }), // pas de créneau -> le client choisit
       });
       const d = await res.json();
       if (d.ok) setHesResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
@@ -90,7 +92,7 @@ function Home() {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
         body: JSON.stringify({
-          email: linkEmail, phone: linkPhone, civility: linkCivility, listingUrl: linkUrl, source: linkSource,
+          email: linkEmail, phone: linkPhone, civility: linkCivility, listingUrl: linkUrl, source: linkSource, commercial: linkCommercial,
           carBrand: linkBrand, carModel: linkModel, carFinish: linkFinish, date: linkDate, time: linkTime,
         }),
       });
@@ -289,6 +291,11 @@ function Home() {
               <div><label style={labelStyle}>E-mail <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(ou tél)</span></label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
               <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour SMS)</span></label><input style={inputStyle} type="tel" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
             </div>
+            <div><label style={labelStyle}>Commercial <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour nous — invisible au client)</span></label>
+              <select style={inputStyle} value={linkCommercial} onChange={(e) => setLinkCommercial(e.target.value)}>
+                {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
             <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pré-rempli, optionnel)</span></label>
               <VehiclePicker brand={linkBrand} model={linkModel} finish={linkFinish} onChange={(b, m, fi) => { setLinkBrand(b); setLinkModel(m); setLinkFinish(fi ?? ""); }} />
             </div>
@@ -334,6 +341,11 @@ function Home() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={hesEmail} onChange={(e) => setHesEmail(e.target.value)} placeholder="client@email.com" /></div>
               <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label><input style={inputStyle} type="tel" value={hesPhone} onChange={(e) => setHesPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
+            </div>
+            <div><label style={labelStyle}>Commercial <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour nous — invisible au client)</span></label>
+              <select style={inputStyle} value={hesCommercial} onChange={(e) => setHesCommercial(e.target.value)}>
+                {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
             <button onClick={sendHesitant} disabled={hesBusy || !hesEmail.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: hesBusy ? "not-allowed" : "pointer", background: hesBusy || !hesEmail.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
               {hesBusy ? "Envoi…" : "Envoyer l'invitation (choix du créneau)"}

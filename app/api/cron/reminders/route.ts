@@ -2,18 +2,20 @@ import { NextResponse } from "next/server";
 import { listEvents, markReminderSent, markParkingSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail, noShowFollowupEmail } from "@/lib/email-templates";
+import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail, noShowFollowupEmail, reminderApproachEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking, signReview } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
 import { dueReminders, markReminderNotified } from "@/lib/reminders";
 import { getUserByEmail } from "@/lib/users";
+import { commercialPhone } from "@/lib/commerciaux";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const H24 = 24 * 60 * 60 * 1000;
 const H2 = 2 * 60 * 60 * 1000;
+const MIN15 = 15 * 60 * 1000;
 
 /**
  * Rappels dynamiques. À lancer souvent (~toutes les 15 min).
@@ -98,6 +100,45 @@ export async function GET(req: Request) {
       } catch (e) {
         errors.push(`SMS rappel ${kind}: ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+  }
+
+  // === SMS + mail 15 min avant le RDV : contact de l'interlocuteur (commercial) + accès ===
+  let sms15Sent = 0;
+  for (const ev of events) {
+    const startIso = ev.start?.dateTime;
+    if (!startIso || !ev.id) continue;
+    const msUntil = new Date(startIso).getTime() - now.getTime();
+    if (msUntil <= 0 || msUntil > MIN15) continue;
+    const priv = ev.extendedProperties?.private ?? {};
+    if (priv.reminder15Sent === "1") continue;
+    const phone = priv.clientPhone;
+    const email = priv.clientEmail;
+    if (!phone && !email) continue;
+    const firstName = priv.clientFirstName ?? "";
+    const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
+    const commercial = priv.commercial || "votre conseiller";
+    const tel = commercialPhone(priv.commercial);
+    let any = false;
+    // SMS
+    if (phone) {
+      const text = `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre interlocuteur: M. ${commercial} - ${tel}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`;
+      try {
+        await sendSMS({ to: phone, text, log: { templateKey: "sms_reminder15", clientName, owner: priv.owner, eventId: ev.id, toEmail: email } });
+        any = true;
+      } catch (e) { errors.push(`SMS 15min: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+    // Mail (en même temps)
+    if (email) {
+      try {
+        const mail = reminderApproachEmail({ firstName, commercial, phone: tel });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { templateKey: "reminder15", clientName, owner: priv.owner, eventId: ev.id } });
+        any = true;
+      } catch (e) { errors.push(`Mail 15min: ${e instanceof Error ? e.message : String(e)}`); }
+    }
+    if (any) {
+      try { await markReminderSent(ev.id, "15min"); } catch { /* non-bloquant */ }
+      sms15Sent++;
     }
   }
 
@@ -221,5 +262,5 @@ export async function GET(req: Request) {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
-  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
+  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, sms15Sent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
 }
