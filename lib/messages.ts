@@ -144,16 +144,18 @@ export type BookingInvite = {
   provider_message_id: string;
   sent_at: string;
   owner: string;
+  invite_count: number; // nb total d'invitations envoyées à cet e-mail
 };
 
-/** Dernière invitation booking (choix créneau / confirmation) par e-mail. */
+/** Dernière invitation booking (choix créneau / confirmation) par e-mail + nb total. */
 export async function listBookingInvites(owner?: string): Promise<BookingInvite[]> {
   const params: string[] = [];
   let ownerClause = "";
   if (owner) { params.push(owner); ownerClause = "and owner = $1"; }
   const { rows } = await getPool().query<BookingInvite>(
     `select distinct on (to_email)
-            to_email, template_key, provider_message_id, sent_at, owner
+            to_email, template_key, provider_message_id, sent_at, owner,
+            count(*) over (partition by to_email)::int as invite_count
      from messages
      where channel = 'email'
        and template_key in ('booking_invite', 'booking_confirm')
@@ -161,6 +163,19 @@ export async function listBookingInvites(owner?: string): Promise<BookingInvite[
        ${ownerClause}
      order by to_email, sent_at desc`,
     params,
+  );
+  return rows;
+}
+
+export type TemplateUsage = { template_key: string; channel: string; count: number; last_sent: string };
+
+/** Combien de fois chaque template a été envoyé (par canal) + dernier envoi. */
+export async function templateUsage(): Promise<TemplateUsage[]> {
+  const { rows } = await getPool().query<TemplateUsage>(
+    `select template_key, channel, count(*)::int as count, max(sent_at) as last_sent
+     from messages
+     where template_key <> ''
+     group by template_key, channel`,
   );
   return rows;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import * as T from "@/lib/email-templates";
+import { templateUsage } from "@/lib/messages";
 
 export const dynamic = "force-dynamic";
 
@@ -11,68 +12,101 @@ const inHours = (n: number) => new Date(now + n * 3600000).toISOString();
 const LOC = "3 rue Bélidor 75017 Paris";
 const base = { civility: "Monsieur", firstName: "Jean", lastName: "Dupont" };
 const u = {
-  bookUrl: "https://exemple.fr/book",
-  sellUrl: "https://exemple.fr/vendre",
-  buyUrl: "https://exemple.fr/acheter",
-  avisUrl: "https://exemple.fr/avis",
-  unsubUrl: "https://exemple.fr/unsubscribe",
-  rescheduleUrl: "https://exemple.fr/reschedule",
+  bookUrl: "https://exemple.fr/book", sellUrl: "https://exemple.fr/vendre", buyUrl: "https://exemple.fr/acheter",
+  avisUrl: "https://exemple.fr/avis", unsubUrl: "https://exemple.fr/unsubscribe", rescheduleUrl: "https://exemple.fr/reschedule",
   listingUrl: "https://leboncoin.fr/annonce/123",
 };
 
 type Mail = { subject: string; html: string };
-type Entry = { key: string; label: string; group: string; make: () => Mail };
+type Rendered = { channel: "email" | "sms"; subject?: string; html?: string; text?: string };
+type Entry = {
+  key: string;            // = template_key journalisé (pour l'usage)
+  channel: "email" | "sms";
+  group: string;
+  label: string;
+  when: string;           // quand / pourquoi c'est envoyé
+  render: () => Rendered;
+};
 
-// ── Catalogue de tous les templates ─────────────────────
+const mail = (m: Mail): Rendered => ({ channel: "email", subject: m.subject, html: m.html });
+const sms = (text: string): Rendered => ({ channel: "sms", text });
+
+// ── Catalogue complet (mails + SMS) ──────────────────────
 const CATALOG: Entry[] = [
-  // Rendez-vous
-  { key: "confirmation", group: "Rendez-vous", label: "Confirmation de RDV", make: () => T.confirmationEmail({ ...base, startDateTime: inDays(2), location: LOC, rescheduleUrl: u.rescheduleUrl }) },
-  { key: "reminder24", group: "Rendez-vous", label: "Rappel RDV — 24h avant", make: () => T.reminderEmail({ ...base, startDateTime: inDays(1), location: LOC, kind: "24h", rescheduleUrl: u.rescheduleUrl }) },
-  { key: "reminder2", group: "Rendez-vous", label: "Rappel RDV — 2h avant", make: () => T.reminderEmail({ ...base, startDateTime: inHours(2), location: LOC, kind: "2h", rescheduleUrl: u.rescheduleUrl }) },
-  { key: "rescheduled", group: "Rendez-vous", label: "RDV reprogrammé", make: () => T.rescheduledEmail({ ...base, startDateTime: inDays(3), location: LOC, rescheduleUrl: u.rescheduleUrl }) },
-  { key: "parking", group: "Rendez-vous", label: "Place de parking réservée", make: () => T.parkingReservationEmail({ ...base, startDateTime: inDays(2) }) },
-  { key: "cancelled", group: "Rendez-vous", label: "RDV annulé", make: () => T.cancelledEmail({ ...base, startDateTime: inDays(1), location: LOC }) },
-  { key: "bookingInvite", group: "Rendez-vous", label: "Invitation à choisir un créneau", make: () => T.bookingInviteEmail({ bookUrl: u.bookUrl }) },
+  // ===== Rendez-vous =====
+  { key: "confirmation", channel: "email", group: "Rendez-vous", label: "Confirmation de RDV", when: "Automatique, dès la création d'un RDV (formulaire ou lien client). Confirme date/heure + adresse.", render: () => mail(T.confirmationEmail({ ...base, startDateTime: inDays(2), location: LOC, rescheduleUrl: u.rescheduleUrl })) },
+  { key: "sms_confirmation", channel: "sms", group: "Rendez-vous", label: "SMS confirmation RDV", when: "Automatique, en même temps que le mail de confirmation, à la création du RDV.", render: () => sms("Simplicicar: RDV confirme jeudi 18 juin a 18h00 - 3 rue Belidor 75017 Paris. STOP au 36180") },
+  { key: "reminder24", channel: "email", group: "Rendez-vous", label: "Rappel RDV — 24h avant", when: "Automatique (cron DB) ~24h avant le RDV.", render: () => mail(T.reminderEmail({ ...base, startDateTime: inDays(1), location: LOC, kind: "24h", rescheduleUrl: u.rescheduleUrl })) },
+  { key: "sms_reminder24", channel: "sms", group: "Rendez-vous", label: "SMS rappel — 24h avant", when: "Automatique (cron DB) ~24h avant le RDV, avec le mail.", render: () => sms("Simplicicar: rappel RDV demain, jeudi 18 juin a 18h00 - 3 rue Belidor. A bientot! STOP au 36180") },
+  { key: "reminder2", channel: "email", group: "Rendez-vous", label: "Rappel RDV — 2h avant", when: "Automatique (cron DB) ~2h avant le RDV.", render: () => mail(T.reminderEmail({ ...base, startDateTime: inHours(2), location: LOC, kind: "2h", rescheduleUrl: u.rescheduleUrl })) },
+  { key: "sms_reminder2", channel: "sms", group: "Rendez-vous", label: "SMS rappel — 2h avant", when: "Automatique (cron DB) ~2h avant le RDV, avec le mail.", render: () => sms("Simplicicar: rappel RDV dans 2h, jeudi 18 juin a 18h00 - 3 rue Belidor. A bientot! STOP au 36180") },
+  { key: "reminder15", channel: "email", group: "Rendez-vous", label: "Rappel 15 min — contact + accès", when: "Automatique (cron DB) ~15 min avant le RDV. Donne le contact du commercial + instructions d'accès/parking.", render: () => mail(T.reminderApproachEmail({ firstName: "Jean", commercial: "Raphaël Dahan", phone: "06 18 74 73 82" })) },
+  { key: "sms_reminder15", channel: "sms", group: "Rendez-vous", label: "SMS 15 min — contact commercial", when: "Automatique (cron DB) ~15 min avant le RDV, avec le mail. Donne le numéro direct de l'interlocuteur.", render: () => sms("Bonjour Jean, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre interlocuteur: M. Raphael Dahan - 06 18 74 73 82. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180") },
+  { key: "parking", channel: "email", group: "Rendez-vous", label: "Place de parking réservée", when: "Bouton fiche client, ou auto ~2h avant si parking demandé.", render: () => mail(T.parkingReservationEmail({ ...base, startDateTime: inDays(2) })) },
+  { key: "rescheduled", channel: "email", group: "Rendez-vous", label: "RDV reprogrammé", when: "Quand on change le créneau d'un RDV (page reprogrammation).", render: () => mail(T.rescheduledEmail({ ...base, startDateTime: inDays(3), location: LOC, rescheduleUrl: u.rescheduleUrl })) },
+  { key: "cancelled", channel: "email", group: "Rendez-vous", label: "RDV annulé", when: "Quand on annule un RDV.", render: () => mail(T.cancelledEmail({ ...base, startDateTime: inDays(1), location: LOC })) },
 
-  // Relances après annulation
-  { key: "cancel1", group: "Relances annulation", label: "Annulation — relance 1 (J+7)", make: () => T.cancellationFollowupEmail({ ...base, stage: 1, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "cancel2", group: "Relances annulation", label: "Annulation — relance 2 (J+14)", make: () => T.cancellationFollowupEmail({ ...base, stage: 2, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "cancel3", group: "Relances annulation", label: "Annulation — relance 3 (J+44)", make: () => T.cancellationFollowupEmail({ ...base, stage: 3, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
+  // ===== Invitations / liens =====
+  { key: "booking_invite", channel: "email", group: "Invitations", label: "Invitation — le client choisit", when: "Feature « client hésitant » : il ne sait pas quand. On envoie un mail, il choisit son créneau.", render: () => mail(T.bookingInviteEmail({ bookUrl: u.bookUrl })) },
+  { key: "booking_confirm", channel: "email", group: "Invitations", label: "Invitation — créneau imposé", when: "Feature « appel de mauvaise qualité » : on fixe le créneau, le client confirme juste son identité.", render: () => mail(T.bookingConfirmInviteEmail({ bookUrl: u.bookUrl })) },
 
-  // Relances post-RDV
-  { key: "think1", group: "Relances post-RDV", label: "Réfléchit — relance 1 (J+3)", make: () => T.thinkingFollowupEmail({ ...base, stage: 1, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "think2", group: "Relances post-RDV", label: "Réfléchit — relance 2 (J+13)", make: () => T.thinkingFollowupEmail({ ...base, stage: 2, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "unsigned1", group: "Relances post-RDV", label: "Pas signé — relance 1 (J+14)", make: () => T.unsignedFollowupEmail({ ...base, stage: 1, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "unsigned2", group: "Relances post-RDV", label: "Pas signé — relance 2 (J+44)", make: () => T.unsignedFollowupEmail({ ...base, stage: 2, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "unsigned3", group: "Relances post-RDV", label: "Pas signé — relance 3 (J+119)", make: () => T.unsignedFollowupEmail({ ...base, stage: 3, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl }) },
-  { key: "signedRating", group: "Relances post-RDV", label: "Demande d'avis après signature", make: () => T.signedRatingEmail({ ...base, avisUrl: u.avisUrl }) },
+  // ===== Rappel téléphonique (prospection) =====
+  { key: "phone_rappel_organizer", channel: "email", group: "Rappel téléphonique", label: "Rappel tél — collaborateur", when: "Auto ~30 min avant un RDV téléphonique : prévient le commercial.", render: () => mail(T.phoneRappelOrganizerEmail({ organizerName: "Marie", firstName: "Jean", lastName: "Dupont", phone: "06 12 34 56 78", remindAt: inHours(0.5), listingUrl: u.listingUrl, note: "Veut vendre vite" })) },
+  { key: "phone_rappel_client", channel: "email", group: "Rappel téléphonique", label: "Rappel tél — client", when: "Auto ~30 min avant un RDV téléphonique : prévient le client.", render: () => mail(T.phoneRappelClientEmail({ firstName: "Jean", lastName: "Dupont", remindAt: inHours(0.5) })) },
+  { key: "sms_rappel_confirm", channel: "sms", group: "Rappel téléphonique", label: "SMS confirmation rappel tél", when: "Auto à la création d'un rappel téléphonique (prospection).", render: () => sms("Simplicicar: votre rappel est confirme jeudi 18 juin a 18h00. On vous appelle. STOP au 36180") },
 
-  // Prospection / Rappel téléphonique
-  { key: "phoneOrg", group: "Rappel téléphonique", label: "Rappel tel — collaborateur (30 min avant)", make: () => T.phoneRappelOrganizerEmail({ organizerName: "Marie", firstName: "Jean", lastName: "Dupont", phone: "06 12 34 56 78", remindAt: inHours(0.5), listingUrl: u.listingUrl, note: "Veut vendre rapidement" }) },
-  { key: "phoneClient", group: "Rappel téléphonique", label: "Rappel tel — client (30 min avant)", make: () => T.phoneRappelClientEmail({ firstName: "Jean", lastName: "Dupont", remindAt: inHours(0.5) }) },
+  // ===== Relances post-RDV =====
+  { key: "noshow", channel: "email", group: "Relances", label: "No-show — absent", when: "Bouton « Absent » sur la fiche : 1 mail immédiat puis relance tous les 2 jours (6 max).", render: () => mail(T.noShowFollowupEmail({ stage: 1, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_thinking_1", channel: "email", group: "Relances", label: "Réfléchit — relance 1 (J+3)", when: "Auto (cron DB) J+3 après un RDV statut « réfléchit ».", render: () => mail(T.thinkingFollowupEmail({ stage: 1, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_thinking_2", channel: "email", group: "Relances", label: "Réfléchit — relance 2 (J+13)", when: "Auto (cron DB) J+13 après un RDV « réfléchit ».", render: () => mail(T.thinkingFollowupEmail({ stage: 2, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_unsigned_1", channel: "email", group: "Relances", label: "Pas signé — relance 1 (J+14)", when: "Auto (cron DB) J+14 après un RDV non signé.", render: () => mail(T.unsignedFollowupEmail({ stage: 1, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_unsigned_2", channel: "email", group: "Relances", label: "Pas signé — relance 2 (J+44)", when: "Auto (cron DB) J+44 après un RDV non signé.", render: () => mail(T.unsignedFollowupEmail({ stage: 2, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_unsigned_3", channel: "email", group: "Relances", label: "Pas signé — relance 3 (J+119)", when: "Auto (cron DB) J+119 après un RDV non signé.", render: () => mail(T.unsignedFollowupEmail({ stage: 3, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_cancel_1", channel: "email", group: "Relances", label: "Annulation — relance 1 (J+7)", when: "Auto (cron DB) J+7 après une annulation.", render: () => mail(T.cancellationFollowupEmail({ stage: 1, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_cancel_2", channel: "email", group: "Relances", label: "Annulation — relance 2 (J+21)", when: "Auto (cron DB) J+21 après une annulation.", render: () => mail(T.cancellationFollowupEmail({ stage: 2, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "followup_cancel_3", channel: "email", group: "Relances", label: "Annulation — relance 3 (J+51)", when: "Auto (cron DB) J+51 après une annulation (dernière).", render: () => mail(T.cancellationFollowupEmail({ stage: 3, ...base, bookUrl: u.bookUrl, unsubUrl: u.unsubUrl })) },
+  { key: "signed", channel: "email", group: "Relances", label: "Demande d'avis (après signature)", when: "Auto J+14 après une signature : invite à noter l'agence.", render: () => mail(T.signedRatingEmail({ ...base, avisUrl: u.avisUrl })) },
 
-  // Parrainage / divers
-  { key: "referral", group: "Parrainage & divers", label: "Recommandation (parrainage)", make: () => T.referralEmail({ friendName: "Paul", referrerName: "Jean Dupont", sellUrl: u.sellUrl, buyUrl: u.buyUrl }) },
-  { key: "custom", group: "Parrainage & divers", label: "Mail personnalisé (exemple)", make: () => T.customEmail({ ...base, subject: "Votre message personnalisé", body: "Ceci est un exemple de mail personnalisé.\nVous pouvez écrire plusieurs paragraphes.\n\nLe second paragraphe apparaît ici." }) },
+  // ===== Manuels / divers =====
+  { key: "custom", channel: "email", group: "Manuels", label: "Mail personnalisé", when: "Bouton « mail personnalisé » sur la fiche client (texte libre).", render: () => mail(T.customEmail({ ...base, subject: "Votre message", body: "Exemple de mail personnalisé.\n\nDeuxième paragraphe." })) },
+  { key: "sms_custom", channel: "sms", group: "Manuels", label: "SMS personnalisé", when: "Bouton « SMS personnalisé » sur la fiche client (texte libre).", render: () => sms("Simplicicar: bonjour Jean, [votre message]. STOP au 36180") },
+  { key: "referral", channel: "email", group: "Manuels", label: "Recommandation (parrainage)", when: "Quand un client recommande un proche (parrainage).", render: () => mail(T.referralEmail({ friendName: "Paul", referrerName: "Jean Dupont", sellUrl: u.sellUrl, buyUrl: u.buyUrl })) },
 ];
 
-/** GET           -> liste { key, label, group }.
- *  GET ?key=...   -> { subject, html } du template rendu avec données d'exemple. */
+/** GET -> liste { key, channel, label, group, when, used, count, lastUsed }.
+ *  GET ?key=&channel= -> rendu (subject/html ou text). */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
-  const key = new URL(req.url).searchParams.get("key");
+  const url = new URL(req.url);
+  const key = url.searchParams.get("key");
+  const channel = url.searchParams.get("channel");
   if (key) {
-    const entry = CATALOG.find((e) => e.key === key);
+    const entry = CATALOG.find((e) => e.key === key && (!channel || e.channel === channel));
     if (!entry) return NextResponse.json({ error: "Template inconnu." }, { status: 404 });
     try {
-      const { subject, html } = entry.make();
-      return NextResponse.json({ ok: true, key, label: entry.label, subject, html });
+      const r = entry.render();
+      return NextResponse.json({ ok: true, key, label: entry.label, when: entry.when, ...r });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
     }
   }
 
-  return NextResponse.json({ ok: true, templates: CATALOG.map((e) => ({ key: e.key, label: e.label, group: e.group })) });
+  // Usage réel depuis la table messages.
+  const usage = await templateUsage();
+  const usageMap = new Map<string, { count: number; last: string }>();
+  for (const us of usage) {
+    const k = `${us.template_key}|${us.channel}`;
+    usageMap.set(k, { count: us.count, last: us.last_sent });
+  }
+
+  const templates = CATALOG.map((e) => {
+    const us = usageMap.get(`${e.key}|${e.channel}`);
+    return {
+      key: e.key, channel: e.channel, label: e.label, group: e.group, when: e.when,
+      used: !!us, count: us?.count ?? 0, lastUsed: us?.last ?? null,
+    };
+  });
+  return NextResponse.json({ ok: true, templates });
 }

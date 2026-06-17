@@ -39,6 +39,7 @@ export async function GET(req: Request) {
           email: i.to_email,
           type: i.template_key,
           sentAt: i.sent_at,
+          invites: i.invite_count,
           opened,
           clicked,
           eventsKnown,

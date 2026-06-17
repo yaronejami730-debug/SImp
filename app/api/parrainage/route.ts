@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     const buyUrl = `${base}/recommandation?${buyParams.toString()}`;
 
     const mail = referralEmail({ friendName: friendName || undefined, referrerName: referrerName || undefined, sellUrl, buyUrl });
-    await sendEmail({ to: friendEmail, toName: friendName, subject: mail.subject, html: mail.html });
+    await sendEmail({ to: friendEmail, toName: friendName, subject: mail.subject, html: mail.html, log: { templateKey: "referral", clientName: friendName || "", origin: "manual" } });
 
     return NextResponse.json({ ok: true });
   } catch (e) {

@@ -199,7 +199,7 @@ export async function GET(req: Request) {
 
         await sendEmail({
           to: r.email, toName: r.first_name, subject: mail.subject, html: mail.html,
-          log: { templateKey: `followup_${type}_${stage}`, clientName: `${r.first_name} ${r.last_name ?? ""}`.trim(), owner: r.owner },
+          log: { templateKey: type === "noshow" ? "noshow" : `followup_${type}_${stage}`, clientName: `${r.first_name} ${r.last_name ?? ""}`.trim(), owner: r.owner },
         });
         await advanceFollowup(r.id, r.stage, type);
         followupsSent++;
