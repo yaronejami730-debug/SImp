@@ -1,4 +1,5 @@
 import { logMessage } from "./messages";
+import { isTemplateDisabled } from "./template-settings";
 
 /** Contexte de journalisation (timeline CRM). Optionnel. */
 type LogCtx = {
@@ -17,8 +18,12 @@ type SendOpts = {
   log?: LogCtx; // si fourni -> journalise le mail (preuve timeline)
 };
 
-/** Envoie un e-mail transactionnel via l'API Brevo. Renvoie { messageId }. */
-export async function sendEmail(opts: SendOpts): Promise<{ messageId?: string }> {
+/** Envoie un e-mail transactionnel via l'API Brevo. Renvoie { messageId } ou { skipped } si template désactivé. */
+export async function sendEmail(opts: SendOpts): Promise<{ messageId?: string; skipped?: boolean }> {
+  // Template désactivé depuis le dashboard -> on n'envoie pas.
+  if (opts.log?.templateKey && (await isTemplateDisabled(opts.log.templateKey, "email"))) {
+    return { skipped: true };
+  }
   try {
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",

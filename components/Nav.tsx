@@ -10,12 +10,10 @@ const TABS = [
   { key: "rdv", label: "Prise de RDV", href: "/" },
   { key: "agenda", label: "Agenda", href: "/agenda" },
   { key: "crm", label: "CRM", href: "/crm" },
-  { key: "recherche", label: "🤖 Recherche", href: "/recherche" },
   { key: "prospection", label: "Prospection", href: "/prospection" },
   { key: "rappels", label: "Rappels", href: "/rappels" },
-  { key: "relances", label: "Relances", href: "/relances" },
-  { key: "hesitants", label: "Hésitants", href: "/hesitants" },
   { key: "statistiques", label: "Stats", href: "/statistiques" },
+  // Masqués pour l'instant (code conservé) : recherche, relances, hesitants, assistant.
 ];
 
 export default function Nav({ active }: { active: string }) {
@@ -73,17 +71,6 @@ export default function Nav({ active }: { active: string }) {
             }}
           >
             ⭐ Avis
-          </a>
-        )}
-        {user?.role === "admin" && (
-          <a
-            href="/assistant"
-            style={{
-              flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
-              background: active === "assistant" ? PINK : "#fff", color: active === "assistant" ? "#fff" : NAVY, border: "1px solid " + (active === "assistant" ? PINK : "#e5e7eb"),
-            }}
-          >
-            🤖 Assistant
           </a>
         )}
         {user?.role === "admin" && (

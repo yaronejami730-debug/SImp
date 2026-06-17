@@ -33,6 +33,12 @@ export async function sendSMS(opts: SendSmsOpts) {
 
   if (!login || !apiKey) throw new Error("ALLMYSMS_LOGIN / ALLMYSMS_API_KEY manquants.");
 
+  // Template SMS désactivé depuis le dashboard -> on n'envoie pas.
+  if (opts.log?.templateKey) {
+    const { isTemplateDisabled } = await import("./template-settings");
+    if (await isTemplateDisabled(opts.log.templateKey, "sms")) return { skipped: true };
+  }
+
   const to = normalizePhoneFR(opts.to);
   if (!to) throw new Error(`Numéro invalide: ${opts.to}`);
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import * as T from "@/lib/email-templates";
 import { templateUsage } from "@/lib/messages";
+import { listTemplateSettings, setTemplateEnabled } from "@/lib/template-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -93,20 +94,37 @@ export async function GET(req: Request) {
     }
   }
 
-  // Usage réel depuis la table messages.
-  const usage = await templateUsage();
+  // Usage réel + réglages d'activation.
+  const [usage, settings] = await Promise.all([templateUsage(), listTemplateSettings()]);
   const usageMap = new Map<string, { count: number; last: string }>();
-  for (const us of usage) {
-    const k = `${us.template_key}|${us.channel}`;
-    usageMap.set(k, { count: us.count, last: us.last_sent });
-  }
+  for (const us of usage) usageMap.set(`${us.template_key}|${us.channel}`, { count: us.count, last: us.last_sent });
+  const disabled = new Set(settings.filter((s) => !s.enabled).map((s) => `${s.template_key}|${s.channel}`));
 
   const templates = CATALOG.map((e) => {
-    const us = usageMap.get(`${e.key}|${e.channel}`);
+    const k = `${e.key}|${e.channel}`;
+    const us = usageMap.get(k);
     return {
       key: e.key, channel: e.channel, label: e.label, group: e.group, when: e.when,
       used: !!us, count: us?.count ?? 0, lastUsed: us?.last ?? null,
+      enabled: !disabled.has(k),
     };
   });
   return NextResponse.json({ ok: true, templates });
+}
+
+/** PATCH { key, channel, enabled } -> active/désactive un template. */
+export async function PATCH(req: Request) {
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+  if (s.role !== "admin") return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
+  try {
+    const { key, channel, enabled } = (await req.json()) as { key?: string; channel?: string; enabled?: boolean };
+    if (!key || (channel !== "email" && channel !== "sms") || typeof enabled !== "boolean") {
+      return NextResponse.json({ error: "key, channel (email/sms) et enabled requis." }, { status: 400 });
+    }
+    await setTemplateEnabled(key, channel, enabled);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
+  }
 }
