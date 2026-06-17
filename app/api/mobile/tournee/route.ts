@@ -1,0 +1,52 @@
+import { NextResponse } from "next/server";
+import { getAuth } from "@/lib/auth";
+import { listMobileAppts, ensureCoords } from "@/lib/mobile";
+import { toParisISO } from "@/lib/parse";
+import { AGENCY_COORDS, nearestNeighborOrder, distanceKm, type LatLng } from "@/lib/geocode";
+
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
+/** GET ?date=YYYY-MM-DD -> ordre de passage optimisé des RDV déplacement du jour. */
+export async function GET(req: Request) {
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+  const date = new URL(req.url).searchParams.get("date");
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Date invalide." }, { status: 400 });
+
+  try {
+    const dayStart = new Date(toParisISO(date, "00:00"));
+    const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
+    const appts = (await listMobileAppts(s.callCenterId, { from: dayStart.toISOString(), to: dayEnd.toISOString() }))
+      .filter((a) => a.status !== "cancelled");
+
+    await ensureCoords(appts);
+
+    const points: (LatLng | null)[] = appts.map((a) => (a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null));
+    const order = nearestNeighborOrder(AGENCY_COORDS, points);
+
+    let prev: LatLng = AGENCY_COORDS;
+    let totalKm = 0;
+    const stops = order.map((idx, i) => {
+      const a = appts[idx];
+      const p = points[idx];
+      const leg = p ? distanceKm(prev, p) : 0;
+      if (p) { totalKm += leg; prev = p; }
+      return {
+        rank: i + 1,
+        id: a.id,
+        client: `${a.first_name} ${a.last_name}`.trim(),
+        address: a.address,
+        time: a.start_datetime,
+        vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "),
+        phone: a.phone,
+        legKm: p ? Math.round(leg * 10) / 10 : null,
+        geocoded: !!p,
+      };
+    });
+
+    return NextResponse.json({ ok: true, date, count: stops.length, totalKm: Math.round(totalKm * 10) / 10, stops });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
+  }
+}

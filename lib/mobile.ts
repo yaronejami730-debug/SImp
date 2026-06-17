@@ -1,6 +1,7 @@
 import { getPool } from "./db";
 import { SLOT_MIN } from "./slots";
 import { createMobileEvent, updateMobileEvent, deleteMobileEvent } from "./google";
+import { geocode } from "./geocode";
 
 export type MobileStatus = "prospect" | "booked" | "confirmed" | "done" | "cancelled";
 
@@ -25,6 +26,8 @@ export type MobileAppt = {
   google_event_id_own: string;   // event sur ton agenda (tagué mobile)
   reminder24_sent: boolean;
   reminder2_sent: boolean;
+  lat: number | null;
+  lng: number | null;
   created_at: string;
 };
 
@@ -80,6 +83,13 @@ export async function createMobileAppt(input: MobileInput): Promise<MobileAppt> 
     ],
   );
   const a = rows[0];
+  // Géocodage de l'adresse (best-effort) pour la tournée.
+  if (a.address) {
+    try {
+      const c = await geocode(a.address);
+      if (c) { await getPool().query(`update appointments_mobile set lat = $2, lng = $3 where id = $1`, [a.id, c.lat, c.lng]); a.lat = c.lat; a.lng = c.lng; }
+    } catch { /* non-bloquant */ }
+  }
   // Sync Google (best-effort) : ton agenda + Bonamy.
   const ids = await createMobileEvent(evt(a));
   if (ids.ownId || ids.mobileId) {
@@ -165,4 +175,15 @@ export async function upcomingMobileAppts(withinMs: number): Promise<MobileAppt[
 export async function markMobileReminderSent(id: number, kind: "24h" | "2h"): Promise<void> {
   const col = kind === "24h" ? "reminder24_sent" : "reminder2_sent";
   await getPool().query(`update appointments_mobile set ${col} = true where id = $1`, [id]);
+}
+
+/** Géocode (et persiste) les RDV sans coordonnées. Pour la tournée. */
+export async function ensureCoords(appts: MobileAppt[]): Promise<void> {
+  for (const a of appts) {
+    if ((a.lat == null || a.lng == null) && a.address) {
+      const c = await geocode(a.address);
+      if (c) { a.lat = c.lat; a.lng = c.lng; await getPool().query(`update appointments_mobile set lat = $2, lng = $3 where id = $1`, [a.id, c.lat, c.lng]); }
+      await new Promise((r) => setTimeout(r, 1100)); // respect Nominatim ~1 req/s
+    }
+  }
 }

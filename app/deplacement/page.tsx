@@ -81,6 +81,24 @@ function Deplacement() {
 
   const active = appts.filter((a) => a.status !== "cancelled" && a.status !== "done");
 
+  // ── Tournée ──
+  const [tourDate, setTourDate] = useState("");
+  const [tourBusy, setTourBusy] = useState(false);
+  const [tour, setTour] = useState<{ count: number; totalKm: number; stops: { rank: number; client: string; address: string; time: string; vehicle: string; legKm: number | null; geocoded: boolean }[] } | null>(null);
+
+  async function loadTournee() {
+    if (!tourDate) return;
+    setTourBusy(true); setTour(null);
+    try {
+      const r = await fetch(`/api/mobile/tournee?date=${tourDate}`, { headers: authHeaders() });
+      const d = await r.json();
+      if (d.ok) setTour(d); else setFlash({ ok: false, msg: d.error ?? "Erreur" });
+    } finally { setTourBusy(false); }
+  }
+  const mapsUrl = tour && tour.stops.length
+    ? "https://www.google.com/maps/dir/" + ["3 rue Bélidor 75017 Paris", ...tour.stops.map((s) => s.address)].map((a) => encodeURIComponent(a)).join("/")
+    : "";
+
   return (
     <>
       <header style={{ marginBottom: 16 }}>
@@ -128,6 +146,36 @@ function Deplacement() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Tournée */}
+      <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>
+        <h2 style={{ margin: "0 0 6px", fontFamily: "'Cabin',sans-serif", fontSize: 13, fontWeight: 700, color: SKY, textTransform: "uppercase", letterSpacing: 0.6 }}>🗺️ Tournée du jour</h2>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: MUTED }}>Ordre de passage optimisé (trajet le plus court depuis l&apos;agence).</p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <input type="date" value={tourDate} onChange={(e) => setTourDate(e.target.value)} style={{ ...inp, width: "auto", flex: "1 1 160px" }} />
+          <button onClick={loadTournee} disabled={tourBusy || !tourDate} style={{ padding: "11px 16px", borderRadius: 8, border: "none", fontSize: 14, fontWeight: 700, cursor: tourBusy || !tourDate ? "default" : "pointer", background: tourBusy || !tourDate ? "#cbd5e1" : SKY, color: "#fff" }}>
+            {tourBusy ? "Calcul…" : "Calculer"}
+          </button>
+        </div>
+        {tour && (tour.stops.length === 0 ? <div style={{ fontSize: 13, color: "#9aa6b8" }}>Aucun RDV déplacement ce jour.</div> : (
+          <>
+            <div style={{ fontSize: 13, color: NAVY, marginBottom: 10 }}><strong>{tour.count}</strong> RDV · ~<strong>{tour.totalKm} km</strong> de trajet · départ agence</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {tour.stops.map((s) => (
+                <div key={s.rank} style={{ display: "flex", gap: 10, alignItems: "center", border: `1px solid ${LINE}`, borderRadius: 9, padding: "9px 11px" }}>
+                  <div style={{ width: 26, height: 26, borderRadius: 13, background: SKY, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{s.rank}</div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: NAVY }}>{s.client} <span style={{ fontWeight: 400, color: MUTED }}>· {new Date(s.time).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })}</span></div>
+                    <div style={{ fontSize: 12, color: MUTED }}>📍 {s.address || "—"} {!s.geocoded && <span style={{ color: "#ca8a04" }}>(adresse non localisée)</span>}</div>
+                  </div>
+                  {s.legKm != null && <div style={{ fontSize: 11.5, color: "#9aa6b8", flexShrink: 0 }}>+{s.legKm} km</div>}
+                </div>
+              ))}
+            </div>
+            {mapsUrl && <a href={mapsUrl} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 12, padding: "10px 14px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>🧭 Ouvrir l&apos;itinéraire dans Google Maps</a>}
+          </>
+        ))}
       </div>
 
       {/* Mini CRM */}
