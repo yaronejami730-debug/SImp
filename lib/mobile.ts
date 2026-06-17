@@ -20,7 +20,8 @@ export type MobileAppt = {
   start_datetime: string;
   notes: string;
   status: MobileStatus;
-  google_event_id: string;
+  google_event_id: string;       // event sur l'agenda Bonamy
+  google_event_id_own: string;   // event sur ton agenda (tagué mobile)
   created_at: string;
 };
 
@@ -74,14 +75,17 @@ export async function createMobileAppt(input: MobileInput): Promise<MobileAppt> 
     ],
   );
   const a = rows[0];
-  // Sync Google (best-effort).
-  const gid = await createMobileEvent(evt(a));
-  if (gid) {
-    await getPool().query(`update appointments_mobile set google_event_id = $2 where id = $1`, [a.id, gid]);
-    a.google_event_id = gid;
+  // Sync Google (best-effort) : ton agenda + Bonamy.
+  const ids = await createMobileEvent(evt(a));
+  if (ids.ownId || ids.mobileId) {
+    await getPool().query(`update appointments_mobile set google_event_id = $2, google_event_id_own = $3 where id = $1`, [a.id, ids.mobileId, ids.ownId]);
+    a.google_event_id = ids.mobileId;
+    a.google_event_id_own = ids.ownId;
   }
   return a;
 }
+
+const idsOf = (a: MobileAppt) => ({ ownId: a.google_event_id_own, mobileId: a.google_event_id });
 
 export async function listMobileAppts(opts?: { from?: string; to?: string; status?: MobileStatus }): Promise<MobileAppt[]> {
   const where: string[] = [];
@@ -121,14 +125,15 @@ export async function updateMobileAppt(id: number, patch: Partial<MobileInput>):
   );
   const a = rows[0];
   if (a) {
-    if (a.status === "cancelled" && a.google_event_id) {
-      await deleteMobileEvent(a.google_event_id);
-      await getPool().query(`update appointments_mobile set google_event_id = '' where id = $1`, [a.id]);
-    } else if (a.google_event_id) {
-      await updateMobileEvent(a.google_event_id, evt(a));
+    const hasEvent = a.google_event_id || a.google_event_id_own;
+    if (a.status === "cancelled" && hasEvent) {
+      await deleteMobileEvent(idsOf(a));
+      await getPool().query(`update appointments_mobile set google_event_id = '', google_event_id_own = '' where id = $1`, [a.id]);
+    } else if (hasEvent) {
+      await updateMobileEvent(idsOf(a), evt(a));
     } else if (a.status !== "cancelled") {
-      const gid = await createMobileEvent(evt(a));
-      if (gid) await getPool().query(`update appointments_mobile set google_event_id = $2 where id = $1`, [a.id, gid]);
+      const ids = await createMobileEvent(evt(a));
+      if (ids.ownId || ids.mobileId) await getPool().query(`update appointments_mobile set google_event_id = $2, google_event_id_own = $3 where id = $1`, [a.id, ids.mobileId, ids.ownId]);
     }
   }
   return a ?? null;
@@ -136,6 +141,6 @@ export async function updateMobileAppt(id: number, patch: Partial<MobileInput>):
 
 export async function deleteMobileAppt(id: number): Promise<void> {
   const a = await getMobileAppt(id);
-  if (a?.google_event_id) await deleteMobileEvent(a.google_event_id);
+  if (a && (a.google_event_id || a.google_event_id_own)) await deleteMobileEvent(idsOf(a));
   await getPool().query(`delete from appointments_mobile where id = $1`, [id]);
 }

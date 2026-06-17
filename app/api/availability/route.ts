@@ -21,6 +21,7 @@ export async function GET(req: Request) {
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
     const events = await listEvents(dayStart, dayEnd);
     const busy = events
+      .filter((ev) => ev.extendedProperties?.private?.mobile !== "1") // RDV déplacement -> ne bloque pas le physique
       .map((ev) => ({
         s: ev.start?.dateTime ? new Date(ev.start.dateTime) : null,
         e: ev.end?.dateTime ? new Date(ev.end.dateTime) : null,

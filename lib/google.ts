@@ -239,6 +239,7 @@ export async function isSlotFree(
   );
   for (const ev of items) {
     if (ignoreEventId && ev.id === ignoreEventId) continue;
+    if (ev.extendedProperties?.private?.mobile === "1") continue; // RDV déplacement -> ne bloque pas le physique
     const es = ev.start?.dateTime ? new Date(ev.start.dateTime) : null;
     const ee = ev.end?.dateTime ? new Date(ev.end.dateTime) : null;
     if (!es || !ee) continue;
@@ -589,28 +590,43 @@ function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
   };
 }
 
-/** Crée l'event déplacement sur le calendrier bonami. Renvoie l'id (ou "" si non configuré/échec). */
-export async function createMobileEvent(a: MobileEventInput): Promise<string> {
-  if (!MOBILE_CALENDAR_ID) return "";
+export type MobileEventIds = { ownId: string; mobileId: string };
+
+/** Crée le RDV déplacement sur DEUX agendas : le tien (CALENDAR_ID, tagué `mobile`
+ *  pour ne PAS bloquer tes créneaux physiques) + celui de Bonamy (MOBILE_CALENDAR_ID). */
+export async function createMobileEvent(a: MobileEventInput): Promise<MobileEventIds> {
+  const cal = calendarClient();
+  let ownId = "", mobileId = "";
+  // Ton agenda — tagué mobile pour l'exclure de la dispo physique.
   try {
-    const res = await calendarClient().events.insert({ calendarId: MOBILE_CALENDAR_ID, requestBody: mobileEventBody(a) });
-    return res.data.id ?? "";
-  } catch (e) {
-    console.error("createMobileEvent failed", e);
-    return "";
+    const ownBody = { ...mobileEventBody(a), extendedProperties: { private: { mobile: "1" } } };
+    const res = await cal.events.insert({ calendarId: CALENDAR_ID, requestBody: ownBody });
+    ownId = res.data.id ?? "";
+  } catch (e) { console.error("createMobileEvent (own) failed", e); }
+  // Agenda Bonamy.
+  if (MOBILE_CALENDAR_ID) {
+    try {
+      const res = await cal.events.insert({ calendarId: MOBILE_CALENDAR_ID, requestBody: mobileEventBody(a) });
+      mobileId = res.data.id ?? "";
+    } catch (e) { console.error("createMobileEvent (bonamy) failed", e); }
+  }
+  return { ownId, mobileId };
+}
+
+export async function updateMobileEvent(ids: MobileEventIds, a: MobileEventInput): Promise<void> {
+  const cal = calendarClient();
+  if (ids.ownId) {
+    try { await cal.events.patch({ calendarId: CALENDAR_ID, eventId: ids.ownId, requestBody: { ...mobileEventBody(a), extendedProperties: { private: { mobile: "1" } } } }); }
+    catch (e) { console.error("updateMobileEvent (own) failed", e); }
+  }
+  if (MOBILE_CALENDAR_ID && ids.mobileId) {
+    try { await cal.events.patch({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId, requestBody: mobileEventBody(a) }); }
+    catch (e) { console.error("updateMobileEvent (bonamy) failed", e); }
   }
 }
 
-export async function updateMobileEvent(eventId: string, a: MobileEventInput): Promise<void> {
-  if (!MOBILE_CALENDAR_ID || !eventId) return;
-  try {
-    await calendarClient().events.patch({ calendarId: MOBILE_CALENDAR_ID, eventId, requestBody: mobileEventBody(a) });
-  } catch (e) { console.error("updateMobileEvent failed", e); }
-}
-
-export async function deleteMobileEvent(eventId: string): Promise<void> {
-  if (!MOBILE_CALENDAR_ID || !eventId) return;
-  try {
-    await calendarClient().events.delete({ calendarId: MOBILE_CALENDAR_ID, eventId });
-  } catch (e) { console.error("deleteMobileEvent failed", e); }
+export async function deleteMobileEvent(ids: MobileEventIds): Promise<void> {
+  const cal = calendarClient();
+  if (ids.ownId) { try { await cal.events.delete({ calendarId: CALENDAR_ID, eventId: ids.ownId }); } catch (e) { console.error("deleteMobileEvent (own) failed", e); } }
+  if (MOBILE_CALENDAR_ID && ids.mobileId) { try { await cal.events.delete({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId }); } catch (e) { console.error("deleteMobileEvent (bonamy) failed", e); } }
 }
