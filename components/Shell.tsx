@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getToken } from "@/lib/client";
+import { getToken, getUser } from "@/lib/client";
 import Login from "./Login";
 import Nav from "./Nav";
 
@@ -18,11 +18,15 @@ export default function Shell({ active, children }: { active: string; children: 
   if (!ready) return null;
   if (!authed) return <Login onLogin={() => setAuthed(true)} />;
 
+  // Bouton "?" déplacement : uniquement pour l'entité Yaron (1). Les autres entités ont un onglet dédié.
+  const cc = getUser()?.callCenterId ?? 1;
+  const showFloating = cc === 1;
+
   return (
     <main style={{ minHeight: "100vh", background: "#eceef1", fontFamily: "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif", color: "#232323", padding: "20px 16px" }}>
       <Nav active={active} />
       <div style={{ maxWidth: 720, margin: "0 auto" }}>{children}</div>
-      {active !== "deplacement" && (
+      {showFloating && active !== "deplacement" && (
         <a
           href="/deplacement"
           title="Rendez-vous en déplacement"

@@ -18,6 +18,14 @@ const TABS = [
 
 export default function Nav({ active }: { active: string }) {
   const user = getUser();
+  const cc = user?.callCenterId ?? 1;
+  // Entité Yaron (1) : onglets standards + bouton "?" flottant pour le déplacement.
+  // Autres entités : pas de bouton flottant, mais 2 onglets distincts physique / déplacement.
+  const tabs = cc === 1 ? TABS : [
+    { key: "rdv", label: "RDV physique", href: "/" },
+    { key: "deplacement", label: "RDV déplacement", href: "/deplacement" },
+    ...TABS.filter((t) => t.key !== "rdv"),
+  ];
 
   function logout() {
     clearAuth();
@@ -42,7 +50,7 @@ export default function Nav({ active }: { active: string }) {
       </div>
 
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <a
             key={t.key}
             href={t.href}
