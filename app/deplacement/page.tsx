@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import SlotPicker from "@/components/SlotPicker";
 import VehiclePicker from "@/components/VehiclePicker";
+import AddressInput from "@/components/AddressInput";
 import { authHeaders } from "@/lib/client";
 import { COMMERCIAUX } from "@/lib/commerciaux";
 
@@ -133,7 +134,7 @@ function Deplacement() {
             </div>
             <div><label style={lab}>Véhicule</label><VehiclePicker brand={form.carBrand} model={form.carModel} finish="" onChange={(b, m) => setForm((f) => ({ ...f, carBrand: b, carModel: m }))} /></div>
             <div><label style={lab}>Immatriculation</label><input style={inp} value={form.immatriculation} onChange={(e) => set("immatriculation", e.target.value.toUpperCase())} placeholder="AA-123-BB" /></div>
-            <div><label style={lab}>Adresse complète du client (déplacement)</label><input style={inp} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="12 rue Victor Hugo, 92700 Colombes" /></div>
+            <div><label style={lab}>Adresse complète du client (déplacement)</label><AddressInput value={form.address} onChange={(v) => set("address", v)} placeholder="Saisis l'adresse, des suggestions apparaissent…" style={inp} /></div>
             <div><label style={lab}>Commercial (réalise le RDV)</label>
               <select style={inp} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
                 {["Jeremy Bonamy", ...COMMERCIAUX].map((c) => <option key={c} value={c}>{c}</option>)}

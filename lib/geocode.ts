@@ -20,6 +20,23 @@ export async function geocode(address: string): Promise<LatLng | null> {
   }
 }
 
+export type AddressSuggestion = { label: string; lat: number; lng: number };
+
+/** Suggestions d'adresses (autocomplétion) via Nominatim, biaisées France. */
+export async function suggestAddresses(q: string): Promise<AddressSuggestion[]> {
+  const query = q?.trim();
+  if (!query || query.length < 3) return [];
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=6&countrycodes=fr&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "Simplicicar-RDV/1.0 (contact@simplicicar.store)", "Accept-Language": "fr" } });
+    if (!res.ok) return [];
+    const json = (await res.json()) as Array<{ display_name: string; lat: string; lon: string }>;
+    return json.map((r) => ({ label: r.display_name, lat: Number(r.lat), lng: Number(r.lon) }));
+  } catch {
+    return [];
+  }
+}
+
 const R = 6371; // km
 const rad = (d: number) => (d * Math.PI) / 180;
 /** Distance haversine (km) entre deux points. */
