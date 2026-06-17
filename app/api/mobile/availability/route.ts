@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   try {
     const dayStart = new Date(toParisISO(date, "00:00"));
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
-    const appts = (await listMobileAppts({ from: dayStart.toISOString(), to: dayEnd.toISOString() })).filter((a) => a.status !== "cancelled");
+    const appts = (await listMobileAppts(s.callCenterId, { from: dayStart.toISOString(), to: dayEnd.toISOString() })).filter((a) => a.status !== "cancelled");
     const busy = appts.map((a) => {
       const sd = new Date(a.start_datetime);
       return { s: sd, e: new Date(sd.getTime() + SLOT_MIN * 60000) };

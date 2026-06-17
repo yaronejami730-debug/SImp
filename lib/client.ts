@@ -1,6 +1,6 @@
 // Helpers d'auth côté client (localStorage). À n'utiliser que dans des composants client.
 
-export type ClientUser = { email: string; name: string; role: "admin" | "collab" };
+export type ClientUser = { email: string; name: string; role: "admin" | "collab"; callCenterId?: number };
 
 export function getToken(): string | null {
   return typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;

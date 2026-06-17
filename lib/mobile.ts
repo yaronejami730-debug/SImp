@@ -6,6 +6,7 @@ export type MobileStatus = "prospect" | "booked" | "confirmed" | "done" | "cance
 
 export type MobileAppt = {
   id: number;
+  call_center_id: number;
   teleprospecteur: string;
   commercial: string;
   civility: string;
@@ -28,6 +29,7 @@ export type MobileAppt = {
 };
 
 export type MobileInput = {
+  callCenterId: number;
   teleprospecteur?: string;
   commercial?: string;
   civility?: string;
@@ -49,16 +51,16 @@ const evt = (a: MobileAppt) => ({
   startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes,
 });
 
-/** Créneau libre côté DÉPLACEMENT uniquement (n'interagit pas avec les RDV physiques). */
-export async function isMobileSlotFree(startISO: string, ignoreId?: number): Promise<boolean> {
+/** Créneau libre côté DÉPLACEMENT pour CE call center (n'interagit pas avec les RDV physiques). */
+export async function isMobileSlotFree(callCenterId: number, startISO: string, ignoreId?: number): Promise<boolean> {
   const start = new Date(startISO);
   const end = new Date(start.getTime() + SLOT_MIN * 60000);
   const { rows } = await getPool().query<{ start_datetime: string }>(
     `select start_datetime from appointments_mobile
-     where status <> 'cancelled'
+     where call_center_id = $5 and status <> 'cancelled'
        and ($3::bigint is null or id <> $3)
        and start_datetime < $2 and (start_datetime + ($4 || ' minutes')::interval) > $1`,
-    [start.toISOString(), end.toISOString(), ignoreId ?? null, String(SLOT_MIN)],
+    [start.toISOString(), end.toISOString(), ignoreId ?? null, String(SLOT_MIN), callCenterId],
   );
   return rows.length === 0;
 }
@@ -66,11 +68,11 @@ export async function isMobileSlotFree(startISO: string, ignoreId?: number): Pro
 export async function createMobileAppt(input: MobileInput): Promise<MobileAppt> {
   const { rows } = await getPool().query<MobileAppt>(
     `insert into appointments_mobile
-       (teleprospecteur, commercial, civility, first_name, last_name, email, phone, car_brand, car_model, immatriculation, address, start_datetime, notes, status)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       (call_center_id, teleprospecteur, commercial, civility, first_name, last_name, email, phone, car_brand, car_model, immatriculation, address, start_datetime, notes, status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      returning *`,
     [
-      input.teleprospecteur ?? "", input.commercial ?? "Jeremy Bonamy", input.civility ?? "",
+      input.callCenterId, input.teleprospecteur ?? "", input.commercial ?? "Jeremy Bonamy", input.civility ?? "",
       input.firstName.trim(), input.lastName ?? "", input.email ?? "", input.phone ?? "",
       input.carBrand ?? "", input.carModel ?? "", input.immatriculation ?? "", input.address ?? "",
       input.startDateTime, input.notes ?? "", input.status ?? "booked",
@@ -89,9 +91,9 @@ export async function createMobileAppt(input: MobileInput): Promise<MobileAppt> 
 
 const idsOf = (a: MobileAppt) => ({ ownId: a.google_event_id_own, mobileId: a.google_event_id });
 
-export async function listMobileAppts(opts?: { from?: string; to?: string; status?: MobileStatus }): Promise<MobileAppt[]> {
-  const where: string[] = [];
-  const params: unknown[] = [];
+export async function listMobileAppts(callCenterId: number, opts?: { from?: string; to?: string; status?: MobileStatus }): Promise<MobileAppt[]> {
+  const where: string[] = ["call_center_id = $1"];
+  const params: unknown[] = [callCenterId];
   if (opts?.from) { params.push(opts.from); where.push(`start_datetime >= $${params.length}`); }
   if (opts?.to) { params.push(opts.to); where.push(`start_datetime <= $${params.length}`); }
   if (opts?.status) { params.push(opts.status); where.push(`status = $${params.length}`); }

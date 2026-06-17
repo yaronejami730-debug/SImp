@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const status = new URL(req.url).searchParams.get("status") as MobileStatus | null;
   try {
-    const appts = await listMobileAppts(status ? { status } : undefined);
+    const appts = await listMobileAppts(s.callCenterId, status ? { status } : undefined);
     return NextResponse.json({ ok: true, appointments: appts });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
@@ -37,10 +37,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Prénom, date et heure requis." }, { status: 400 });
     }
     const startDateTime = toParisISO(b.date, b.time);
-    if (!(await isMobileSlotFree(startDateTime))) {
+    if (!(await isMobileSlotFree(s.callCenterId, startDateTime))) {
       return NextResponse.json({ error: "Ce créneau déplacement est déjà pris." }, { status: 409 });
     }
     const appt = await createMobileAppt({
+      callCenterId: s.callCenterId,
       teleprospecteur: s.email,
       commercial: b.commercial || "Jeremy Bonamy",
       civility: b.civility, firstName: b.firstName, lastName: b.lastName, email: b.email, phone: b.phone,

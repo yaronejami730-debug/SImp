@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     if (!u || !verifyPassword(password, u.password_hash)) {
       return NextResponse.json({ error: "Identifiants invalides." }, { status: 401 });
     }
-    const session = { email: u.email, name: u.name, role: u.role };
+    const session = { email: u.email, name: u.name, role: u.role, callCenterId: u.call_center_id ?? 1 };
     return NextResponse.json({ ok: true, token: signToken(session), ...session });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

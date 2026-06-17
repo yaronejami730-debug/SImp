@@ -8,15 +8,20 @@ const NAVY = "#1a273a";
 const PINK = "#DB407A";
 
 type User = { id: number; email: string; name: string; role: "admin" | "collab" };
+type CallCenter = { id: number; name: string; default_commercial: string };
 
 const inp: React.CSSProperties = { width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" };
 
 function Comptes() {
   const [users, setUsers] = useState<User[]>([]);
+  const [callCenter, setCallCenter] = useState<CallCenter | null>(null);
   const [err, setErr] = useState("");
+  const [mode, setMode] = useState<"telepro" | "callcenter">("telepro");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [ccName, setCcName] = useState("");
+  const [defaultCommercial, setDefaultCommercial] = useState("");
   const [busy, setBusy] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
@@ -38,7 +43,7 @@ function Comptes() {
     try {
       const res = await fetch("/api/users", { headers: authHeaders() });
       const d = await res.json();
-      if (d.ok) setUsers(d.users);
+      if (d.ok) { setUsers(d.users); setCallCenter(d.callCenter ?? null); }
       else setErr(d.error ?? "Erreur");
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
@@ -46,12 +51,19 @@ function Comptes() {
 
   async function add() {
     if (!name.trim() || !email.trim() || !password.trim()) return;
+    if (mode === "callcenter" && !ccName.trim()) { alert("Nom de l'entité requis."); return; }
     setBusy(true);
     try {
-      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name, email, password }) });
+      const body = mode === "callcenter"
+        ? { mode, name, email, password, ccName, defaultCommercial }
+        : { mode, name, email, password };
+      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body) });
       const d = await res.json();
-      if (d.ok) { setName(""); setEmail(""); setPassword(""); load(); }
-      else alert(d.error ?? "Erreur");
+      if (d.ok) {
+        setName(""); setEmail(""); setPassword(""); setCcName(""); setDefaultCommercial("");
+        if (mode === "callcenter") alert(`✅ Nouvelle entité « ${d.callCenter?.name} » créée. Son admin se connecte avec ${email}. Elle est totalement indépendante de ton call center.`);
+        load();
+      } else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
   }
   async function del(u: User) {
@@ -76,15 +88,29 @@ function Comptes() {
     <>
       {renderHeader}
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Nouveau collaborateur</div>
+        <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Nouveau compte</div>
+        <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "#6b7280" }}>Ton entité : <strong>{callCenter?.name ?? "—"}</strong></p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <button onClick={() => setMode("telepro")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "telepro" ? NAVY : "#e5e7eb"}`, background: mode === "telepro" ? NAVY : "#fff", color: mode === "telepro" ? "#fff" : "#6b7280" }}>👤 Téléprospecteur<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(mon call center)</span></button>
+          <button onClick={() => setMode("callcenter")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "callcenter" ? NAVY : "#e5e7eb"}`, background: mode === "callcenter" ? NAVY : "#fff", color: mode === "callcenter" ? "#fff" : "#6b7280" }}>🏢 Nouvelle entité<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(call center indépendant)</span></button>
+        </div>
+
         <div style={{ display: "grid", gap: 10 }}>
-          <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom" />
+          {mode === "callcenter" && (
+            <>
+              <input style={inp} value={ccName} onChange={(e) => setCcName(e.target.value)} placeholder="Nom de l'entité (ex: Bonamy Jérémy)" />
+              <input style={inp} value={defaultCommercial} onChange={(e) => setDefaultCommercial(e.target.value)} placeholder="Commercial par défaut (ex: Jérémy Bonamy)" />
+              <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: -2 }}>Le compte ci-dessous sera le <strong>super-administrateur</strong> de cette entité (indépendante de la tienne).</div>
+            </>
+          )}
+          <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "callcenter" ? "Nom du super-admin" : "Nom du téléprospecteur"} />
           <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail" />
           <input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" />
           <button onClick={add} disabled={busy || !name.trim() || !email.trim() || !password.trim()} style={{ padding: 13, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
-            {busy ? "…" : "Créer le compte"}
+            {busy ? "…" : mode === "callcenter" ? "Créer l'entité + super-admin" : "Créer le téléprospecteur"}
           </button>
-          <p style={{ fontSize: 12, color: "#9aa6b8", margin: 0 }}>Le collaborateur voit ses propres RDV et gagne 50€/véhicule signé.</p>
+          <p style={{ fontSize: 12, color: "#9aa6b8", margin: 0 }}>{mode === "callcenter" ? "Entité totalement séparée : ses RDV, son agenda, ses stats n'ont rien à voir avec les tiens." : "Le téléprospecteur voit les RDV de ton call center."}</p>
         </div>
       </div>
 
