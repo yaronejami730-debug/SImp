@@ -65,6 +65,9 @@ function Home() {
   const [hesEmail, setHesEmail] = useState("");
   const [hesPhone, setHesPhone] = useState("");
   const [hesCommercial, setHesCommercial] = useState(DEFAULT_COMMERCIAL);
+  const [hesBrand, setHesBrand] = useState("");
+  const [hesModel, setHesModel] = useState("");
+  const [hesFinish, setHesFinish] = useState("");
   const [hesBusy, setHesBusy] = useState(false);
   const [hesResult, setHesResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
 
@@ -75,7 +78,7 @@ function Home() {
       const res = await fetch("/api/book/link", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ email: hesEmail, phone: hesPhone, civility: hesCivility, commercial: hesCommercial }), // pas de créneau -> le client choisit
+        body: JSON.stringify({ email: hesEmail, phone: hesPhone, civility: hesCivility, commercial: hesCommercial, carBrand: hesBrand, carModel: hesModel, carFinish: hesFinish }), // pas de créneau -> le client choisit
       });
       const d = await res.json();
       if (d.ok) setHesResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
@@ -346,6 +349,9 @@ function Home() {
               <select style={inputStyle} value={hesCommercial} onChange={(e) => setHesCommercial(e.target.value)}>
                 {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+            <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(marque / modèle / finition — pour savoir de quoi il s&apos;agit)</span></label>
+              <VehiclePicker brand={hesBrand} model={hesModel} finish={hesFinish} onChange={(b, m, fi) => { setHesBrand(b); setHesModel(m); setHesFinish(fi ?? ""); }} />
             </div>
             <button onClick={sendHesitant} disabled={hesBusy || !hesEmail.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: hesBusy ? "not-allowed" : "pointer", background: hesBusy || !hesEmail.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
               {hesBusy ? "Envoi…" : "Envoyer l'invitation (choix du créneau)"}
