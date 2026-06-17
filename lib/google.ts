@@ -563,3 +563,54 @@ export async function markReminderSent(eventId: string, kind: "24h" | "2h" | "15
     requestBody: { extendedProperties: { private: { [key]: "1", history: JSON.stringify(hist.slice(-40)) } } },
   });
 }
+
+// ─────────── Agenda EN DÉPLACEMENT (calendrier Google séparé, bleu ciel) ───────────
+// Partage le calendrier de bonami.minier@gmail.com avec le compte de service, puis
+// renseigne GOOGLE_MOBILE_CALENDAR_ID. Si absent -> sync ignorée (best-effort).
+const MOBILE_CALENDAR_ID = process.env.GOOGLE_MOBILE_CALENDAR_ID;
+const MOBILE_COLOR = "7"; // Peacock = bleu ciel
+
+export type MobileEventInput = {
+  firstName: string; lastName?: string; phone?: string; address?: string;
+  startDateTime: string; durationMin: number; notes?: string;
+};
+
+function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
+  const end = new Date(new Date(a.startDateTime).getTime() + a.durationMin * 60000).toISOString();
+  const name = `${a.firstName} ${a.lastName ?? ""}`.trim();
+  const desc = [a.phone ? `Tél : ${a.phone}` : "", a.address ? `Adresse : ${a.address}` : "", a.notes ? `Notes : ${a.notes}` : ""].filter(Boolean).join("\n");
+  return {
+    summary: `🚗 Déplacement — ${name}`,
+    location: a.address || undefined,
+    description: desc || undefined,
+    colorId: MOBILE_COLOR,
+    start: { dateTime: a.startDateTime, timeZone: "Europe/Paris" },
+    end: { dateTime: end, timeZone: "Europe/Paris" },
+  };
+}
+
+/** Crée l'event déplacement sur le calendrier bonami. Renvoie l'id (ou "" si non configuré/échec). */
+export async function createMobileEvent(a: MobileEventInput): Promise<string> {
+  if (!MOBILE_CALENDAR_ID) return "";
+  try {
+    const res = await calendarClient().events.insert({ calendarId: MOBILE_CALENDAR_ID, requestBody: mobileEventBody(a) });
+    return res.data.id ?? "";
+  } catch (e) {
+    console.error("createMobileEvent failed", e);
+    return "";
+  }
+}
+
+export async function updateMobileEvent(eventId: string, a: MobileEventInput): Promise<void> {
+  if (!MOBILE_CALENDAR_ID || !eventId) return;
+  try {
+    await calendarClient().events.patch({ calendarId: MOBILE_CALENDAR_ID, eventId, requestBody: mobileEventBody(a) });
+  } catch (e) { console.error("updateMobileEvent failed", e); }
+}
+
+export async function deleteMobileEvent(eventId: string): Promise<void> {
+  if (!MOBILE_CALENDAR_ID || !eventId) return;
+  try {
+    await calendarClient().events.delete({ calendarId: MOBILE_CALENDAR_ID, eventId });
+  } catch (e) { console.error("deleteMobileEvent failed", e); }
+}

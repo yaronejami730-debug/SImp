@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authHeaders } from "@/lib/client";
 
 const PINK = "#DB407A";
 const NAVY = "#1a273a";
@@ -38,10 +39,12 @@ export default function SlotPicker({
   value,
   onChange,
   allowCustom = true,
+  endpoint = "/api/availability",
 }: {
   value: { date: string; time: string };
   onChange: (v: { date: string; time: string }) => void;
   allowCustom?: boolean;
+  endpoint?: string;
 }) {
   const [count, setCount] = useState(12);
   const days = upcomingWeekdays(count);
@@ -52,7 +55,7 @@ export default function SlotPicker({
     if (cache[date] && !cache[date].loading) return;
     setCache((c) => ({ ...c, [date]: { loading: true, slots: [] } }));
     try {
-      const r = await fetch(`/api/availability?date=${date}`);
+      const r = await fetch(`${endpoint}?date=${date}`, { headers: authHeaders() });
       const d = await r.json();
       setCache((c) => ({ ...c, [date]: { loading: false, slots: d.slots ?? [], closed: d.closed } }));
     } catch {
