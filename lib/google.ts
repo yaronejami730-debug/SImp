@@ -572,18 +572,29 @@ const MOBILE_CALENDAR_ID = process.env.GOOGLE_MOBILE_CALENDAR_ID;
 const MOBILE_COLOR = "7"; // Peacock = bleu ciel
 
 export type MobileEventInput = {
-  firstName: string; lastName?: string; phone?: string; address?: string;
-  startDateTime: string; durationMin: number; notes?: string;
+  firstName: string; lastName?: string; email?: string; phone?: string;
+  vehicle?: string; immatriculation?: string; commercial?: string;
+  address?: string; startDateTime: string; durationMin: number; notes?: string;
 };
 
 function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
   const end = new Date(new Date(a.startDateTime).getTime() + a.durationMin * 60000).toISOString();
   const name = `${a.firstName} ${a.lastName ?? ""}`.trim();
-  const desc = [a.phone ? `Tél : ${a.phone}` : "", a.address ? `Adresse : ${a.address}` : "", a.notes ? `Notes : ${a.notes}` : ""].filter(Boolean).join("\n");
+  const description = [
+    `Client : ${name}`,
+    `E-mail : ${a.email ?? ""}`,
+    `Téléphone : ${a.phone ?? ""}`,
+    a.vehicle ? `Véhicule : ${a.vehicle}` : "",
+    a.immatriculation ? `Immatriculation : ${a.immatriculation}` : "",
+    `Plateforme : Déplacement`,
+    a.commercial ? `Commercial : ${a.commercial}` : "",
+    `Lieu : ${a.address ?? ""}`,
+    a.notes ? `Notes : ${a.notes}` : "",
+  ].filter(Boolean).join("\n");
   return {
-    summary: `🚗 Déplacement — ${name}`,
+    summary: `🚗 Déplacement — ${name}${a.vehicle ? ` — ${a.vehicle}` : ""} — ${BUSINESS}`,
     location: a.address || undefined,
-    description: desc || undefined,
+    description,
     colorId: MOBILE_COLOR,
     start: { dateTime: a.startDateTime, timeZone: "Europe/Paris" },
     end: { dateTime: end, timeZone: "Europe/Paris" },

@@ -47,8 +47,9 @@ export type MobileInput = {
 };
 
 const evt = (a: MobileAppt) => ({
-  firstName: a.first_name, lastName: a.last_name, phone: a.phone, address: a.address,
-  startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes,
+  firstName: a.first_name, lastName: a.last_name, email: a.email, phone: a.phone,
+  vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "), immatriculation: a.immatriculation, commercial: a.commercial,
+  address: a.address, startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes,
 });
 
 /** Créneau libre côté DÉPLACEMENT pour CE call center (n'interagit pas avec les RDV physiques). */
