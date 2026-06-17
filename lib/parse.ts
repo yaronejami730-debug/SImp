@@ -37,7 +37,8 @@ export type AppointmentInput = {
   lastName: string;
   email: string;
   phone: string;
-  listingUrl: string;
+  listingUrl?: string;   // optionnel : le commercial peut ne pas avoir l'annonce
+  source?: string;       // plateforme cochée à la main (LeBonCoin / LaCentrale / Autre)
   carBrand?: string;
   carModel?: string;
   carFinish?: string;
@@ -112,8 +113,8 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     lastName: input.lastName.trim(),
     email: input.email.trim(),
     phone: input.phone.trim(),
-    platform: platformFromUrl(input.listingUrl),
-    listingUrl: input.listingUrl.trim(),
+    platform: input.source?.trim() || (input.listingUrl ? platformFromUrl(input.listingUrl) : "Autre"),
+    listingUrl: input.listingUrl?.trim() || "",
     carBrand: input.carBrand?.trim() || "",
     carModel: input.carModel?.trim() || "",
     carFinish: input.carFinish?.trim() || "",

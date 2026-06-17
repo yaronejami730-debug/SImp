@@ -13,6 +13,7 @@ const TABS = [
   { key: "recherche", label: "🤖 Recherche", href: "/recherche" },
   { key: "prospection", label: "Prospection", href: "/prospection" },
   { key: "rappels", label: "Rappels", href: "/rappels" },
+  { key: "relances", label: "Relances", href: "/relances" },
   { key: "statistiques", label: "Stats", href: "/statistiques" },
 ];
 

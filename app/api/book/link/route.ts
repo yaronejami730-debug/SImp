@@ -8,36 +8,55 @@ import { bookingInviteEmail } from "@/lib/email-templates";
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-/** POST { email, listingUrl, civility?, phone? } -> lien de réservation client + envoi du mail (et SMS si phone). */
+/** POST { email?, phone?, civility?, listingUrl?, source?, carBrand?, carModel?, carFinish?, date?, time? }
+ *  -> génère un lien de réservation + envoie mail (si email) et/ou SMS (si phone).
+ *  Si date+time fournis = créneau imposé (le client ne saisit que son identité). */
 export async function POST(req: Request) {
   const auth = getAuth(req);
   if (!auth) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
-    const { email, listingUrl, civility, phone } = (await req.json()) as {
-      email?: string; listingUrl?: string; civility?: string; phone?: string;
+    const b = (await req.json()) as {
+      email?: string; phone?: string; civility?: string; listingUrl?: string; source?: string;
+      carBrand?: string; carModel?: string; carFinish?: string; date?: string; time?: string;
     };
-    if (!email?.trim() || !listingUrl?.trim()) {
-      return NextResponse.json({ error: "Email et lien requis." }, { status: 400 });
+    const email = b.email?.trim();
+    const phone = b.phone?.trim();
+    if (!email && !phone) {
+      return NextResponse.json({ error: "Renseigne au moins un e-mail ou un téléphone." }, { status: 400 });
     }
 
-    const token = signBooking({ email: email.trim(), listingUrl: listingUrl.trim(), owner: auth.email, civility });
+    const token = signBooking({
+      owner: auth.email,
+      email: email || undefined,
+      civility: b.civility,
+      listingUrl: b.listingUrl?.trim() || undefined,
+      source: b.source?.trim() || undefined,
+      carBrand: b.carBrand?.trim() || undefined,
+      carModel: b.carModel?.trim() || undefined,
+      carFinish: b.carFinish?.trim() || undefined,
+      date: b.date?.trim() || undefined,
+      time: b.time?.trim() || undefined,
+    });
     const bookUrl = `${baseUrlFrom(req)}/book?t=${encodeURIComponent(token)}`;
+    const fixedSlot = !!(b.date && b.time);
 
     let emailSent = false;
-    try {
-      const mail = bookingInviteEmail({ bookUrl });
-      await sendEmail({ to: email.trim(), subject: mail.subject, html: mail.html });
-      emailSent = true;
-    } catch { /* mail non-bloquant, le lien reste utilisable */ }
+    if (email) {
+      try {
+        const mail = bookingInviteEmail({ bookUrl });
+        await sendEmail({ to: email, subject: mail.subject, html: mail.html });
+        emailSent = true;
+      } catch { /* mail non-bloquant */ }
+    }
 
     let smsSent = false;
-    if (phone?.trim()) {
+    if (phone) {
       try {
-        await sendSMS({
-          to: phone.trim(),
-          text: `Simplicicar: choisissez votre creneau pour le rendez-vous ici: ${bookUrl} STOP au 36180`,
-        });
+        const text = fixedSlot
+          ? `Simplicicar: suite a notre echange, merci de confirmer votre RDV en remplissant vos infos ici: ${bookUrl} STOP au 36180`
+          : `Simplicicar: choisissez votre creneau pour le rendez-vous ici: ${bookUrl} STOP au 36180`;
+        await sendSMS({ to: phone, text });
         smsSent = true;
       } catch { /* SMS non-bloquant */ }
     }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyBooking } from "@/lib/auth";
-import { buildAppointment, platformFromUrl } from "@/lib/parse";
+import { buildAppointment } from "@/lib/parse";
 import { createEvent, isSlotFree } from "@/lib/google";
 import { SLOT_MIN } from "@/lib/slots";
 import { sendEmail } from "@/lib/brevo";
@@ -11,36 +11,54 @@ import { cancelFollowup } from "@/lib/followups";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-/** GET ?t= -> valide le lien et renvoie la plateforme (aperçu) + civilité pré-remplie. */
+/** GET ?t= -> valide le lien + renvoie ce que le client doit voir (jamais le commercial/source/lien). */
 export async function GET(req: Request) {
   const t = new URL(req.url).searchParams.get("t") ?? "";
   const p = verifyBooking(t);
   if (!p) return NextResponse.json({ ok: false, error: "Lien invalide ou expiré." }, { status: 400 });
-  return NextResponse.json({ ok: true, platform: platformFromUrl(p.listingUrl), civility: p.civility ?? "" });
+  const vehicle = [p.carBrand, p.carModel, p.carFinish].filter(Boolean).join(" ");
+  return NextResponse.json({
+    ok: true,
+    civility: p.civility ?? "",
+    vehicle,                       // affiché au client (read-only) si pré-rempli
+    fixedSlot: !!(p.date && p.time), // créneau imposé par le commercial
+    date: p.date ?? "",
+    time: p.time ?? "",
+    needEmail: !p.email,           // le client doit saisir son e-mail si non pré-rempli
+  });
 }
 
-/** POST { t, civility, firstName, lastName, phone, date, time } -> crée le RDV (client). Public. */
+/** POST { t, civility, firstName, lastName, phone, email?, date?, time? } -> crée le RDV. Public.
+ *  email/date/time peuvent venir du token (pré-rempli commercial) ou du formulaire client. */
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as {
-      t?: string; civility?: string; firstName?: string; lastName?: string; phone?: string; date?: string; time?: string;
+      t?: string; civility?: string; firstName?: string; lastName?: string; phone?: string; email?: string; date?: string; time?: string;
     };
     const p = body.t ? verifyBooking(body.t) : null;
     if (!p) return NextResponse.json({ error: "Lien invalide ou expiré." }, { status: 400 });
 
-    for (const k of ["firstName", "lastName", "phone", "date", "time"] as const) {
-      if (!body[k]?.toString().trim()) return NextResponse.json({ error: "Champs manquants." }, { status: 400 });
+    const email = (p.email || body.email || "").trim();
+    const date = (p.date || body.date || "").trim();
+    const time = (p.time || body.time || "").trim();
+
+    if (!body.firstName?.trim() || !body.lastName?.trim() || !body.phone?.trim() || !email || !date || !time) {
+      return NextResponse.json({ error: "Champs manquants." }, { status: 400 });
     }
 
     const appt = buildAppointment({
       civility: body.civility || p.civility || "",
-      firstName: body.firstName!,
-      lastName: body.lastName!,
-      email: p.email,
-      phone: body.phone!,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      email,
+      phone: body.phone,
       listingUrl: p.listingUrl,
-      date: body.date!,
-      time: body.time!,
+      source: p.source,
+      carBrand: p.carBrand,
+      carModel: p.carModel,
+      carFinish: p.carFinish,
+      date,
+      time,
     });
 
     if (!(await isSlotFree(appt.startDateTime, SLOT_MIN))) {

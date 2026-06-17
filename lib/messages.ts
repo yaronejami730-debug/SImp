@@ -103,6 +103,41 @@ export async function listMessagesForClient(opts: { email?: string; phone?: stri
   return rows;
 }
 
+export type RelanceGroup = {
+  client_key: string;
+  client_name: string;
+  to_email: string;
+  to_phone: string;
+  count: number;
+  last_sent: string;
+  types: string[];
+};
+
+/** Récapitulatif des relances (followups + no-show) groupées par client. */
+export async function listRelances(owner?: string): Promise<RelanceGroup[]> {
+  const params: string[] = [];
+  let ownerClause = "";
+  if (owner) { params.push(owner); ownerClause = "and owner = $1"; }
+  const { rows } = await getPool().query<RelanceGroup>(
+    `select client_key,
+            max(client_name) as client_name,
+            max(to_email) as to_email,
+            max(to_phone) as to_phone,
+            count(*)::int as count,
+            max(sent_at) as last_sent,
+            array_agg(distinct template_key) as types
+     from messages
+     where channel = 'email'
+       and (template_key like 'followup\\_%' or template_key = 'noshow')
+       ${ownerClause}
+     group by client_key
+     order by last_sent desc
+     limit 300`,
+    params,
+  );
+  return rows;
+}
+
 /** Un message par id. */
 export async function getMessage(id: number): Promise<MessageRow | null> {
   const { rows } = await getPool().query<MessageRow>(`select * from messages where id = $1`, [id]);

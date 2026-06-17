@@ -23,7 +23,8 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", carBrand: "", carModel: "", carFinish: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
+const SOURCES = ["LeBonCoin", "LaCentrale", "Autre"];
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: 12, fontSize: 15, borderRadius: 8,
@@ -47,18 +48,28 @@ function Home() {
   const [linkEmail, setLinkEmail] = useState("");
   const [linkPhone, setLinkPhone] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [linkSource, setLinkSource] = useState("");
+  const [linkBrand, setLinkBrand] = useState("");
+  const [linkModel, setLinkModel] = useState("");
+  const [linkFinish, setLinkFinish] = useState("");
+  const [linkDate, setLinkDate] = useState("");
+  const [linkTime, setLinkTime] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkResult, setLinkResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
+  const linkReady = linkEmail.trim() || linkPhone.trim();
 
   async function sendLink() {
-    if (!linkEmail.trim() || !linkUrl.trim()) return;
+    if (!linkReady) return;
     setLinkBusy(true);
     setLinkResult(null);
     try {
       const res = await fetch("/api/book/link", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ email: linkEmail, listingUrl: linkUrl, civility: linkCivility, phone: linkPhone }),
+        body: JSON.stringify({
+          email: linkEmail, phone: linkPhone, civility: linkCivility, listingUrl: linkUrl, source: linkSource,
+          carBrand: linkBrand, carModel: linkModel, carFinish: linkFinish, date: linkDate, time: linkTime,
+        }),
       });
       const d = await res.json();
       if (d.ok) setLinkResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
@@ -72,7 +83,7 @@ function Home() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  const ready = form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && form.listingUrl.trim() && form.date && form.time;
+  const ready = form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && form.date && form.time;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -159,8 +170,18 @@ function Home() {
           <div><label style={labelStyle}>Téléphone du client</label><input style={inputStyle} type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="06 12 34 56 78" /></div>
         </div>
         <div>
-          <label style={labelStyle}>Lien de l&apos;annonce</label>
+          <label style={labelStyle}>Lien de l&apos;annonce <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label>
           <input style={inputStyle} value={form.listingUrl} onChange={(e) => set("listingUrl", extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); set("listingUrl", extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            {SOURCES.map((src) => (
+              <button key={src} type="button" onClick={() => set("source", form.source === src ? "" : src)}
+                style={{ flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  border: form.source === src ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
+                  background: form.source === src ? PINK : "#fff", color: form.source === src ? "#fff" : "#6b7280" }}>
+                {src === "LeBonCoin" ? "🟠 LeBonCoin" : src === "LaCentrale" ? "🔵 LaCentrale" : "Autre"}
+              </button>
+            ))}
+          </div>
           {preview && (preview.title || preview.image) && (
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, padding: 10, border: "1px solid #e5e7eb", borderRadius: 10, background: "#f8f9fa" }}>
               {preview.image && (
@@ -232,7 +253,7 @@ function Home() {
         </button>
         {showLink && (
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Tu pré-remplis e-mail + lien annonce. Le client reçoit un mail et choisit son créneau (il met prénom, nom, téléphone).</p>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Le client reçoit un mail et/ou SMS. Il remplit juste son identité. Tu peux <strong>imposer un créneau</strong> (date + heure ci-dessous) : pratique quand l&apos;appel coupe — il n&apos;a plus qu&apos;à confirmer. Si tu laisses le créneau vide, le client choisit lui-même.</p>
             <div>
               <label style={labelStyle}>Civilité</label>
               <div style={{ display: "flex", gap: 8 }}>
@@ -241,10 +262,24 @@ function Home() {
                 ))}
               </div>
             </div>
-            <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
-            <div><label style={labelStyle}>Téléphone (optionnel, pour SMS)</label><input style={inputStyle} type="tel" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
-            <div><label style={labelStyle}>Lien de l&apos;annonce</label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); setLinkUrl(extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" /></div>
-            <button onClick={sendLink} disabled={linkBusy || !linkEmail.trim() || !linkUrl.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkEmail.trim() || !linkUrl.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={labelStyle}>E-mail <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(ou tél)</span></label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
+              <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour SMS)</span></label><input style={inputStyle} type="tel" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
+            </div>
+            <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pré-rempli, optionnel)</span></label>
+              <VehiclePicker brand={linkBrand} model={linkModel} finish={linkFinish} onChange={(b, m, fi) => { setLinkBrand(b); setLinkModel(m); setLinkFinish(fi ?? ""); }} />
+            </div>
+            <div><label style={labelStyle}>Lien de l&apos;annonce <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel, non visible du client)</span></label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); setLinkUrl(extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {SOURCES.map((src) => (
+                  <button key={src} type="button" onClick={() => setLinkSource(linkSource === src ? "" : src)} style={{ flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: linkSource === src ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb", background: linkSource === src ? PINK : "#fff", color: linkSource === src ? "#fff" : "#6b7280" }}>{src === "LeBonCoin" ? "🟠 LeBonCoin" : src === "LaCentrale" ? "🔵 LaCentrale" : "Autre"}</button>
+                ))}
+              </div>
+            </div>
+            <div><label style={labelStyle}>Imposer un créneau <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel — sinon le client choisit)</span></label>
+              <SlotPicker value={{ date: linkDate, time: linkTime }} onChange={(v) => { setLinkDate(v.date); setLinkTime(v.time); }} />
+            </div>
+            <button onClick={sendLink} disabled={linkBusy || !linkReady} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkReady ? "#cbd5e1" : NAVY, color: "#fff" }}>
               {linkBusy ? "Envoi…" : "Envoyer le lien au client"}
             </button>
             {linkResult && (

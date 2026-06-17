@@ -39,7 +39,18 @@ export function verifyToken(token: string): Session | null {
   }
 }
 
-export type BookingPayload = { email: string; listingUrl: string; owner: string; civility?: string };
+export type BookingPayload = {
+  owner: string;
+  email?: string;        // pré-rempli par le commercial ; sinon le client le saisit sur /book
+  civility?: string;
+  listingUrl?: string;
+  source?: string;       // LeBonCoin / LaCentrale / Autre (non visible du client)
+  carBrand?: string;     // pré-rempli par le commercial (flux SMS rapide)
+  carModel?: string;
+  carFinish?: string;
+  date?: string;         // "YYYY-MM-DD" pré-fixé par le commercial (créneau imposé)
+  time?: string;         // "HH:MM"
+};
 
 /** Lien de réservation client signé (valide ~21 jours). */
 export function signBooking(p: BookingPayload): string {
@@ -55,7 +66,10 @@ export function verifyBooking(token: string): BookingPayload | null {
   try {
     const p = JSON.parse(Buffer.from(body, "base64url").toString());
     if (!p.exp || p.exp < Date.now()) return null;
-    return { email: p.email, listingUrl: p.listingUrl, owner: p.owner, civility: p.civility };
+    return {
+      owner: p.owner, email: p.email, civility: p.civility, listingUrl: p.listingUrl, source: p.source,
+      carBrand: p.carBrand, carModel: p.carModel, carFinish: p.carFinish, date: p.date, time: p.time,
+    };
   } catch {
     return null;
   }
