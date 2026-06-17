@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const timeMax = new Date(now.getTime() + 180 * 24 * 3600 * 1000); // +180 j
 
   try {
-    const items = await listAppointments(timeMin, timeMax);
+    const items = (await listAppointments(timeMin, timeMax)).filter((a) => a.callCenterId === s.callCenterId);
     const visible = s.role === "admin" ? items : items.filter((a) => a.owner === s.email);
     return NextResponse.json({ ok: true, appointments: visible, role: s.role, email: s.email });
   } catch (e) {

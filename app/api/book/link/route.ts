@@ -28,6 +28,7 @@ export async function POST(req: Request) {
 
     const token = signBooking({
       owner: auth.email,
+      callCenterId: auth.callCenterId,
       email: email || undefined,
       civility: b.civility,
       listingUrl: b.listingUrl?.trim() || undefined,

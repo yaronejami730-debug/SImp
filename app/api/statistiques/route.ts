@@ -91,7 +91,8 @@ export async function GET(req: Request) {
       searchLeads(),
     ]);
 
-    const ownerAppts = s.role === "admin" ? allAppts : allAppts.filter((a) => a.owner === s.email);
+    const ccAppts = allAppts.filter((a) => a.callCenterId === s.callCenterId);
+    const ownerAppts = s.role === "admin" ? ccAppts : ccAppts.filter((a) => a.owner === s.email);
     const appts = ownerAppts.filter((a) => inRange(a.startDateTime));
     const reminders = allReminders.filter((r) => inRange(r.remind_at));
     const leads = allLeads.filter((l) => inRange(l.created_at));

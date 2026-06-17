@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Ce créneau vient d'être pris. Choisissez-en un autre." }, { status: 409 });
     }
 
-    const event = await createEvent(appt, p.owner);
+    const event = await createEvent(appt, p.owner, p.callCenterId ?? 1);
     try { await cancelFollowup(appt.email); } catch { /* non-bloquant */ }
 
     let emailSent = false;

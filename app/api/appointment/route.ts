@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     }
 
     // 2. Création de l'événement dans Google Agenda (owner = collaborateur)
-    const event = await createEvent(appt, auth.email);
+    const event = await createEvent(appt, auth.email, auth.callCenterId);
 
     // 2b. Stoppe une éventuelle séquence de relances en cours pour ce client.
     try { await cancelFollowup(appt.email); } catch { /* non-bloquant */ }

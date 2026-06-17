@@ -41,6 +41,7 @@ export function verifyToken(token: string): Session | null {
 
 export type BookingPayload = {
   owner: string;
+  callCenterId?: number; // entité du créateur (pour cloisonner le RDV créé)
   email?: string;        // pré-rempli par le commercial ; sinon le client le saisit sur /book
   civility?: string;
   listingUrl?: string;
@@ -68,7 +69,7 @@ export function verifyBooking(token: string): BookingPayload | null {
     const p = JSON.parse(Buffer.from(body, "base64url").toString());
     if (!p.exp || p.exp < Date.now()) return null;
     return {
-      owner: p.owner, email: p.email, civility: p.civility, listingUrl: p.listingUrl, source: p.source, commercial: p.commercial,
+      owner: p.owner, callCenterId: p.callCenterId, email: p.email, civility: p.civility, listingUrl: p.listingUrl, source: p.source, commercial: p.commercial,
       carBrand: p.carBrand, carModel: p.carModel, carFinish: p.carFinish, date: p.date, time: p.time,
     };
   } catch {

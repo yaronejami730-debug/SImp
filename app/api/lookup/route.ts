@@ -9,7 +9,8 @@ const digits = (s: string) => s.replace(/\D/g, "");
 
 /** GET ?phone=&url= -> RDV existants correspondants (détection doublons). Connecté requis. */
 export async function GET(req: Request) {
-  if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   const sp = new URL(req.url).searchParams;
   const phone = digits(sp.get("phone") ?? "");
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
   );
 
   const matches = items
+    .filter((a) => a.callCenterId === s.callCenterId)
     .map((a) => {
       const byPhone = phone.length >= 4 && digits(a.phone).includes(phone);
       const byUrl = !!url && a.listingUrl === url;

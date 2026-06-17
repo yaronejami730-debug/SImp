@@ -874,13 +874,6 @@ function ClientPage({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* === TIMELINE MESSAGES (preuves) === */}
-      <div style={card}>
-        <h2 style={sectionTitle}>📨 Timeline — mails &amp; SMS envoyés</h2>
-        <p style={{ margin: "0 0 14px", fontSize: 13, color: "#6b7280" }}>Toutes les preuves d&apos;envoi. Clic sur un message pour voir le détail, le statut Brevo (délivré / ouvert) et l&apos;aperçu.</p>
-        <MessageTimeline id={id} refreshKey={msgKey} />
-      </div>
-
       {/* === LOGISTIQUE === */}
       <div style={card}>
         <h2 style={sectionTitle}>🚗 Logistique</h2>

@@ -102,7 +102,7 @@ function calendarClient(): calendar_v3.Calendar {
 
 /** Crée l'événement dans Google Agenda. Les infos client sont stockées
  *  dans extendedProperties.private pour que le cron retrouve l'e-mail. */
-export async function createEvent(a: Appointment, owner = "") {
+export async function createEvent(a: Appointment, owner = "", callCenterId = 1) {
   const cal = calendarClient();
   const start = new Date(a.startDateTime);
   const end = new Date(start.getTime() + 30 * 60 * 1000); // 30 min par défaut
@@ -130,6 +130,7 @@ export async function createEvent(a: Appointment, owner = "") {
         private: {
           app: "simplici-rdv",
           owner,
+          cc: String(callCenterId),
           clientCivility: a.civility ?? "",
           clientEmail: a.email,
           clientPhone: a.phone,
@@ -268,6 +269,7 @@ export async function deleteEvent(eventId: string) {
 /** RDV simplifié pour le dashboard. */
 export type AppointmentItem = {
   id: string;
+  callCenterId: number;
   startDateTime: string | null;
   firstName: string;
   lastName: string;
@@ -313,6 +315,7 @@ export async function listAppointments(
     const p = ev.extendedProperties?.private ?? {};
     return {
       id: ev.id ?? "",
+      callCenterId: Number(p.cc ?? "1"),
       startDateTime: ev.start?.dateTime ?? null,
       firstName: p.clientFirstName ?? "",
       lastName: p.clientLastName ?? "",
