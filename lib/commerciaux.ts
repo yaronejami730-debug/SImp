@@ -4,6 +4,7 @@ export const COMMERCIAUX = [
   "Raphaël Atlan",
   "Raphaël Benoliel",
   "Michel",
+  "Jeremy Bonamy",
 ] as const;
 
 export const DEFAULT_COMMERCIAL = "Raphaël Dahan";
