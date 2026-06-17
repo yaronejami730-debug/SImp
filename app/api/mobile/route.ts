@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { createMobileAppt, listMobileAppts, isMobileSlotFree, type MobileStatus } from "@/lib/mobile";
 import { toParisISO } from "@/lib/parse";
+import { sendEmail } from "@/lib/brevo";
+import { sendSMS } from "@/lib/allmysms";
+import { mobileConfirmationEmail } from "@/lib/email-templates";
+import { commercialPhoneStrict } from "@/lib/commerciaux";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -43,7 +47,26 @@ export async function POST(req: Request) {
       carBrand: b.carBrand, carModel: b.carModel, immatriculation: b.immatriculation, address: b.address,
       startDateTime, notes: b.notes, status: b.status,
     });
-    return NextResponse.json({ ok: true, appointment: appt, synced: !!appt.google_event_id });
+    // Confirmation client (mail + SMS), best-effort.
+    const clientName = `${appt.first_name} ${appt.last_name}`.trim();
+    const phone = commercialPhoneStrict(appt.commercial);
+    if (appt.email) {
+      try {
+        const mail = mobileConfirmationEmail({ civility: appt.civility, firstName: appt.first_name, lastName: appt.last_name, startDateTime: appt.start_datetime, address: appt.address, conseiller: appt.commercial, phone });
+        await sendEmail({ to: appt.email, toName: appt.first_name, subject: mail.subject, html: mail.html, log: { templateKey: "mobile_confirmation", clientName, owner: s.email, origin: "manual" } });
+      } catch { /* non-bloquant */ }
+    }
+    if (appt.phone) {
+      try {
+        const d = new Date(appt.start_datetime);
+        const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
+        const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
+        const text = `Simplicicar: RDV a domicile confirme ${date} a ${heure}, a votre adresse. Conseiller M. ${appt.commercial}. STOP au 36180`;
+        await sendSMS({ to: appt.phone, text, log: { templateKey: "sms_mobile_confirmation", clientName, owner: s.email, toEmail: appt.email, origin: "manual" } });
+      } catch { /* non-bloquant */ }
+    }
+
+    return NextResponse.json({ ok: true, appointment: appt, synced: !!(appt.google_event_id || appt.google_event_id_own) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

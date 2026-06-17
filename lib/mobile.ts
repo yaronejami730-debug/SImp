@@ -22,6 +22,8 @@ export type MobileAppt = {
   status: MobileStatus;
   google_event_id: string;       // event sur l'agenda Bonamy
   google_event_id_own: string;   // event sur ton agenda (tagué mobile)
+  reminder24_sent: boolean;
+  reminder2_sent: boolean;
   created_at: string;
 };
 
@@ -143,4 +145,21 @@ export async function deleteMobileAppt(id: number): Promise<void> {
   const a = await getMobileAppt(id);
   if (a && (a.google_event_id || a.google_event_id_own)) await deleteMobileEvent(idsOf(a));
   await getPool().query(`delete from appointments_mobile where id = $1`, [id]);
+}
+
+/** RDV déplacement à venir non annulés (pour les rappels cron). */
+export async function upcomingMobileAppts(withinMs: number): Promise<MobileAppt[]> {
+  const now = new Date();
+  const { rows } = await getPool().query<MobileAppt>(
+    `select * from appointments_mobile
+     where status <> 'cancelled' and start_datetime > $1 and start_datetime <= $2
+     order by start_datetime asc`,
+    [now.toISOString(), new Date(now.getTime() + withinMs).toISOString()],
+  );
+  return rows;
+}
+
+export async function markMobileReminderSent(id: number, kind: "24h" | "2h"): Promise<void> {
+  const col = kind === "24h" ? "reminder24_sent" : "reminder2_sent";
+  await getPool().query(`update appointments_mobile set ${col} = true where id = $1`, [id]);
 }

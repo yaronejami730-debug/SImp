@@ -88,6 +88,43 @@ export function confirmationEmail(d: ConfirmData) {
   return { subject: `Votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
 }
 
+// ─────────── RENDEZ-VOUS EN DÉPLACEMENT (à domicile) ───────────
+type MobileData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; address: string; conseiller: string; phone?: string };
+
+function conseillerLine(d: { conseiller: string; phone?: string }) {
+  const tel = d.phone ? ` — <a href="tel:${d.phone.replace(/\s/g, "")}" style="color:${C.link};text-decoration:none;font-weight:700">${d.phone}</a>` : "";
+  return `<p style="margin:0 0 16px;font-size:15px">Votre conseiller ${BUSINESS} : <strong>M. ${d.conseiller}</strong>${tel}.</p>`;
+}
+
+/** Confirmation d'un RDV en déplacement (chez le client). */
+export function mobileConfirmationEmail(d: MobileData) {
+  const { date, heure } = fmtLong(d.startDateTime);
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
+    <p style="margin:0 0 16px;font-size:15px">Suite à notre conversation téléphonique, votre rendez-vous à domicile avec ${BUSINESS.toUpperCase()} est confirmé.</p>
+    <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">📅 Le ${date} à ${heure}</p>
+    <p style="margin:0 0 16px;font-size:15px">📍 À votre adresse : <strong>${d.address}</strong></p>
+    ${conseillerLine(d)}
+    <p style="margin:0 0 4px;font-size:15px">Préparez votre <strong>carte grise</strong> et votre <strong>pièce d'identité</strong>.</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  return { subject: `Votre rendez-vous à domicile — ${BUSINESS}`, html: shell(content) };
+}
+
+/** Rappel d'un RDV en déplacement (24h / 2h avant). */
+export function mobileReminderEmail(d: MobileData & { kind: "24h" | "2h" }) {
+  const { date, heure } = fmtLong(d.startDateTime);
+  const quand = d.kind === "2h" ? "dans 2 heures" : "demain";
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
+    <p style="margin:0 0 16px;font-size:15px">Petit rappel : votre rendez-vous à domicile est ${quand}.</p>
+    <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">📅 Le ${date} à ${heure}</p>
+    <p style="margin:0 0 16px;font-size:15px">📍 À votre adresse : <strong>${d.address}</strong></p>
+    ${conseillerLine(d)}
+    <p style="margin:0 0 4px;font-size:15px">N'oubliez pas votre <strong>carte grise</strong> et votre <strong>pièce d'identité</strong>.</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+  return { subject: `Rappel : votre rendez-vous à domicile ${quand} — ${BUSINESS}`, html: shell(content) };
+}
+
 type ReminderData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; kind: "24h" | "2h"; whatsappUrl?: string; rescheduleUrl?: string };
 
 export function reminderEmail(d: ReminderData) {

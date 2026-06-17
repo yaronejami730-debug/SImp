@@ -17,3 +17,8 @@ export const COMMERCIAL_PHONE: Record<string, string> = {
 export function commercialPhone(name?: string): string {
   return (name && COMMERCIAL_PHONE[name]) || "06 18 74 73 82";
 }
+
+/** Numéro du commercial s'il est connu, sinon "" (pas de fallback — utile en déplacement). */
+export function commercialPhoneStrict(name?: string): string {
+  return (name && COMMERCIAL_PHONE[name]) || "";
+}
