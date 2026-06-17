@@ -149,7 +149,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
 
   // Invite auto (ex: Bonamy -> bonamy.mimi). Si le compte refuse les invités, on réinsère sans.
   try {
-    const res = await cal.events.insert({ calendarId: CALENDAR_ID, requestBody, sendUpdates: invite ? "all" : undefined });
+    const res = await cal.events.insert({ calendarId: CALENDAR_ID, requestBody, sendUpdates: "none" });
     return res.data;
   } catch (e) {
     if (requestBody.attendees?.length) {
@@ -625,7 +625,7 @@ export type MobileEventIds = { ownId: string; mobileId: string };
 async function insertWithAttendeeFallback(calendarId: string, body: calendar_v3.Schema$Event): Promise<string> {
   const cal = calendarClient();
   try {
-    const res = await cal.events.insert({ calendarId, requestBody: body, sendUpdates: "all" });
+    const res = await cal.events.insert({ calendarId, requestBody: body, sendUpdates: "none" });
     return res.data.id ?? "";
   } catch (e) {
     if (body.attendees?.length) {
@@ -652,17 +652,17 @@ export async function createMobileEvent(a: MobileEventInput): Promise<MobileEven
 export async function updateMobileEvent(ids: MobileEventIds, a: MobileEventInput): Promise<void> {
   const cal = calendarClient();
   if (ids.ownId) {
-    try { await cal.events.patch({ calendarId: CALENDAR_ID, eventId: ids.ownId, requestBody: { ...mobileEventBody(a), extendedProperties: { private: { mobile: "1" } } } }); }
+    try { await cal.events.patch({ calendarId: CALENDAR_ID, eventId: ids.ownId, requestBody: { ...mobileEventBody(a), extendedProperties: { private: { mobile: "1" } } }, sendUpdates: "none" }); }
     catch (e) { console.error("updateMobileEvent (own) failed", e); }
   }
   if (MOBILE_CALENDAR_ID && ids.mobileId) {
-    try { await cal.events.patch({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId, requestBody: mobileEventBody(a) }); }
+    try { await cal.events.patch({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId, requestBody: mobileEventBody(a), sendUpdates: "none" }); }
     catch (e) { console.error("updateMobileEvent (bonamy) failed", e); }
   }
 }
 
 export async function deleteMobileEvent(ids: MobileEventIds): Promise<void> {
   const cal = calendarClient();
-  if (ids.ownId) { try { await cal.events.delete({ calendarId: CALENDAR_ID, eventId: ids.ownId }); } catch (e) { console.error("deleteMobileEvent (own) failed", e); } }
-  if (MOBILE_CALENDAR_ID && ids.mobileId) { try { await cal.events.delete({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId }); } catch (e) { console.error("deleteMobileEvent (bonamy) failed", e); } }
+  if (ids.ownId) { try { await cal.events.delete({ calendarId: CALENDAR_ID, eventId: ids.ownId, sendUpdates: "none" }); } catch (e) { console.error("deleteMobileEvent (own) failed", e); } }
+  if (MOBILE_CALENDAR_ID && ids.mobileId) { try { await cal.events.delete({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId, sendUpdates: "none" }); } catch (e) { console.error("deleteMobileEvent (bonamy) failed", e); } }
 }
