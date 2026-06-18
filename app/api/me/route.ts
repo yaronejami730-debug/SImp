@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getCallCenter } from "@/lib/call-centers";
+import { getCallCenter, listCallCenters } from "@/lib/call-centers";
 import { getUserByEmail } from "@/lib/users";
 import { COMMERCIAUX } from "@/lib/commerciaux";
 
@@ -20,11 +20,16 @@ export async function GET(req: Request) {
     const commerciaux = callCenterId === 1
       ? [def, ...COMMERCIAUX].filter((c, i, arr) => c && arr.indexOf(c) === i)
       : (def ? [def] : [...COMMERCIAUX]);
+    // Commerciaux de TOUTES les entités (pour assigner un déplacement à un commercial externe).
+    const allCcs = await listCallCenters();
+    const allCommerciaux = Array.from(new Set([...allCcs.map((c) => c.default_commercial.trim()).filter(Boolean), ...COMMERCIAUX]));
+
     return NextResponse.json({
       ok: true,
       email: s.email, name: s.name, role: s.role, callCenterId,
       callCenter: cc ? { id: cc.id, name: cc.name, defaultCommercial: def } : null,
       commerciaux,
+      allCommerciaux,
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

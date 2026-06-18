@@ -2,6 +2,7 @@ import { google, type calendar_v3 } from "googleapis";
 import type { Appointment } from "./parse";
 import { commercialInviteEmail } from "./commerciaux";
 import { genRef } from "./ref";
+import { entityIdByCommercial } from "./call-centers";
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";
@@ -111,6 +112,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
   const invite = commercialInviteEmail(a.commercial); // ex: Bonamy -> bonamy.mimi@gmail.com
   const ref = genRef();
+  const commercialCc = await entityIdByCommercial(a.commercial); // entité du commercial (cross-entité)
   const requestBody: calendar_v3.Schema$Event = {
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
@@ -134,6 +136,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           app: "simplici-rdv",
           owner,
           cc: String(callCenterId),
+          commercialCc: commercialCc ? String(commercialCc) : "",
           ref,
           clientCivility: a.civility ?? "",
           clientEmail: a.email,
@@ -277,6 +280,7 @@ export async function deleteEvent(eventId: string) {
 export type AppointmentItem = {
   id: string;
   callCenterId: number;
+  commercialCc: number;
   ref: string;
   deplacement: boolean;
   address: string;
@@ -326,6 +330,7 @@ export async function listAppointments(
     return {
       id: ev.id ?? "",
       callCenterId: Number(p.cc ?? "1"),
+      commercialCc: Number(p.commercialCc || "0"),
       ref: p.ref ?? "",
       deplacement: p.deplacement === "1",
       address: p.address ?? ev.location ?? "",
@@ -603,7 +608,7 @@ export type MobileEventInput = {
   firstName: string; lastName?: string; email?: string; phone?: string; civility?: string;
   vehicle?: string; carBrand?: string; carModel?: string; immatriculation?: string; commercial?: string;
   address?: string; startDateTime: string; durationMin: number; notes?: string; ref?: string;
-  owner?: string; callCenterId?: number;
+  owner?: string; callCenterId?: number; commercialCc?: number;
 };
 
 /** Propriétés privées d'un RDV déplacement : tagué simplici-rdv pour apparaître dans le CRM/agenda/fiche
@@ -613,6 +618,7 @@ function mobileOwnPrivate(a: MobileEventInput): Record<string, string> {
     app: "simplici-rdv",
     owner: a.owner ?? "",
     cc: String(a.callCenterId ?? 1),
+    commercialCc: a.commercialCc ? String(a.commercialCc) : "",
     deplacement: "1",
     mobile: "1",
     ref: a.ref ?? "",

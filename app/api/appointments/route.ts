@@ -15,8 +15,10 @@ export async function GET(req: Request) {
   const timeMax = new Date(now.getTime() + 180 * 24 * 3600 * 1000); // +180 j
 
   try {
-    const items = (await listAppointments(timeMin, timeMax)).filter((a) => a.callCenterId === s.callCenterId);
-    const visible = s.role === "admin" ? items : items.filter((a) => a.owner === s.email);
+    // Visible par l'entité créatrice (téléprospecteur) ET par l'entité du commercial.
+    const items = (await listAppointments(timeMin, timeMax)).filter((a) => a.callCenterId === s.callCenterId || a.commercialCc === s.callCenterId);
+    // Collab : ses RDV (créés par lui) + ceux où il est le commercial de son entité.
+    const visible = s.role === "admin" ? items : items.filter((a) => a.owner === s.email || a.commercialCc === s.callCenterId);
     return NextResponse.json({ ok: true, appointments: visible, role: s.role, email: s.email });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue.";

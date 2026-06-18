@@ -44,7 +44,17 @@ function Deplacement() {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showForm, setShowForm] = useState(true);
+  const [commerciaux, setCommerciaux] = useState<string[]>(["Jeremy Bonamy", ...COMMERCIAUX]);
   const set = (k: keyof typeof EMPTY, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    fetch("/api/me", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
+      if (d.ok && d.allCommerciaux?.length) {
+        setCommerciaux(d.allCommerciaux);
+        if (d.callCenter?.defaultCommercial) setForm((f) => ({ ...f, commercial: d.callCenter.defaultCommercial }));
+      }
+    }).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -164,7 +174,7 @@ function Deplacement() {
             <div><label style={lab}>Adresse complète du client (déplacement)</label><AddressInput value={form.address} onChange={(v) => set("address", v)} placeholder="Saisis l'adresse, des suggestions apparaissent…" style={inp} /></div>
             <div><label style={lab}>Commercial (réalise le RDV)</label>
               <select style={inp} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
-                {["Jeremy Bonamy", ...COMMERCIAUX].map((c) => <option key={c} value={c}>{c}</option>)}
+                {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div><label style={lab}>Créneau (disponibilité déplacement)</label><SlotPicker value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} endpoint="/api/mobile/availability" /></div>
