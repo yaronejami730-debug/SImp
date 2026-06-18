@@ -21,6 +21,7 @@ type Reminder = {
   nrp_count: number;
   owner: string;
   lead_id: number | null;
+  client_email?: string;
   created_at: string;
 };
 
@@ -154,10 +155,20 @@ function Rappels() {
     await fetch(`/api/reminders?id=${id}`, { method: "DELETE", headers: authHeaders() });
   }
 
-  function goToRdv(r: Reminder) {
+  function prefill(r: Reminder) {
     sessionStorage.setItem("prefillPhone", r.phone);
+    if (r.first_name) sessionStorage.setItem("prefillFirstName", r.first_name);
+    if (r.last_name) sessionStorage.setItem("prefillLastName", r.last_name);
+    if (r.client_email) sessionStorage.setItem("prefillEmail", r.client_email);
     if (r.listing_url) sessionStorage.setItem("prefillListingUrl", r.listing_url);
+  }
+  function goToRdv(r: Reminder) {
+    prefill(r);
     window.location.href = "/";
+  }
+  function goToDeplacement(r: Reminder) {
+    prefill(r);
+    window.location.href = "/deplacement";
   }
 
   // ---------- Group reminders ----------
@@ -245,7 +256,16 @@ function Rappels() {
             background: PINK, color: "#fff", fontSize: 14, fontWeight: 600,
           }}
         >
-          📅 Prendre RDV
+          📅 RDV physique
+        </button>
+        <button
+          onClick={() => goToDeplacement(r)}
+          style={{
+            flex: "1 1 auto", padding: "9px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+            background: "#38bdf8", color: "#fff", fontSize: 14, fontWeight: 600,
+          }}
+        >
+          🚗 RDV déplacement
         </button>
         <button
           onClick={() => setStatus(r.id, "done")}

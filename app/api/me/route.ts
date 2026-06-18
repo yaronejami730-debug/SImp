@@ -12,8 +12,10 @@ export async function GET(req: Request) {
   try {
     const cc = await getCallCenter(s.callCenterId);
     const def = cc?.default_commercial?.trim() || "";
-    // Le commercial par défaut de l'entité en tête, sans doublon.
-    const commerciaux = [def, ...COMMERCIAUX].filter((c, i, arr) => c && arr.indexOf(c) === i);
+    // Entité Yaron (1) : liste complète. Autres entités : UNIQUEMENT leur commercial (forcé).
+    const commerciaux = s.callCenterId === 1
+      ? [def, ...COMMERCIAUX].filter((c, i, arr) => c && arr.indexOf(c) === i)
+      : (def ? [def] : [...COMMERCIAUX]);
     return NextResponse.json({
       ok: true,
       email: s.email, name: s.name, role: s.role,

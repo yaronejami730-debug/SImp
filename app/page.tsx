@@ -137,8 +137,14 @@ function Home() {
     if (typeof window === "undefined") return;
     const prefillUrl = sessionStorage.getItem("prefillListingUrl");
     const prefillPhone = sessionStorage.getItem("prefillPhone");
+    const pFn = sessionStorage.getItem("prefillFirstName");
+    const pLn = sessionStorage.getItem("prefillLastName");
+    const pEm = sessionStorage.getItem("prefillEmail");
     if (prefillUrl) { sessionStorage.removeItem("prefillListingUrl"); setForm((f) => ({ ...f, listingUrl: prefillUrl })); }
     if (prefillPhone) { sessionStorage.removeItem("prefillPhone"); setForm((f) => ({ ...f, phone: prefillPhone })); }
+    if (pFn) { sessionStorage.removeItem("prefillFirstName"); setForm((f) => ({ ...f, firstName: pFn })); }
+    if (pLn) { sessionStorage.removeItem("prefillLastName"); setForm((f) => ({ ...f, lastName: pLn })); }
+    if (pEm) { sessionStorage.removeItem("prefillEmail"); setForm((f) => ({ ...f, email: pEm })); }
   }, []);
 
   useEffect(() => {

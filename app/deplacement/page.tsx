@@ -55,6 +55,19 @@ function Deplacement() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Pré-remplissage depuis un rappel (bouton "RDV déplacement").
+  useEffect(() => {
+    const phone = sessionStorage.getItem("prefillPhone");
+    const fn = sessionStorage.getItem("prefillFirstName");
+    const ln = sessionStorage.getItem("prefillLastName");
+    const em = sessionStorage.getItem("prefillEmail");
+    if (phone || fn || ln || em) {
+      setForm((f) => ({ ...f, phone: phone ?? f.phone, firstName: fn ?? f.firstName, lastName: ln ?? f.lastName, email: em ?? f.email }));
+      ["prefillPhone", "prefillFirstName", "prefillLastName", "prefillEmail", "prefillListingUrl"].forEach((k) => sessionStorage.removeItem(k));
+      setShowForm(true);
+    }
+  }, []);
+
   const ready = form.firstName.trim() && form.address.trim() && form.date && form.time;
 
   async function create() {
