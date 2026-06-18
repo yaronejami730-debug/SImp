@@ -3,7 +3,8 @@ import { getAuth } from "@/lib/auth";
 import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote, patchCommercial, appendHistory } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { confirmationEmail, reminderEmail, customEmail, noShowFollowupEmail } from "@/lib/email-templates";
+import { confirmationEmail, reminderEmail, customEmail, noShowFollowupEmail, mobileConfirmationEmail, mobileReminderEmail } from "@/lib/email-templates";
+import { commercialPhoneStrict } from "@/lib/commerciaux";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
@@ -148,34 +149,44 @@ export async function POST(req: Request, { params }: Params) {
     const base = baseUrlFrom(req);
     const clientName = `${firstName} ${lastName}`.trim();
     const logBase = { clientName, owner: p.owner ?? s.email, eventId: id, origin: "manual" as const };
+    // RDV déplacement -> mails/SMS adaptés (domicile + conseiller).
+    const deplacement = p.deplacement === "1";
+    const address = p.address ?? location;
+    const commercial = p.commercial ?? "";
+    const conseillerPhone = commercialPhoneStrict(commercial);
 
     if (!startIso) return NextResponse.json({ error: "RDV sans date." }, { status: 400 });
 
     switch (action) {
       case "resend_confirmation_mail": {
         if (!email) return NextResponse.json({ error: "Pas d'e-mail client." }, { status: 400 });
-        const mail = confirmationEmail({
-          civility, firstName, lastName, startDateTime: startIso, location,
-          platform: p.platform, listingUrl: p.listingUrl,
-          whatsappUrl: whatsappUrl(),
-          rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined,
-        });
-        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: "confirmation" } });
-        return NextResponse.json({ ok: true, message: `Mail de confirmation renvoyé à ${email}.` });
+        const mail = deplacement
+          ? mobileConfirmationEmail({ civility, firstName, lastName, startDateTime: startIso, address, conseiller: commercial, phone: conseillerPhone })
+          : confirmationEmail({ civility, firstName, lastName, startDateTime: startIso, location, platform: p.platform, listingUrl: p.listingUrl, whatsappUrl: whatsappUrl(), rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined });
+        await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: deplacement ? "mobile_confirmation" : "confirmation" } });
+        return NextResponse.json({ ok: true, message: `Mail de confirmation${deplacement ? " (déplacement)" : ""} renvoyé à ${email}.` });
       }
       case "resend_confirmation_sms": {
         if (!phone) return NextResponse.json({ error: "Pas de téléphone client." }, { status: 400 });
         const d = new Date(startIso);
         const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
         const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
-        const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${location}. STOP au 36180`;
-        await sendSMS({ to: phone, text, log: { ...logBase, templateKey: "sms_confirmation", toEmail: email } });
-        return NextResponse.json({ ok: true, message: `SMS de confirmation renvoyé au ${phone}.` });
+        const text = deplacement
+          ? `Simplicicar: RDV a domicile confirme ${date} a ${heure}, a votre adresse. Conseiller M. ${commercial}. STOP au 36180`
+          : `Simplicicar: RDV confirme ${date} a ${heure} - ${location}. STOP au 36180`;
+        await sendSMS({ to: phone, text, log: { ...logBase, templateKey: deplacement ? "sms_mobile_confirmation" : "sms_confirmation", toEmail: email } });
+        return NextResponse.json({ ok: true, message: `SMS de confirmation${deplacement ? " (déplacement)" : ""} renvoyé au ${phone}.` });
       }
       case "send_reminder_24h":
       case "send_reminder_2h": {
         const kind: "24h" | "2h" = action === "send_reminder_24h" ? "24h" : "2h";
         if (!email) return NextResponse.json({ error: "Pas d'e-mail client." }, { status: 400 });
+        if (deplacement) {
+          const mail = mobileReminderEmail({ civility, firstName, lastName, startDateTime: startIso, address, conseiller: commercial, phone: conseillerPhone, kind });
+          await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: kind === "2h" ? "mobile_reminder2" : "mobile_reminder24" } });
+          if (ev.id) await markReminderSent(ev.id, kind);
+          return NextResponse.json({ ok: true, message: `Rappel ${kind} (déplacement) envoyé à ${email}.` });
+        }
         const mail = reminderEmail({
           civility, firstName, lastName, startDateTime: startIso, location, kind,
           whatsappUrl: whatsappUrl(),
