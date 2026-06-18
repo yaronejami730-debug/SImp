@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       time,
     });
 
-    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN))) {
+    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN, undefined, p.callCenterId ?? 1))) {
       return NextResponse.json({ error: "Ce créneau vient d'être pris. Choisissez-en un autre." }, { status: 409 });
     }
 

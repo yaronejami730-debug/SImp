@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     const appt = buildAppointment(body as AppointmentInput);
 
     // 1b. Anti-chevauchement : refuser si le créneau est déjà occupé.
-    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN))) {
+    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN, undefined, auth.callCenterId))) {
       return NextResponse.json(
         { error: "Ce créneau vient d'être pris. Choisissez-en un autre." },
         { status: 409 },

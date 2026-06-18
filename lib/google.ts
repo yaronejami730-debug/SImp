@@ -245,6 +245,7 @@ export async function isSlotFree(
   startISO: string,
   durationMin: number,
   ignoreEventId?: string,
+  callCenterId?: number,
 ): Promise<boolean> {
   const start = new Date(startISO);
   const end = new Date(start.getTime() + durationMin * 60 * 1000);
@@ -255,6 +256,8 @@ export async function isSlotFree(
   for (const ev of items) {
     if (ignoreEventId && ev.id === ignoreEventId) continue;
     if (ev.extendedProperties?.private?.mobile === "1") continue; // RDV déplacement -> ne bloque pas le physique
+    // Dispo par entité : seuls les RDV de la même entité bloquent le créneau.
+    if (callCenterId != null && Number(ev.extendedProperties?.private?.cc ?? "1") !== callCenterId) continue;
     const es = ev.start?.dateTime ? new Date(ev.start.dateTime) : null;
     const ee = ev.end?.dateTime ? new Date(ev.end.dateTime) : null;
     if (!es || !ee) continue;

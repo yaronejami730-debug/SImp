@@ -55,7 +55,7 @@ export default function SlotPicker({
     if (cache[date] && !cache[date].loading) return;
     setCache((c) => ({ ...c, [date]: { loading: true, slots: [] } }));
     try {
-      const r = await fetch(`${endpoint}?date=${date}`, { headers: authHeaders() });
+      const r = await fetch(`${endpoint}${endpoint.includes("?") ? "&" : "?"}date=${date}`, { headers: authHeaders() });
       const d = await r.json();
       setCache((c) => ({ ...c, [date]: { loading: false, slots: d.slots ?? [], closed: d.closed } }));
     } catch {

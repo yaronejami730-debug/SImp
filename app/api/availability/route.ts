@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { listEvents } from "@/lib/google";
 import { slotTimes, isWeekday, SLOT_MIN } from "@/lib/slots";
 import { toParisISO } from "@/lib/parse";
+import { getAuth, verifyBooking } from "@/lib/auth";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-/** GET ?date=YYYY-MM-DD -> créneaux du jour avec statut pris/libre. */
+/** GET ?date=YYYY-MM-DD[&t=token] -> créneaux du jour, dispo PAR ENTITÉ. */
 export async function GET(req: Request) {
-  const date = new URL(req.url).searchParams.get("date");
+  const sp = new URL(req.url).searchParams;
+  const date = sp.get("date");
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "Date invalide." }, { status: 400 });
   }
@@ -16,12 +18,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, date, slots: [], closed: true });
   }
 
+  // Entité : session (interne) sinon token de réservation (client). Sinon entité 1.
+  const s = getAuth(req);
+  const tok = sp.get("t") ? verifyBooking(sp.get("t")!) : null;
+  const cc = s?.callCenterId ?? tok?.callCenterId ?? 1;
+
   try {
     const dayStart = new Date(toParisISO(date, "00:00"));
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
     const events = await listEvents(dayStart, dayEnd);
     const busy = events
       .filter((ev) => ev.extendedProperties?.private?.mobile !== "1") // RDV déplacement -> ne bloque pas le physique
+      .filter((ev) => Number(ev.extendedProperties?.private?.cc ?? "1") === cc) // seule l'entité bloque ses créneaux
       .map((ev) => ({
         s: ev.start?.dateTime ? new Date(ev.start.dateTime) : null,
         e: ev.end?.dateTime ? new Date(ev.end.dateTime) : null,

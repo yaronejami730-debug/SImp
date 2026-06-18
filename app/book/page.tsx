@@ -108,7 +108,7 @@ export default function Book() {
               </div>
               <div><label style={lab}>Téléphone</label><input style={inp} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
               {needEmail && <div><label style={lab}>E-mail</label><input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="vous@email.com" /></div>}
-              {!fixedSlot && <div><label style={lab}>Choisissez votre créneau</label><SlotPicker value={{ date, time }} onChange={(v) => { setDate(v.date); setTime(v.time); }} allowCustom={false} /></div>}
+              {!fixedSlot && <div><label style={lab}>Choisissez votre créneau</label><SlotPicker value={{ date, time }} onChange={(v) => { setDate(v.date); setTime(v.time); }} allowCustom={false} endpoint={`/api/availability?t=${encodeURIComponent(token)}`} /></div>}
             </div>
 
             {err && <p style={{ color: "#dc2626", marginTop: 14 }}>❌ {err}</p>}

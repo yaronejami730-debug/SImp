@@ -42,8 +42,8 @@ export async function POST(req: Request) {
 
     const newStart = toParisISO(date, time);
 
-    // Anti-chevauchement (en ignorant le RDV lui-même).
-    if (!(await isSlotFree(newStart, SLOT_MIN, eid))) {
+    // Anti-chevauchement par entité (en ignorant le RDV lui-même).
+    if (!(await isSlotFree(newStart, SLOT_MIN, eid, Number(ev.extendedProperties?.private?.cc ?? "1")))) {
       return NextResponse.json(
         { error: "Ce créneau est déjà pris. Choisissez-en un autre." },
         { status: 409 },
