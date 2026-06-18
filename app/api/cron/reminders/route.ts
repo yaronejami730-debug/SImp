@@ -105,7 +105,7 @@ export async function GET(req: Request) {
     }
   }
 
-  // === SMS + mail 15 min avant le RDV : contact de l'interlocuteur (commercial) + accès ===
+  // === SMS + mail 15 min avant le RDV : contact du conseiller (commercial) + accès ===
   let sms15Sent = 0;
   for (const ev of events) {
     const startIso = ev.start?.dateTime;
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     let any = false;
     // SMS
     if (phone) {
-      const text = `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre interlocuteur: M. ${commercial} - ${tel}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`;
+      const text = `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre conseiller: M. ${commercial} - ${tel}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`;
       try {
         await sendSMS({ to: phone, text, log: { templateKey: "sms_reminder15", clientName, owner: priv.owner, eventId: ev.id, toEmail: email } });
         any = true;

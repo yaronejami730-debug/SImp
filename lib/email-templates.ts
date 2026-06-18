@@ -189,7 +189,7 @@ export function customEmail(d: { civility?: string; firstName: string; lastName?
   return { subject: d.subject || `Message — ${BUSINESS}`, html: shell(content) };
 }
 
-/** Mail envoyé ~15 min avant le RDV : contact de l'interlocuteur + accès/parking. */
+/** Mail envoyé ~15 min avant le RDV : contact du conseiller + accès/parking. */
 export function reminderApproachEmail(d: { firstName?: string; commercial: string; phone: string }) {
   const digits = d.phone.replace(/\D/g, "");
   const wa = digits.startsWith("0") ? "33" + digits.slice(1) : digits;
@@ -198,10 +198,10 @@ export function reminderApproachEmail(d: { firstName?: string; commercial: strin
   const content = `
     <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">${hello}</p>
     <p style="margin:0 0 16px;font-size:15px">Votre rendez-vous approche à grands pas ! 🚗</p>
-    <p style="margin:0 0 16px;font-size:15px">Voici le contact de votre interlocuteur : <strong>M. ${d.commercial}</strong> — <a href="tel:${tel}" style="color:${C.link};text-decoration:none;font-weight:700">${d.phone}</a>. N'hésitez pas à l'appeler une fois proche de l'agence.</p>
+    <p style="margin:0 0 16px;font-size:15px">Voici le contact de votre conseiller : <strong>M. ${d.commercial}</strong> — <a href="tel:${tel}" style="color:${C.link};text-decoration:none;font-weight:700">${d.phone}</a>. N'hésitez pas à l'appeler une fois proche de l'agence.</p>
     <div style="margin:0 0 16px;padding:14px 16px;background:#f8f9fa;border:1px solid #ececec;border-radius:10px;font-size:14px;line-height:1.6;text-align:left">
       <strong style="color:${C.navy}">📍 Pour votre arrivée</strong><br>
-      Notre agence est la <strong>petite agence sur le côté droit</strong> de la rue. À environ <strong>20 mètres devant</strong>, vous verrez une entrée de parking (un bateau) : patientez à cet endroit, c'est là que votre interlocuteur viendra vous retrouver. Une fois sur place, <strong>appelez-le directement</strong>.<br><br>
+      Notre agence est la <strong>petite agence sur le côté droit</strong> de la rue. À environ <strong>20 mètres devant</strong>, vous verrez une entrée de parking (un bateau) : patientez à cet endroit, c'est là que votre conseiller viendra vous retrouver. Une fois sur place, <strong>appelez-le directement</strong>.<br><br>
       S'il n'y a pas de place, vous pouvez vous garer sur le <strong>grand trottoir</strong>, sans souci. Et s'il n'y a toujours pas de place, refaites simplement un tour pour ne pas gêner la circulation rue Bélidor.
     </div>
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">À tout de suite, l'équipe ${BUSINESS.toUpperCase()}</p>`;
