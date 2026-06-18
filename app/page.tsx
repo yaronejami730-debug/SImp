@@ -20,6 +20,7 @@ type Result = {
   emailError?: string;
   smsSent?: boolean;
   smsError?: string;
+  warning?: string;
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
@@ -285,6 +286,7 @@ function Home() {
       {result?.ok && result.appointment && (
         <div style={{ marginTop: 22, padding: 18, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
           <strong style={{ color: "#166534" }}>✅ Rendez-vous créé</strong>
+          {result.warning && <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: "#fffbeb", border: "1px solid #fde68a", color: "#b45309", fontSize: 13, fontWeight: 600 }}>{result.warning}</div>}
           <ul style={{ margin: "10px 0 0", paddingLeft: 18, lineHeight: 1.7, color: "#166534" }}>
             <li>{result.appointment.firstName} {result.appointment.lastName} — {result.appointment.email}</li>
             <li>{result.appointment.location}</li>
