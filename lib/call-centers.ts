@@ -12,15 +12,18 @@ export async function getCallCenter(id: number): Promise<CallCenter | null> {
   return rows[0] ?? null;
 }
 
+// Normalise un nom en jeu de mots trié (insensible à l'ordre / accents / casse).
+// "Jeremy Bonamy" et "Bonamy jeremy" -> "bonamy jeremy".
+const tokset = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+
 /** Entité dont le commercial par défaut correspond au nom donné (cross-entité). */
 export async function entityIdByCommercial(commercial?: string): Promise<number | null> {
-  const c = commercial?.trim();
+  const c = tokset(commercial ?? "");
   if (!c) return null;
-  const { rows } = await getPool().query<{ id: number }>(
-    `select id from call_centers where lower(default_commercial) = lower($1) order by id limit 1`,
-    [c],
-  );
-  return rows[0]?.id ?? null;
+  const ccs = await listCallCenters();
+  const m = ccs.find((cc) => tokset(cc.default_commercial) === c);
+  return m?.id ?? null;
 }
 
 /** Schéma de commission de l'entité (via son admin) — pour la part "commercial". */
