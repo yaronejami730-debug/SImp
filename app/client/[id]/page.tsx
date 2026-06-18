@@ -20,7 +20,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string; location: string;
   note: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
-  commissionBase?: number; commissionPct?: number; ref?: string;
+  commissionBase?: number; commissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   reminder24Sent: boolean; reminder2Sent: boolean;
@@ -627,7 +627,10 @@ function ClientPage({ id }: { id: string }) {
       {/* === EN-TÊTE CLIENT === */}
       <div style={card}>
         {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>RDV ANNULÉ</div>}
+        {a.deplacement && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#38bdf8", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8, marginLeft: a.cancelled ? 6 : 0 }}>🚗 DÉPLACEMENT</div>}
         <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, color: NAVY }}>{a.civility} {a.firstName} {a.lastName}</h1>
+        {a.deplacement && a.address && <div style={{ marginTop: 6, fontSize: 13, color: "#475569" }}>📍 {a.address}</div>}
+        {a.ref && <div style={{ marginTop: 4, fontSize: 11, color: "#9aa6b8", fontFamily: "monospace" }}>🔖 {a.ref}</div>}
         {!editContact ? (
           <>
             <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 14 }}>

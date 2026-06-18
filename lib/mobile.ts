@@ -52,9 +52,11 @@ export type MobileInput = {
 };
 
 const evt = (a: MobileAppt) => ({
-  firstName: a.first_name, lastName: a.last_name, email: a.email, phone: a.phone,
-  vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "), immatriculation: a.immatriculation, commercial: a.commercial,
+  firstName: a.first_name, lastName: a.last_name, email: a.email, phone: a.phone, civility: a.civility,
+  vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "), carBrand: a.car_brand, carModel: a.car_model,
+  immatriculation: a.immatriculation, commercial: a.commercial,
   address: a.address, startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes, ref: a.ref,
+  owner: a.teleprospecteur, callCenterId: a.call_center_id,
 });
 
 /** Créneau libre côté DÉPLACEMENT pour CE call center (n'interagit pas avec les RDV physiques). */

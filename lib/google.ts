@@ -277,6 +277,8 @@ export type AppointmentItem = {
   id: string;
   callCenterId: number;
   ref: string;
+  deplacement: boolean;
+  address: string;
   startDateTime: string | null;
   firstName: string;
   lastName: string;
@@ -324,6 +326,8 @@ export async function listAppointments(
       id: ev.id ?? "",
       callCenterId: Number(p.cc ?? "1"),
       ref: p.ref ?? "",
+      deplacement: p.deplacement === "1",
+      address: p.address ?? ev.location ?? "",
       startDateTime: ev.start?.dateTime ?? null,
       firstName: p.clientFirstName ?? "",
       lastName: p.clientLastName ?? "",
@@ -595,10 +599,36 @@ const MOBILE_COLOR = "7"; // Peacock = bleu ciel
 const MOBILE_ATTENDEE = process.env.MOBILE_ATTENDEE_EMAIL ?? "bonamy.mimi@gmail.com"; // invité par défaut des déplacements
 
 export type MobileEventInput = {
-  firstName: string; lastName?: string; email?: string; phone?: string;
-  vehicle?: string; immatriculation?: string; commercial?: string;
+  firstName: string; lastName?: string; email?: string; phone?: string; civility?: string;
+  vehicle?: string; carBrand?: string; carModel?: string; immatriculation?: string; commercial?: string;
   address?: string; startDateTime: string; durationMin: number; notes?: string; ref?: string;
+  owner?: string; callCenterId?: number;
 };
+
+/** Propriétés privées d'un RDV déplacement : tagué simplici-rdv pour apparaître dans le CRM/agenda/fiche
+ *  comme un vrai RDV, + deplacement=1 (bleu ciel, adresse) + mobile=1 (ne bloque pas le physique). */
+function mobileOwnPrivate(a: MobileEventInput): Record<string, string> {
+  return {
+    app: "simplici-rdv",
+    owner: a.owner ?? "",
+    cc: String(a.callCenterId ?? 1),
+    deplacement: "1",
+    mobile: "1",
+    ref: a.ref ?? "",
+    clientCivility: a.civility ?? "",
+    clientEmail: a.email ?? "",
+    clientPhone: a.phone ?? "",
+    clientFirstName: a.firstName,
+    clientLastName: a.lastName ?? "",
+    platform: "Déplacement",
+    commercial: a.commercial ?? "",
+    carBrand: a.carBrand ?? "",
+    carModel: a.carModel ?? "",
+    immatriculation: a.immatriculation ?? "",
+    address: a.address ?? "",
+    history: JSON.stringify([{ t: "created", at: new Date().toISOString() }]),
+  };
+}
 
 function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
   const end = new Date(new Date(a.startDateTime).getTime() + a.durationMin * 60000).toISOString();
@@ -650,8 +680,8 @@ async function insertWithAttendeeFallback(calendarId: string, body: calendar_v3.
 
 export async function createMobileEvent(a: MobileEventInput): Promise<MobileEventIds> {
   const body = mobileEventBody(a);
-  // Ton agenda — tagué mobile pour l'exclure de la dispo physique.
-  const ownId = await insertWithAttendeeFallback(CALENDAR_ID, { ...body, extendedProperties: { private: { mobile: "1" } } });
+  // Ton agenda — RDV first-class (CRM/agenda/fiche) tagué déplacement.
+  const ownId = await insertWithAttendeeFallback(CALENDAR_ID, { ...body, extendedProperties: { private: mobileOwnPrivate(a) } });
   // Agenda Bonamy (si configuré).
   const mobileId = MOBILE_CALENDAR_ID ? await insertWithAttendeeFallback(MOBILE_CALENDAR_ID, body) : "";
   return { ownId, mobileId };
@@ -660,7 +690,7 @@ export async function createMobileEvent(a: MobileEventInput): Promise<MobileEven
 export async function updateMobileEvent(ids: MobileEventIds, a: MobileEventInput): Promise<void> {
   const cal = calendarClient();
   if (ids.ownId) {
-    try { await cal.events.patch({ calendarId: CALENDAR_ID, eventId: ids.ownId, requestBody: { ...mobileEventBody(a), extendedProperties: { private: { mobile: "1" } } }, sendUpdates: "none" }); }
+    try { await cal.events.patch({ calendarId: CALENDAR_ID, eventId: ids.ownId, requestBody: mobileEventBody(a), sendUpdates: "none" }); }
     catch (e) { console.error("updateMobileEvent (own) failed", e); }
   }
   if (MOBILE_CALENDAR_ID && ids.mobileId) {

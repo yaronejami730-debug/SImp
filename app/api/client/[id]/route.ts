@@ -41,6 +41,8 @@ export async function GET(req: Request, { params }: Params) {
       appointment: {
         id: ev.id,
         ref: p.ref ?? "",
+        deplacement: p.deplacement === "1",
+        address: p.address ?? ev.location ?? "",
         commissionBase,
         commissionPct,
         startDateTime: ev.start?.dateTime ?? null,

@@ -212,7 +212,8 @@ function Deplacement() {
         ))}
       </div>
 
-      {/* Mini CRM */}
+      {/* Mini CRM retiré : les RDV déplacement apparaissent dans CRM + Agenda (même fiche que le physique). */}
+      {false && (
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
         <h2 style={{ margin: "0 0 12px", fontFamily: "'Cabin',sans-serif", fontSize: 13, fontWeight: 700, color: SKY, textTransform: "uppercase", letterSpacing: 0.6 }}>CRM déplacement ({active.length} actifs)</h2>
         {loading ? <div style={{ color: MUTED, fontSize: 13 }}>Chargement…</div>
@@ -249,6 +250,7 @@ function Deplacement() {
             </div>
           )}
       </div>
+      )}
     </>
   );
 }
