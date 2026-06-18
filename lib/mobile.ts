@@ -1,6 +1,6 @@
 import { getPool } from "./db";
 import { SLOT_MIN } from "./slots";
-import { createMobileEvent, updateMobileEvent, deleteMobileEvent } from "./google";
+import { createMobileEvent, updateMobileEvent, deleteMobileEvent, patchMobileFirstClass } from "./google";
 import { geocode } from "./geocode";
 import { genRef } from "./ref";
 
@@ -174,6 +174,17 @@ export async function upcomingMobileAppts(withinMs: number): Promise<MobileAppt[
     [now.toISOString(), new Date(now.getTime() + withinMs).toISOString()],
   );
   return rows;
+}
+
+/** Retag tous les RDV déplacement existants en first-class (CRM/agenda). One-off. */
+export async function backfillMobileFirstClass(): Promise<{ patched: number; skipped: number }> {
+  const { rows } = await getPool().query<MobileAppt>(`select * from appointments_mobile where google_event_id_own <> ''`);
+  let patched = 0, skipped = 0;
+  for (const a of rows) {
+    try { await patchMobileFirstClass(a.google_event_id_own, evt(a)); patched++; }
+    catch (e) { console.error("backfill", a.id, e); skipped++; }
+  }
+  return { patched, skipped };
 }
 
 export async function markMobileReminderSent(id: number, kind: "24h" | "2h"): Promise<void> {

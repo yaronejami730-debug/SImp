@@ -688,6 +688,17 @@ export async function createMobileEvent(a: MobileEventInput): Promise<MobileEven
   return { ownId, mobileId };
 }
 
+/** Backfill : retag un event déplacement existant en RDV first-class (CRM/agenda/fiche). */
+export async function patchMobileFirstClass(ownEventId: string, a: MobileEventInput): Promise<void> {
+  if (!ownEventId) return;
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId: ownEventId,
+    requestBody: { ...mobileEventBody(a), extendedProperties: { private: mobileOwnPrivate(a) } },
+    sendUpdates: "none",
+  });
+}
+
 export async function updateMobileEvent(ids: MobileEventIds, a: MobileEventInput): Promise<void> {
   const cal = calendarClient();
   if (ids.ownId) {
