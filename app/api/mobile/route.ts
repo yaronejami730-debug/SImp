@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { createMobileAppt, listMobileAppts, isMobileSlotFree, type MobileStatus } from "@/lib/mobile";
+import { commercialConflict } from "@/lib/google";
 import { toParisISO } from "@/lib/parse";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
@@ -41,6 +42,15 @@ export async function POST(req: Request) {
     const startDateTime = toParisISO(b.date, b.time);
     if (!(await isMobileSlotFree(s.callCenterId, startDateTime))) {
       return NextResponse.json({ error: "Ce créneau déplacement est déjà pris." }, { status: 409 });
+    }
+    // Le commercial ne peut pas être à 2 RDV à la fois (physique + déplacement, marge trajet).
+    const commercial = b.commercial || "Jeremy Bonamy";
+    const conflict = await commercialConflict(commercial, startDateTime, true);
+    if (conflict) {
+      return NextResponse.json(
+        { error: `⚠️ ${commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Laisse le temps du RDV + ~20 min de trajet.` },
+        { status: 409 },
+      );
     }
     const appt = await createMobileAppt({
       callCenterId: s.callCenterId,

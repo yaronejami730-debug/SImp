@@ -3,6 +3,39 @@ import type { Appointment } from "./parse";
 import { commercialInviteEmail } from "./commerciaux";
 import { genRef } from "./ref";
 import { entityIdByCommercial } from "./call-centers";
+import { SLOT_MIN } from "./slots";
+
+const COMM_BUFFER_MS = Number(process.env.MOBILE_BUFFER_MIN ?? 20) * 60000; // marge trajet autour des déplacements
+const ctok = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+
+export type CommercialConflict = { ref: string; deplacement: boolean; start: string | null };
+
+/** Conflit pour un commercial : ne peut pas être à 2 RDV à la fois (physique + déplacement),
+ *  + marge trajet autour des déplacements. Renvoie le RDV en conflit ou null. */
+export async function commercialConflict(
+  commercial: string, startISO: string, isDeplacement: boolean, ignoreEventId?: string,
+): Promise<CommercialConflict | null> {
+  const tset = ctok(commercial ?? "");
+  if (!tset) return null;
+  const start = new Date(startISO).getTime();
+  const dur = SLOT_MIN * 60000;
+  const myStart = isDeplacement ? start - COMM_BUFFER_MS : start;
+  const myEnd = (isDeplacement ? start + dur + COMM_BUFFER_MS : start + dur);
+  const items = await listEvents(new Date(start - 6 * 3600e3), new Date(start + 6 * 3600e3));
+  for (const ev of items) {
+    if (ignoreEventId && ev.id === ignoreEventId) continue;
+    const pr = ev.extendedProperties?.private ?? {};
+    if (ctok(pr.commercial ?? "") !== tset) continue;
+    const es = ev.start?.dateTime ? new Date(ev.start.dateTime).getTime() : null;
+    const ee = ev.end?.dateTime ? new Date(ev.end.dateTime).getTime() : null;
+    if (!es || !ee) continue;
+    const isDep = pr.deplacement === "1";
+    const bs = isDep ? es - COMM_BUFFER_MS : es;
+    const be = isDep ? ee + COMM_BUFFER_MS : ee;
+    if (bs < myEnd && be > myStart) return { ref: pr.ref ?? "", deplacement: isDep, start: ev.start?.dateTime ?? null };
+  }
+  return null;
+}
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";

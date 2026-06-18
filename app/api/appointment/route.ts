@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildAppointment, type AppointmentInput } from "@/lib/parse";
-import { createEvent, isSlotFree, createGoogleContact } from "@/lib/google";
+import { createEvent, isSlotFree, createGoogleContact, commercialConflict } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail } from "@/lib/email-templates";
@@ -43,6 +43,16 @@ export async function POST(req: Request) {
         { error: "Ce créneau vient d'être pris. Choisissez-en un autre." },
         { status: 409 },
       );
+    }
+    // 1c. Le commercial ne peut pas être à 2 RDV à la fois (physique + déplacement, marge trajet).
+    if (appt.commercial) {
+      const conflict = await commercialConflict(appt.commercial, appt.startDateTime, false);
+      if (conflict) {
+        return NextResponse.json(
+          { error: `⚠️ ${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Laisse le temps du RDV + trajet.` },
+          { status: 409 },
+        );
+      }
     }
 
     // 2. Création de l'événement dans Google Agenda (owner = collaborateur)
