@@ -76,7 +76,6 @@ export async function POST(req: Request) {
     try {
       if (reminder.first_name || reminder.last_name || reminder.client_email) {
         await createGoogleContact({
-```
           firstName: reminder.first_name,
           lastName: reminder.last_name,
           phone: reminder.phone,

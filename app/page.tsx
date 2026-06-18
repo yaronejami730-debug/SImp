@@ -46,9 +46,9 @@ function Home() {
       try {
         const r = await fetch("/api/me", { headers: authHeaders() });
         const d = await r.json();
-        if (d.ok && d.commerciaux?.length) {
-          setCommerciaux(d.commerciaux);
-          const def = d.callCenter?.defaultCommercial || d.commerciaux[0];
+        if (d.ok && (d.allCommerciaux?.length || d.commerciaux?.length)) {
+          setCommerciaux(d.allCommerciaux ?? d.commerciaux); // toutes entités -> attribution cross-entité possible
+          const def = d.callCenter?.defaultCommercial || d.commerciaux?.[0];
           if (def) {
             setForm((f) => ({ ...f, commercial: def }));
             setLinkCommercial(def);
