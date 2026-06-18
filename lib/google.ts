@@ -150,11 +150,11 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
       description: [
+        `Mode : Physique`,
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
         `Téléphone : ${a.phone}`,
         vehicle ? `Véhicule : ${vehicle}` : "",
-        `Mode : Physique`,
         `Plateforme : ${a.platform}`,
         `Annonce : ${a.listingUrl}`,
         a.commercial ? `Commercial : ${a.commercial}` : "",
@@ -674,12 +674,12 @@ function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
   const end = new Date(new Date(a.startDateTime).getTime() + a.durationMin * 60000).toISOString();
   const name = `${a.firstName} ${a.lastName ?? ""}`.trim();
   const description = [
+    `Mode : Déplacement`,
     `Client : ${name}`,
     `E-mail : ${a.email ?? ""}`,
     `Téléphone : ${a.phone ?? ""}`,
     a.vehicle ? `Véhicule : ${a.vehicle}` : "",
     a.immatriculation ? `Immatriculation : ${a.immatriculation}` : "",
-    `Mode : Déplacement`,
     a.commercial ? `Commercial : ${a.commercial}` : "",
     `Lieu : ${a.address ?? ""}`,
     a.notes ? `Notes : ${a.notes}` : "",
