@@ -76,11 +76,12 @@ export async function POST(req: Request) {
     try {
       if (reminder.first_name || reminder.last_name || reminder.client_email) {
         await createGoogleContact({
+```
           firstName: reminder.first_name,
           lastName: reminder.last_name,
           phone: reminder.phone,
           email: reminder.client_email,
-          note: reminder.note || (reminder.listing_url ? `Annonce : ${reminder.listing_url}` : ""),
+          note: reminder.note || (reminder.listing_url ? `Annonce : ${ reminder.listing_url }` : ""),
         });
       }
     } catch (err) {
@@ -93,8 +94,8 @@ export async function POST(req: Request) {
       const d = new Date(reminder.remind_at);
       const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
-      const text = `Simplicicar: votre rappel est confirme ${date} a ${heure}. On vous appelle. STOP au 36180`;
-      await sendSMS({ to: reminder.phone, text, log: { templateKey: "sms_rappel_confirm", clientName: `${reminder.first_name} ${reminder.last_name ?? ""}`.trim(), owner: reminder.owner, toEmail: reminder.client_email } });
+      const text = `Simplicicar: votre rappel est confirme ${ date } a ${ heure }.On vous appelle.STOP au 36180`;
+      await sendSMS({ to: reminder.phone, text, log: { templateKey: "sms_rappel_confirm", clientName: `${ reminder.first_name } ${ reminder.last_name ?? "" }`.trim(), owner: reminder.owner, toEmail: reminder.client_email } });
       smsSent = true;
     } catch (err) {
       smsError = err instanceof Error ? err.message : "Erreur SMS.";
