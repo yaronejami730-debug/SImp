@@ -1,6 +1,7 @@
 import { google, type calendar_v3 } from "googleapis";
 import type { Appointment } from "./parse";
 import { commercialInviteEmail } from "./commerciaux";
+import { genRef } from "./ref";
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";
@@ -109,6 +110,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
 
   const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
   const invite = commercialInviteEmail(a.commercial); // ex: Bonamy -> bonamy.mimi@gmail.com
+  const ref = genRef();
   const requestBody: calendar_v3.Schema$Event = {
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
@@ -121,7 +123,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
         `Annonce : ${a.listingUrl}`,
         a.commercial ? `Commercial : ${a.commercial}` : "",
         `Lieu : ${a.location}`,
-      ].filter(Boolean).join("\n"),
+      ].filter(Boolean).join("\n") + `\n\nRéférence : ${ref}`,
       location: a.location,
       attendees: invite ? [{ email: invite }] : undefined,
       start: { dateTime: start.toISOString(), timeZone: "Europe/Paris" },
@@ -131,6 +133,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           app: "simplici-rdv",
           owner,
           cc: String(callCenterId),
+          ref,
           clientCivility: a.civility ?? "",
           clientEmail: a.email,
           clientPhone: a.phone,
@@ -270,6 +273,7 @@ export async function deleteEvent(eventId: string) {
 export type AppointmentItem = {
   id: string;
   callCenterId: number;
+  ref: string;
   startDateTime: string | null;
   firstName: string;
   lastName: string;
@@ -316,6 +320,7 @@ export async function listAppointments(
     return {
       id: ev.id ?? "",
       callCenterId: Number(p.cc ?? "1"),
+      ref: p.ref ?? "",
       startDateTime: ev.start?.dateTime ?? null,
       firstName: p.clientFirstName ?? "",
       lastName: p.clientLastName ?? "",
@@ -589,7 +594,7 @@ const MOBILE_ATTENDEE = process.env.MOBILE_ATTENDEE_EMAIL ?? "bonamy.mimi@gmail.
 export type MobileEventInput = {
   firstName: string; lastName?: string; email?: string; phone?: string;
   vehicle?: string; immatriculation?: string; commercial?: string;
-  address?: string; startDateTime: string; durationMin: number; notes?: string;
+  address?: string; startDateTime: string; durationMin: number; notes?: string; ref?: string;
 };
 
 function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
@@ -605,7 +610,7 @@ function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
     a.commercial ? `Commercial : ${a.commercial}` : "",
     `Lieu : ${a.address ?? ""}`,
     a.notes ? `Notes : ${a.notes}` : "",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).join("\n") + (a.ref ? `\n\nRéférence : ${a.ref}` : "");
   return {
     summary: `🚗 Déplacement — ${name}${a.vehicle ? ` — ${a.vehicle}` : ""} — ${BUSINESS}`,
     location: a.address || undefined,

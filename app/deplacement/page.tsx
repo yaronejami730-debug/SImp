@@ -18,7 +18,7 @@ type Appt = {
   id: number; teleprospecteur: string; commercial: string; civility: string;
   first_name: string; last_name: string; email: string; phone: string;
   car_brand: string; car_model: string; immatriculation: string; address: string;
-  start_datetime: string; notes: string; status: Status; google_event_id: string;
+  start_datetime: string; notes: string; status: Status; google_event_id: string; ref: string;
 };
 
 const STATUSES: { key: Status; label: string; color: string }[] = [
@@ -226,6 +226,7 @@ function Deplacement() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, color: NAVY }}>{a.first_name} {a.last_name} <span style={{ fontSize: 12, fontWeight: 600, color: c.color }}>· {c.label}</span></div>
+                        {a.ref && <div style={{ fontSize: 11, color: "#9aa6b8", fontFamily: "monospace" }}>🔖 {a.ref}</div>}
                         <div style={{ fontSize: 12.5, color: MUTED, marginTop: 3 }}>📅 {fmt(a.start_datetime)}</div>
                         <div style={{ fontSize: 12.5, color: MUTED }}>📍 {a.address || "—"}</div>
                         <div style={{ fontSize: 12, color: "#9aa6b8", marginTop: 2 }}>{[a.car_brand, a.car_model, a.immatriculation].filter(Boolean).join(" · ") || "—"} · {a.phone || "—"} · {a.commercial}</div>

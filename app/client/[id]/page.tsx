@@ -20,7 +20,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string; location: string;
   note: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
-  commissionBase?: number; commissionPct?: number;
+  commissionBase?: number; commissionPct?: number; ref?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   reminder24Sent: boolean; reminder2Sent: boolean;

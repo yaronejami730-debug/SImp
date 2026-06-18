@@ -40,6 +40,7 @@ export async function GET(req: Request, { params }: Params) {
       ok: true,
       appointment: {
         id: ev.id,
+        ref: p.ref ?? "",
         commissionBase,
         commissionPct,
         startDateTime: ev.start?.dateTime ?? null,

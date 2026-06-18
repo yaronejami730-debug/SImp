@@ -2,6 +2,7 @@ import { getPool } from "./db";
 import { SLOT_MIN } from "./slots";
 import { createMobileEvent, updateMobileEvent, deleteMobileEvent } from "./google";
 import { geocode } from "./geocode";
+import { genRef } from "./ref";
 
 export type MobileStatus = "prospect" | "booked" | "confirmed" | "done" | "cancelled";
 
@@ -22,6 +23,7 @@ export type MobileAppt = {
   start_datetime: string;
   notes: string;
   status: MobileStatus;
+  ref: string;
   google_event_id: string;       // event sur l'agenda Bonamy
   google_event_id_own: string;   // event sur ton agenda (tagué mobile)
   reminder24_sent: boolean;
@@ -52,7 +54,7 @@ export type MobileInput = {
 const evt = (a: MobileAppt) => ({
   firstName: a.first_name, lastName: a.last_name, email: a.email, phone: a.phone,
   vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "), immatriculation: a.immatriculation, commercial: a.commercial,
-  address: a.address, startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes,
+  address: a.address, startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes, ref: a.ref,
 });
 
 /** Créneau libre côté DÉPLACEMENT pour CE call center (n'interagit pas avec les RDV physiques). */
@@ -72,14 +74,14 @@ export async function isMobileSlotFree(callCenterId: number, startISO: string, i
 export async function createMobileAppt(input: MobileInput): Promise<MobileAppt> {
   const { rows } = await getPool().query<MobileAppt>(
     `insert into appointments_mobile
-       (call_center_id, teleprospecteur, commercial, civility, first_name, last_name, email, phone, car_brand, car_model, immatriculation, address, start_datetime, notes, status)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       (call_center_id, teleprospecteur, commercial, civility, first_name, last_name, email, phone, car_brand, car_model, immatriculation, address, start_datetime, notes, status, ref)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      returning *`,
     [
       input.callCenterId, input.teleprospecteur ?? "", input.commercial ?? "Jeremy Bonamy", input.civility ?? "",
       input.firstName.trim(), input.lastName ?? "", input.email ?? "", input.phone ?? "",
       input.carBrand ?? "", input.carModel ?? "", input.immatriculation ?? "", input.address ?? "",
-      input.startDateTime, input.notes ?? "", input.status ?? "booked",
+      input.startDateTime, input.notes ?? "", input.status ?? "booked", genRef(),
     ],
   );
   const a = rows[0];
