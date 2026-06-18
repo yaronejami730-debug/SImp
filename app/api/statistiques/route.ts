@@ -87,8 +87,8 @@ export async function GET(req: Request) {
     const yearAhead = new Date(nowMs + 365 * DAY);
     const [allAppts, allReminders, allLeads] = await Promise.all([
       listAppointments(yearAgo, yearAhead),
-      listReminders(s.role === "admin" ? undefined : s.email),
-      searchLeads(),
+      listReminders(s.callCenterId, s.role === "admin" ? undefined : s.email),
+      searchLeads(s.callCenterId),
     ]);
 
     const ccAppts = allAppts.filter((a) => a.callCenterId === s.callCenterId);

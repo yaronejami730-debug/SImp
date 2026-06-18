@@ -85,19 +85,33 @@ function Deplacement() {
   // ── Tournée ──
   const [tourDate, setTourDate] = useState("");
   const [tourBusy, setTourBusy] = useState(false);
+  const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [locBusy, setLocBusy] = useState(false);
   const [tour, setTour] = useState<{ count: number; totalKm: number; stops: { rank: number; client: string; address: string; time: string; vehicle: string; legKm: number | null; geocoded: boolean }[] } | null>(null);
+
+  function locate() {
+    if (!navigator.geolocation) { setFlash({ ok: false, msg: "Géolocalisation non supportée." }); return; }
+    setLocBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { setMyPos({ lat: p.coords.latitude, lng: p.coords.longitude }); setLocBusy(false); setFlash({ ok: true, msg: "📍 Position récupérée — départ depuis ta position." }); },
+      () => { setLocBusy(false); setFlash({ ok: false, msg: "Localisation refusée." }); },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
 
   async function loadTournee() {
     if (!tourDate) return;
     setTourBusy(true); setTour(null);
     try {
-      const r = await fetch(`/api/mobile/tournee?date=${tourDate}`, { headers: authHeaders() });
+      const pos = myPos ? `&lat=${myPos.lat}&lng=${myPos.lng}` : "";
+      const r = await fetch(`/api/mobile/tournee?date=${tourDate}${pos}`, { headers: authHeaders() });
       const d = await r.json();
       if (d.ok) setTour(d); else setFlash({ ok: false, msg: d.error ?? "Erreur" });
     } finally { setTourBusy(false); }
   }
+  const origin = myPos ? `${myPos.lat},${myPos.lng}` : "3 rue Bélidor 75017 Paris";
   const mapsUrl = tour && tour.stops.length
-    ? "https://www.google.com/maps/dir/" + ["3 rue Bélidor 75017 Paris", ...tour.stops.map((s) => s.address)].map((a) => encodeURIComponent(a)).join("/")
+    ? "https://www.google.com/maps/dir/" + [origin, ...tour.stops.map((s) => s.address)].map((a) => encodeURIComponent(a)).join("/")
     : "";
 
   return (
@@ -153,15 +167,21 @@ function Deplacement() {
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>
         <h2 style={{ margin: "0 0 6px", fontFamily: "'Cabin',sans-serif", fontSize: 13, fontWeight: 700, color: SKY, textTransform: "uppercase", letterSpacing: 0.6 }}>🗺️ Tournée du jour</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: MUTED }}>Ordre de passage optimisé (trajet le plus court depuis l&apos;agence).</p>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <input type="date" value={tourDate} onChange={(e) => setTourDate(e.target.value)} style={{ ...inp, width: "auto", flex: "1 1 160px" }} />
           <button onClick={loadTournee} disabled={tourBusy || !tourDate} style={{ padding: "11px 16px", borderRadius: 8, border: "none", fontSize: 14, fontWeight: 700, cursor: tourBusy || !tourDate ? "default" : "pointer", background: tourBusy || !tourDate ? "#cbd5e1" : SKY, color: "#fff" }}>
             {tourBusy ? "Calcul…" : "Calculer"}
           </button>
         </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+          <button onClick={locate} disabled={locBusy} style={{ padding: "9px 14px", borderRadius: 8, border: `1.5px solid ${SKY}`, background: myPos ? SKY : "#fff", color: myPos ? "#fff" : SKY, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {locBusy ? "Localisation…" : myPos ? "📍 Position OK — recalcule" : "📍 Me localiser (départ d'ici)"}
+          </button>
+          <span style={{ fontSize: 12, color: MUTED }}>{myPos ? "Départ = ta position actuelle" : "Sinon départ = agence"}</span>
+        </div>
         {tour && (tour.stops.length === 0 ? <div style={{ fontSize: 13, color: "#9aa6b8" }}>Aucun RDV déplacement ce jour.</div> : (
           <>
-            <div style={{ fontSize: 13, color: NAVY, marginBottom: 10 }}><strong>{tour.count}</strong> RDV · ~<strong>{tour.totalKm} km</strong> de trajet · départ agence</div>
+            <div style={{ fontSize: 13, color: NAVY, marginBottom: 10 }}><strong>{tour.count}</strong> RDV · ~<strong>{tour.totalKm} km</strong> de trajet · départ {myPos ? "ta position" : "agence"}</div>
             <div style={{ display: "grid", gap: 8 }}>
               {tour.stops.map((s) => (
                 <div key={s.rank} style={{ display: "flex", gap: 10, alignItems: "center", border: `1px solid ${LINE}`, borderRadius: 9, padding: "9px 11px" }}>

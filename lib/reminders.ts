@@ -29,10 +29,11 @@ export async function addReminder(opts: {
   owner: string;
   leadId?: number | null;
   clientEmail?: string;
+  callCenterId: number;
 }): Promise<Reminder> {
   const { rows } = await getPool().query<Reminder>(
-    `insert into reminders (first_name, last_name, phone, listing_url, note, remind_at, owner, lead_id, client_email)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `insert into reminders (first_name, last_name, phone, listing_url, note, remind_at, owner, lead_id, client_email, call_center_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      returning *`,
     [
       opts.firstName.trim(),
@@ -44,22 +45,24 @@ export async function addReminder(opts: {
       opts.owner,
       opts.leadId ?? null,
       opts.clientEmail?.trim() || "",
+      opts.callCenterId,
     ],
   );
   return rows[0];
 }
 
-/** Liste les rappels. Admin = tous, sinon filtrés par owner. */
-export async function listReminders(owner?: string): Promise<Reminder[]> {
+/** Liste les rappels d'une entité (call center). owner = filtre collaborateur. */
+export async function listReminders(callCenterId: number, owner?: string): Promise<Reminder[]> {
   if (owner) {
     const { rows } = await getPool().query<Reminder>(
-      `select * from reminders where owner = $1 order by remind_at asc`,
-      [owner],
+      `select * from reminders where call_center_id = $1 and owner = $2 order by remind_at asc`,
+      [callCenterId, owner],
     );
     return rows;
   }
   const { rows } = await getPool().query<Reminder>(
-    `select * from reminders order by remind_at asc`,
+    `select * from reminders where call_center_id = $1 order by remind_at asc`,
+    [callCenterId],
   );
   return rows;
 }

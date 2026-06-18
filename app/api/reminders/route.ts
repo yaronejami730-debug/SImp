@@ -14,8 +14,8 @@ export async function GET(req: Request) {
 
   try {
     const reminders = s.role === "admin"
-      ? await listReminders()
-      : await listReminders(s.email);
+      ? await listReminders(s.callCenterId)
+      : await listReminders(s.callCenterId, s.email);
     return NextResponse.json({ ok: true, reminders });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
       owner: s.email,
       leadId: body.leadId ?? null,
       clientEmail: body.clientEmail,
+      callCenterId: s.callCenterId,
     });
     // Pousser l'événement dans Google Agenda — n'empêche pas la création du rappel si KO.
     try {

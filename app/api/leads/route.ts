@@ -12,10 +12,11 @@ function checkPin(req: Request): boolean {
 
 /** GET ?phone= -> recherche de leads (connecté). */
 export async function GET(req: Request) {
-  if (!checkPin(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const phone = new URL(req.url).searchParams.get("phone") ?? "";
   try {
-    const leads = await searchLeads(phone);
+    const leads = await searchLeads(s.callCenterId, phone);
     return NextResponse.json({ ok: true, leads });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
@@ -24,7 +25,8 @@ export async function GET(req: Request) {
 
 /** POST { phone, listingUrl, note? } -> ajoute un lead (PIN). */
 export async function POST(req: Request) {
-  if (!checkPin(req)) return NextResponse.json({ error: "Code invalide." }, { status: 401 });
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Code invalide." }, { status: 401 });
   try {
     const { phone, listingUrl, note } = (await req.json()) as {
       phone?: string;
@@ -34,7 +36,7 @@ export async function POST(req: Request) {
     if (!phone?.trim() || !listingUrl?.trim()) {
       return NextResponse.json({ error: "Téléphone et lien requis." }, { status: 400 });
     }
-    const lead = await addLead(phone, listingUrl, note);
+    const lead = await addLead(phone, listingUrl, note, s.callCenterId);
     const base = (process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "");
     try {
       await createGoogleContact({

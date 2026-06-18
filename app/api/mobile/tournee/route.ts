@@ -11,8 +11,12 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
-  const date = new URL(req.url).searchParams.get("date");
+  const sp = new URL(req.url).searchParams;
+  const date = sp.get("date");
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Date invalide." }, { status: 400 });
+  // Point de départ : position actuelle (si fournie) sinon l'agence.
+  const slat = Number(sp.get("lat")), slng = Number(sp.get("lng"));
+  const start: LatLng = Number.isFinite(slat) && Number.isFinite(slng) && (slat || slng) ? { lat: slat, lng: slng } : AGENCY_COORDS;
 
   try {
     const dayStart = new Date(toParisISO(date, "00:00"));
@@ -23,9 +27,9 @@ export async function GET(req: Request) {
     await ensureCoords(appts);
 
     const points: (LatLng | null)[] = appts.map((a) => (a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null));
-    const order = nearestNeighborOrder(AGENCY_COORDS, points);
+    const order = nearestNeighborOrder(start, points);
 
-    let prev: LatLng = AGENCY_COORDS;
+    let prev: LatLng = start;
     let totalKm = 0;
     const stops = order.map((idx, i) => {
       const a = appts[idx];
@@ -45,7 +49,7 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json({ ok: true, date, count: stops.length, totalKm: Math.round(totalKm * 10) / 10, stops });
+    return NextResponse.json({ ok: true, date, start, count: stops.length, totalKm: Math.round(totalKm * 10) / 10, stops });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
