@@ -3,6 +3,8 @@ import { getAuth } from "@/lib/auth";
 import * as T from "@/lib/email-templates";
 import { templateUsage } from "@/lib/messages";
 import { listTemplateSettings, setTemplateEnabled } from "@/lib/template-settings";
+import { getCallCenter } from "@/lib/call-centers";
+import { commercialPhone } from "@/lib/commerciaux";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +34,8 @@ type Entry = {
 const mail = (m: Mail): Rendered => ({ channel: "email", subject: m.subject, html: m.html });
 const sms = (text: string): Rendered => ({ channel: "sms", text });
 
-// ── Catalogue complet (mails + SMS) ──────────────────────
-const CATALOG: Entry[] = [
+// ── Catalogue complet (mails + SMS) — paramétré par l'entité (conseiller + numéro réels) ──
+const buildCatalog = (conseiller: string, tel: string): Entry[] => [
   // ===== Rendez-vous =====
   { key: "confirmation", channel: "email", group: "Rendez-vous", label: "Confirmation de RDV", when: "Automatique, dès la création d'un RDV (formulaire ou lien client). Confirme date/heure + adresse.", render: () => mail(T.confirmationEmail({ ...base, startDateTime: inDays(2), location: LOC, rescheduleUrl: u.rescheduleUrl })) },
   { key: "sms_confirmation", channel: "sms", group: "Rendez-vous", label: "SMS confirmation RDV", when: "Automatique, en même temps que le mail de confirmation, à la création du RDV.", render: () => sms("Simplicicar: RDV confirme jeudi 18 juin a 18h00 - 3 rue Belidor 75017 Paris. STOP au 36180") },
@@ -41,8 +43,8 @@ const CATALOG: Entry[] = [
   { key: "sms_reminder24", channel: "sms", group: "Rendez-vous", label: "SMS rappel — 24h avant", when: "Automatique (cron DB) ~24h avant le RDV, avec le mail.", render: () => sms("Simplicicar: rappel RDV demain, jeudi 18 juin a 18h00 - 3 rue Belidor. A bientot! STOP au 36180") },
   { key: "reminder2", channel: "email", group: "Rendez-vous", label: "Rappel RDV — 2h avant", when: "Automatique (cron DB) ~2h avant le RDV.", render: () => mail(T.reminderEmail({ ...base, startDateTime: inHours(2), location: LOC, kind: "2h", rescheduleUrl: u.rescheduleUrl })) },
   { key: "sms_reminder2", channel: "sms", group: "Rendez-vous", label: "SMS rappel — 2h avant", when: "Automatique (cron DB) ~2h avant le RDV, avec le mail.", render: () => sms("Simplicicar: rappel RDV dans 2h, jeudi 18 juin a 18h00 - 3 rue Belidor. A bientot! STOP au 36180") },
-  { key: "reminder15", channel: "email", group: "Rendez-vous", label: "Rappel 15 min — contact + accès", when: "Automatique (cron DB) ~15 min avant le RDV. Donne le contact du commercial + instructions d'accès/parking.", render: () => mail(T.reminderApproachEmail({ firstName: "Jean", commercial: "Raphaël Dahan", phone: "06 18 74 73 82" })) },
-  { key: "sms_reminder15", channel: "sms", group: "Rendez-vous", label: "SMS 15 min — contact commercial", when: "Automatique (cron DB) ~15 min avant le RDV, avec le mail. Donne le numéro direct du conseiller.", render: () => sms("Bonjour Jean, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre conseiller: M. Raphael Dahan - 06 18 74 73 82. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180") },
+  { key: "reminder15", channel: "email", group: "Rendez-vous", label: "Rappel 15 min — contact + accès", when: "Automatique (cron DB) ~15 min avant le RDV. Donne le contact du conseiller + instructions d'accès/parking.", render: () => mail(T.reminderApproachEmail({ firstName: "Jean", commercial: conseiller, phone: tel })) },
+  { key: "sms_reminder15", channel: "sms", group: "Rendez-vous", label: "SMS 15 min — contact conseiller", when: "Automatique (cron DB) ~15 min avant le RDV, avec le mail. Donne le numéro direct du conseiller.", render: () => sms(`Bonjour Jean, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre conseiller: M. ${conseiller} - ${tel}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`) },
   { key: "parking", channel: "email", group: "Rendez-vous", label: "Place de parking réservée", when: "Bouton fiche client, ou auto ~2h avant si parking demandé.", render: () => mail(T.parkingReservationEmail({ ...base, startDateTime: inDays(2) })) },
   { key: "rescheduled", channel: "email", group: "Rendez-vous", label: "RDV reprogrammé", when: "Quand on change le créneau d'un RDV (page reprogrammation).", render: () => mail(T.rescheduledEmail({ ...base, startDateTime: inDays(3), location: LOC, rescheduleUrl: u.rescheduleUrl })) },
   { key: "cancelled", channel: "email", group: "Rendez-vous", label: "RDV annulé", when: "Quand on annule un RDV.", render: () => mail(T.cancelledEmail({ ...base, startDateTime: inDays(1), location: LOC })) },
@@ -69,12 +71,12 @@ const CATALOG: Entry[] = [
   { key: "signed", channel: "email", group: "Relances", label: "Demande d'avis (après signature)", when: "Auto J+14 après une signature : invite à noter l'agence.", render: () => mail(T.signedRatingEmail({ ...base, avisUrl: u.avisUrl })) },
 
   // ===== Déplacement (RDV à domicile) =====
-  { key: "mobile_confirmation", channel: "email", group: "Déplacement", label: "Confirmation RDV à domicile", when: "À la création d'un RDV déplacement. Confirme date/heure + adresse client + conseiller.", render: () => mail(T.mobileConfirmationEmail({ ...base, startDateTime: inDays(2), address: "12 rue Victor Hugo, 92700 Colombes", conseiller: "Jérémy Bonamy" })) },
-  { key: "sms_mobile_confirmation", channel: "sms", group: "Déplacement", label: "SMS confirmation à domicile", when: "À la création d'un RDV déplacement, avec le mail.", render: () => sms("Simplicicar: RDV a domicile confirme jeudi 18 juin a 18h00, a votre adresse. Conseiller M. Jeremy Bonamy. STOP au 36180") },
-  { key: "mobile_reminder24", channel: "email", group: "Déplacement", label: "Rappel domicile — 24h avant", when: "Automatique (cron DB) ~24h avant un RDV déplacement.", render: () => mail(T.mobileReminderEmail({ ...base, startDateTime: inDays(1), address: "12 rue Victor Hugo, 92700 Colombes", conseiller: "Jérémy Bonamy", kind: "24h" })) },
-  { key: "sms_mobile_reminder24", channel: "sms", group: "Déplacement", label: "SMS rappel domicile — 24h", when: "Automatique (cron DB) ~24h avant, avec le mail.", render: () => sms("Simplicicar: rappel RDV a domicile demain, jeudi 18 juin a 18h00, a votre adresse. Conseiller M. Jeremy Bonamy. STOP au 36180") },
-  { key: "mobile_reminder2", channel: "email", group: "Déplacement", label: "Rappel domicile — 2h avant", when: "Automatique (cron DB) ~2h avant un RDV déplacement.", render: () => mail(T.mobileReminderEmail({ ...base, startDateTime: inHours(2), address: "12 rue Victor Hugo, 92700 Colombes", conseiller: "Jérémy Bonamy", kind: "2h" })) },
-  { key: "sms_mobile_reminder2", channel: "sms", group: "Déplacement", label: "SMS rappel domicile — 2h", when: "Automatique (cron DB) ~2h avant, avec le mail.", render: () => sms("Simplicicar: rappel RDV a domicile dans 2h, jeudi 18 juin a 18h00, a votre adresse. Conseiller M. Jeremy Bonamy. STOP au 36180") },
+  { key: "mobile_confirmation", channel: "email", group: "Déplacement", label: "Confirmation RDV à domicile", when: "À la création d'un RDV déplacement. Confirme date/heure + adresse client + conseiller.", render: () => mail(T.mobileConfirmationEmail({ ...base, startDateTime: inDays(2), address: "12 rue Victor Hugo, 92700 Colombes", conseiller })) },
+  { key: "sms_mobile_confirmation", channel: "sms", group: "Déplacement", label: "SMS confirmation à domicile", when: "À la création d'un RDV déplacement, avec le mail.", render: () => sms(`Simplicicar: RDV a domicile confirme jeudi 18 juin a 18h00, a votre adresse. Conseiller M. ${conseiller}. STOP au 36180`) },
+  { key: "mobile_reminder24", channel: "email", group: "Déplacement", label: "Rappel domicile — 24h avant", when: "Automatique (cron DB) ~24h avant un RDV déplacement.", render: () => mail(T.mobileReminderEmail({ ...base, startDateTime: inDays(1), address: "12 rue Victor Hugo, 92700 Colombes", conseiller, kind: "24h" })) },
+  { key: "sms_mobile_reminder24", channel: "sms", group: "Déplacement", label: "SMS rappel domicile — 24h", when: "Automatique (cron DB) ~24h avant, avec le mail.", render: () => sms(`Simplicicar: rappel RDV a domicile demain, jeudi 18 juin a 18h00, a votre adresse. Conseiller M. ${conseiller}. STOP au 36180`) },
+  { key: "mobile_reminder2", channel: "email", group: "Déplacement", label: "Rappel domicile — 2h avant", when: "Automatique (cron DB) ~2h avant un RDV déplacement.", render: () => mail(T.mobileReminderEmail({ ...base, startDateTime: inHours(2), address: "12 rue Victor Hugo, 92700 Colombes", conseiller, kind: "2h" })) },
+  { key: "sms_mobile_reminder2", channel: "sms", group: "Déplacement", label: "SMS rappel domicile — 2h", when: "Automatique (cron DB) ~2h avant, avec le mail.", render: () => sms(`Simplicicar: rappel RDV a domicile dans 2h, jeudi 18 juin a 18h00, a votre adresse. Conseiller M. ${conseiller}. STOP au 36180`) },
 
   // ===== Manuels / divers =====
   { key: "custom", channel: "email", group: "Manuels", label: "Mail personnalisé", when: "Bouton « mail personnalisé » sur la fiche client (texte libre).", render: () => mail(T.customEmail({ ...base, subject: "Votre message", body: "Exemple de mail personnalisé.\n\nDeuxième paragraphe." })) },
@@ -87,6 +89,12 @@ const CATALOG: Entry[] = [
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+
+  // Catalogue paramétré par l'entité : conseiller + numéro réels (reflète le terrain).
+  const cc = await getCallCenter(s.callCenterId);
+  const conseiller = cc?.default_commercial?.trim() || "Raphaël Dahan";
+  const tel = commercialPhone(conseiller);
+  const CATALOG = buildCatalog(conseiller, tel);
 
   const url = new URL(req.url);
   const key = url.searchParams.get("key");

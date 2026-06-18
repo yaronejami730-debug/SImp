@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getToken, getUser } from "@/lib/client";
+import { getToken, getUser, authHeaders } from "@/lib/client";
 import Login from "./Login";
 import Nav from "./Nav";
 
@@ -9,22 +9,30 @@ import Nav from "./Nav";
 export default function Shell({ active, children }: { active: string; children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [ccId, setCcId] = useState<number>(getUser()?.callCenterId ?? 1);
 
   useEffect(() => {
     setAuthed(!!getToken());
     setReady(true);
   }, []);
 
+  // Entité autoritative depuis le serveur (indépendant d'un token ancien).
+  useEffect(() => {
+    if (!authed) return;
+    fetch("/api/me", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
+      if (d.ok && d.callCenterId) setCcId(d.callCenterId);
+    }).catch(() => {});
+  }, [authed]);
+
   if (!ready) return null;
   if (!authed) return <Login onLogin={() => setAuthed(true)} />;
 
   // Bouton "?" déplacement : uniquement pour l'entité Yaron (1). Les autres entités ont un onglet dédié.
-  const cc = getUser()?.callCenterId ?? 1;
-  const showFloating = cc === 1;
+  const showFloating = ccId === 1;
 
   return (
     <main style={{ minHeight: "100vh", background: "#eceef1", fontFamily: "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif", color: "#232323", padding: "20px 16px" }}>
-      <Nav active={active} />
+      <Nav active={active} callCenterId={ccId} />
       <div style={{ maxWidth: 720, margin: "0 auto" }}>{children}</div>
       {showFloating && active !== "deplacement" && (
         <a

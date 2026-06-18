@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getCallCenter } from "@/lib/call-centers";
+import { getUserByEmail } from "@/lib/users";
 import { COMMERCIAUX } from "@/lib/commerciaux";
 
 export const dynamic = "force-dynamic";
@@ -10,15 +11,18 @@ export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
-    const cc = await getCallCenter(s.callCenterId);
+    // Re-dérive le call center depuis la DB (autoritatif, même si le token est ancien).
+    let callCenterId = s.callCenterId;
+    try { const u = await getUserByEmail(s.email); if (u?.call_center_id) callCenterId = u.call_center_id; } catch { /* défaut token */ }
+    const cc = await getCallCenter(callCenterId);
     const def = cc?.default_commercial?.trim() || "";
     // Entité Yaron (1) : liste complète. Autres entités : UNIQUEMENT leur commercial (forcé).
-    const commerciaux = s.callCenterId === 1
+    const commerciaux = callCenterId === 1
       ? [def, ...COMMERCIAUX].filter((c, i, arr) => c && arr.indexOf(c) === i)
       : (def ? [def] : [...COMMERCIAUX]);
     return NextResponse.json({
       ok: true,
-      email: s.email, name: s.name, role: s.role,
+      email: s.email, name: s.name, role: s.role, callCenterId,
       callCenter: cc ? { id: cc.id, name: cc.name, defaultCommercial: def } : null,
       commerciaux,
     });

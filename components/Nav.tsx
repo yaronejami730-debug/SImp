@@ -16,9 +16,9 @@ const TABS = [
   // Masqués pour l'instant (code conservé) : recherche, relances, hesitants, assistant.
 ];
 
-export default function Nav({ active }: { active: string }) {
+export default function Nav({ active, callCenterId }: { active: string; callCenterId?: number }) {
   const user = getUser();
-  const cc = user?.callCenterId ?? 1;
+  const cc = callCenterId ?? user?.callCenterId ?? 1;
   // Entité Yaron (1) : onglets standards + bouton "?" flottant pour le déplacement.
   // Autres entités : pas de bouton flottant, mais 2 onglets distincts physique / déplacement.
   const tabs = cc === 1 ? TABS : [
