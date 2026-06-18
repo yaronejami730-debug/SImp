@@ -7,6 +7,7 @@ import { confirmationEmail, reminderEmail, customEmail, noShowFollowupEmail } fr
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
+import { getUserByEmail } from "@/lib/users";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -30,10 +31,17 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
     const p = ev.extendedProperties?.private ?? {};
+    // Schéma de commission de l'owner du RDV (base + % négo).
+    let commissionBase = 50, commissionPct = 10;
+    if (p.owner) {
+      try { const u = await getUserByEmail(p.owner); if (u) { commissionBase = Number(u.commission_base); commissionPct = Number(u.commission_pct); } } catch { /* défaut */ }
+    }
     return NextResponse.json({
       ok: true,
       appointment: {
         id: ev.id,
+        commissionBase,
+        commissionPct,
         startDateTime: ev.start?.dateTime ?? null,
         firstName: p.clientFirstName ?? "",
         lastName: p.clientLastName ?? "",

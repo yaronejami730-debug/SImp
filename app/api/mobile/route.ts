@@ -16,7 +16,9 @@ export async function GET(req: Request) {
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const status = new URL(req.url).searchParams.get("status") as MobileStatus | null;
   try {
-    const appts = await listMobileAppts(s.callCenterId, status ? { status } : undefined);
+    const all = await listMobileAppts(s.callCenterId, status ? { status } : undefined);
+    // Collaborateur (téléprospecteur) : seulement ses RDV. Admin : toute l'entité.
+    const appts = s.role === "admin" ? all : all.filter((a) => a.teleprospecteur === s.email);
     return NextResponse.json({ ok: true, appointments: appts });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

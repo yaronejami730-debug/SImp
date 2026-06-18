@@ -3,6 +3,8 @@ import { getAuth } from "@/lib/auth";
 import { listAppointments } from "@/lib/google";
 import { listReminders } from "@/lib/reminders";
 import { searchLeads } from "@/lib/leads";
+import { getCommissionSchemes } from "@/lib/users";
+import { commissionOf } from "@/lib/commission";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -130,9 +132,12 @@ export async function GET(req: Request) {
     const nrpTotalContacts = nrpReminders.length;
     const nrpTotalAppels = nrpReminders.reduce((s, r) => s + r.nrp_count, 0);
 
-    // --- Commission ---
-    const NEGO = 0.1, BASE = 50;
-    const commission = (a: { negotiation?: number }) => BASE + NEGO * (a.negotiation || 0);
+    // --- Commission (schéma par owner du RDV) ---
+    const schemes = await getCommissionSchemes(s.callCenterId);
+    const commission = (a: { negotiation?: number; owner?: string }) => {
+      const sc = schemes.get((a.owner ?? "").toLowerCase()) ?? { base: 50, pct: 10 };
+      return commissionOf(sc.base, sc.pct, a.negotiation || 0);
+    };
     const commissionTotal = active.filter((a) => a.signStatus === "signed").reduce((sum, a) => sum + commission(a), 0);
 
     // --- Évolution (granularité adaptée à la période) ---

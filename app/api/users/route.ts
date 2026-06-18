@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listUsers, createUser, deleteUser } from "@/lib/users";
 import { createCallCenter, getCallCenter } from "@/lib/call-centers";
+import { schemeByKey } from "@/lib/commission";
 import { getAuth } from "@/lib/auth";
 
 export const maxDuration = 30;
@@ -34,22 +35,23 @@ export async function POST(req: Request) {
     const b = (await req.json()) as {
       mode?: "telepro" | "callcenter";
       email?: string; password?: string; name?: string;
-      ccName?: string; defaultCommercial?: string;
+      ccName?: string; defaultCommercial?: string; schemeKey?: string;
     };
     if (!b.email?.trim() || !b.password?.trim() || !b.name?.trim()) {
       return NextResponse.json({ error: "Nom, email et mot de passe requis." }, { status: 400 });
     }
+    const sch = schemeByKey(b.schemeKey);
 
     if (b.mode === "callcenter") {
       if (!b.ccName?.trim()) return NextResponse.json({ error: "Nom de l'entité (call center) requis." }, { status: 400 });
       const cc = await createCallCenter(b.ccName, b.defaultCommercial ?? "");
       // L'utilisateur créé est l'admin (super-administrateur) de la NOUVELLE entité.
-      const user = await createUser(b.email, b.password, b.name, "admin", cc.id);
+      const user = await createUser(b.email, b.password, b.name, "admin", cc.id, sch.base, sch.pct);
       return NextResponse.json({ ok: true, user, callCenter: cc });
     }
 
     // Téléprospecteur rattaché à ton call center.
-    const user = await createUser(b.email, b.password, b.name, "collab", s.callCenterId);
+    const user = await createUser(b.email, b.password, b.name, "collab", s.callCenterId, sch.base, sch.pct);
     return NextResponse.json({ ok: true, user });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erreur.";

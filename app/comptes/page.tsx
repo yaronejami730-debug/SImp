@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
+import { COMMISSION_SCHEMES } from "@/lib/commission";
 
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
@@ -22,6 +23,7 @@ function Comptes() {
   const [password, setPassword] = useState("");
   const [ccName, setCcName] = useState("");
   const [defaultCommercial, setDefaultCommercial] = useState("");
+  const [schemeKey, setSchemeKey] = useState("50+10");
   const [busy, setBusy] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
@@ -55,8 +57,8 @@ function Comptes() {
     setBusy(true);
     try {
       const body = mode === "callcenter"
-        ? { mode, name, email, password, ccName, defaultCommercial }
-        : { mode, name, email, password };
+        ? { mode, name, email, password, ccName, defaultCommercial, schemeKey }
+        : { mode, name, email, password, schemeKey };
       const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body) });
       const d = await res.json();
       if (d.ok) {
@@ -107,6 +109,12 @@ function Comptes() {
           <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "callcenter" ? "Nom du super-admin" : "Nom du téléprospecteur"} />
           <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail" />
           <input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" />
+          <div>
+            <label style={{ display: "block", fontSize: 12.5, color: "#6b7280", marginBottom: 5 }}>💰 Base de rémunération (par RDV signé)</label>
+            <select style={inp} value={schemeKey} onChange={(e) => setSchemeKey(e.target.value)}>
+              {COMMISSION_SCHEMES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
           <button onClick={add} disabled={busy || !name.trim() || !email.trim() || !password.trim()} style={{ padding: 13, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
             {busy ? "…" : mode === "callcenter" ? "Créer l'entité + super-admin" : "Créer le téléprospecteur"}
           </button>

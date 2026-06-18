@@ -22,7 +22,8 @@ export async function GET(req: Request) {
     const dayStart = new Date(toParisISO(date, "00:00"));
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
     const appts = (await listMobileAppts(s.callCenterId, { from: dayStart.toISOString(), to: dayEnd.toISOString() }))
-      .filter((a) => a.status !== "cancelled");
+      .filter((a) => a.status !== "cancelled")
+      .filter((a) => s.role === "admin" || a.teleprospecteur === s.email);
 
     await ensureCoords(appts);
 
