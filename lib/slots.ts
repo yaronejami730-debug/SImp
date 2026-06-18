@@ -27,6 +27,17 @@ export function slotTimes(): string[] {
   return out;
 }
 
+/** Créneaux DÉPLACEMENT : plage plus large (matin tôt → soir tard), pas de 20 min, sans pause déj.
+ *  Configurable : MOBILE_OPEN (10:00), MOBILE_CLOSE (21:40), MOBILE_STEP (20). */
+export function slotTimesMobile(): string[] {
+  const open = toMin(process.env.MOBILE_OPEN ?? "10:00");
+  const end = toMin(process.env.MOBILE_CLOSE ?? "21:40");
+  const step = Number(process.env.MOBILE_STEP ?? 20);
+  const out: string[] = [];
+  for (let s = open; s <= end - step; s += step) out.push(fromMin(s));
+  return out;
+}
+
 /** date "YYYY-MM-DD" -> jour de semaine (1=lundi … 7=dimanche). */
 export function weekday(date: string): number {
   const [y, m, d] = date.split("-").map(Number);

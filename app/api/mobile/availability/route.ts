@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { slotTimes, isWeekday, SLOT_MIN } from "@/lib/slots";
+import { slotTimesMobile, isWeekday, SLOT_MIN } from "@/lib/slots";
 import { toParisISO } from "@/lib/parse";
 import { listMobileAppts } from "@/lib/mobile";
 
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       return { s: sd, e: new Date(sd.getTime() + SLOT_MIN * 60000) };
     });
     const now = new Date();
-    const slots = slotTimes().map((time) => {
+    const slots = slotTimesMobile().map((time) => {
       const sdt = new Date(toParisISO(date, time));
       const e = new Date(sdt.getTime() + SLOT_MIN * 60000);
       const taken = sdt < now || busy.some((b) => b.s < e && b.e > sdt);
