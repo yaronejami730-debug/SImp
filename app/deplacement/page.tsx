@@ -86,7 +86,8 @@ function Deplacement() {
       const r = await fetch("/api/mobile", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(form) });
       const d = await r.json();
       if (d.ok) {
-        setFlash({ ok: true, msg: d.synced ? "✅ RDV déplacement créé + synchronisé Google" : "✅ RDV déplacement créé (Google non configuré)" });
+        const base = d.synced ? "✅ RDV déplacement créé + synchronisé Google" : "✅ RDV déplacement créé (Google non configuré)";
+        setFlash({ ok: true, msg: d.warning ? `${base}\n${d.warning}` : base });
         setForm({ ...EMPTY });
         load();
       } else setFlash({ ok: false, msg: d.error ?? "Erreur" });
@@ -144,7 +145,7 @@ function Deplacement() {
         <p style={{ margin: "4px 0 0", fontSize: 13, color: MUTED }}>Module séparé (Jérémy Bonamy). Agenda &amp; disponibilités indépendants des RDV physiques. Synchro Google bleu ciel.</p>
       </header>
 
-      {flash && <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 9, background: flash.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${flash.ok ? "#bbf7d0" : "#fecaca"}`, fontSize: 13, color: flash.ok ? "#166534" : "#dc2626" }}>{flash.msg}</div>}
+      {flash && <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 9, background: flash.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${flash.ok ? "#bbf7d0" : "#fecaca"}`, fontSize: 13, color: flash.ok ? "#166534" : "#dc2626", whiteSpace: "pre-line" }}>{flash.msg}</div>}
 
       {/* Formulaire */}
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>

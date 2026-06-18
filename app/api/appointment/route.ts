@@ -44,14 +44,12 @@ export async function POST(req: Request) {
         { status: 409 },
       );
     }
-    // 1c. Le commercial ne peut pas être à 2 RDV à la fois (physique + déplacement, marge trajet).
+    // 1c. Alerte (NON bloquante) : le commercial a déjà un RDV à ce moment.
+    let commercialWarning: string | undefined;
     if (appt.commercial) {
       const conflict = await commercialConflict(appt.commercial, appt.startDateTime, false);
       if (conflict) {
-        return NextResponse.json(
-          { error: `⚠️ ${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Laisse le temps du RDV + trajet.` },
-          { status: 409 },
-        );
+        commercialWarning = `⚠️ ${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Pense au temps de RDV + trajet.`;
       }
     }
 
@@ -125,6 +123,7 @@ export async function POST(req: Request) {
       emailError,
       smsSent,
       smsError,
+      warning: commercialWarning,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue.";

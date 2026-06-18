@@ -43,15 +43,12 @@ export async function POST(req: Request) {
     if (!(await isMobileSlotFree(s.callCenterId, startDateTime))) {
       return NextResponse.json({ error: "Ce créneau déplacement est déjà pris." }, { status: 409 });
     }
-    // Le commercial ne peut pas être à 2 RDV à la fois (physique + déplacement, marge trajet).
+    // Alerte (NON bloquante) : le commercial a déjà un RDV à ce moment.
     const commercial = b.commercial || "Jeremy Bonamy";
     const conflict = await commercialConflict(commercial, startDateTime, true);
-    if (conflict) {
-      return NextResponse.json(
-        { error: `⚠️ ${commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Laisse le temps du RDV + ~20 min de trajet.` },
-        { status: 409 },
-      );
-    }
+    const warning = conflict
+      ? `⚠️ ${commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Pense au temps de RDV + ~20 min de trajet.`
+      : undefined;
     const appt = await createMobileAppt({
       callCenterId: s.callCenterId,
       teleprospecteur: s.email,
@@ -79,7 +76,7 @@ export async function POST(req: Request) {
       } catch { /* non-bloquant */ }
     }
 
-    return NextResponse.json({ ok: true, appointment: appt, synced: !!(appt.google_event_id || appt.google_event_id_own) });
+    return NextResponse.json({ ok: true, appointment: appt, synced: !!(appt.google_event_id || appt.google_event_id_own), warning });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
