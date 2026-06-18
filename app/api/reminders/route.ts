@@ -75,8 +75,7 @@ export async function POST(req: Request) {
     // Crée aussi un contact Google (People API). Best-effort, ne bloque pas.
     try {
       if (reminder.first_name || reminder.last_name || reminder.client_email) {
-        await createGoogleCont
-        ct({
+        await createGoogleContact({
           firstName: reminder.first_name,
           lastName: reminder.last_name,
           phone: reminder.phone,
