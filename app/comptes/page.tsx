@@ -8,7 +8,7 @@ import { COMMISSION_SCHEMES } from "@/lib/commission";
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
 
-type User = { id: number; email: string; name: string; role: "admin" | "collab" };
+type User = { id: number; email: string; name: string; role: "admin" | "collab"; is_commercial?: boolean };
 type CallCenter = { id: number; name: string; default_commercial: string };
 
 const inp: React.CSSProperties = { width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" };
@@ -17,7 +17,7 @@ function Comptes() {
   const [users, setUsers] = useState<User[]>([]);
   const [callCenter, setCallCenter] = useState<CallCenter | null>(null);
   const [err, setErr] = useState("");
-  const [mode, setMode] = useState<"telepro" | "callcenter">("telepro");
+  const [mode, setMode] = useState<"telepro" | "commercial" | "callcenter">("telepro");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,7 +58,7 @@ function Comptes() {
     try {
       const body = mode === "callcenter"
         ? { mode, name, email, password, ccName, defaultCommercial, schemeKey }
-        : { mode, name, email, password, schemeKey };
+        : { mode, name, email, password, schemeKey }; // telepro | commercial
       const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body) });
       const d = await res.json();
       if (d.ok) {
@@ -71,6 +71,11 @@ function Comptes() {
   async function del(u: User) {
     if (!confirm(`Supprimer le compte de ${u.name} ?`)) return;
     const res = await fetch(`/api/users?id=${u.id}`, { method: "DELETE", headers: authHeaders() });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  async function toggleCommercial(u: User) {
+    const res = await fetch("/api/users", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ id: u.id, isCommercial: !u.is_commercial }) });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
@@ -95,6 +100,7 @@ function Comptes() {
 
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           <button onClick={() => setMode("telepro")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "telepro" ? NAVY : "#e5e7eb"}`, background: mode === "telepro" ? NAVY : "#fff", color: mode === "telepro" ? "#fff" : "#6b7280" }}>👤 Téléprospecteur<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(mon call center)</span></button>
+          <button onClick={() => setMode("commercial")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "commercial" ? NAVY : "#e5e7eb"}`, background: mode === "commercial" ? NAVY : "#fff", color: mode === "commercial" ? "#fff" : "#6b7280" }}>🛠️ Commercial<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(exécutant de RDV)</span></button>
           <button onClick={() => setMode("callcenter")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "callcenter" ? NAVY : "#e5e7eb"}`, background: mode === "callcenter" ? NAVY : "#fff", color: mode === "callcenter" ? "#fff" : "#6b7280" }}>🏢 Nouvelle entité<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(call center indépendant)</span></button>
         </div>
 
@@ -106,7 +112,7 @@ function Comptes() {
               <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: -2 }}>Le compte ci-dessous sera le <strong>super-administrateur</strong> de cette entité (indépendante de la tienne).</div>
             </>
           )}
-          <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "callcenter" ? "Nom du super-admin" : "Nom du téléprospecteur"} />
+          <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "callcenter" ? "Nom du super-admin" : mode === "commercial" ? "Nom du commercial (ex: Jérémy Bonamy)" : "Nom du téléprospecteur"} />
           <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail" />
           <input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" />
           <div>
@@ -116,9 +122,9 @@ function Comptes() {
             </select>
           </div>
           <button onClick={add} disabled={busy || !name.trim() || !email.trim() || !password.trim()} style={{ padding: 13, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
-            {busy ? "…" : mode === "callcenter" ? "Créer l'entité + super-admin" : "Créer le téléprospecteur"}
+            {busy ? "…" : mode === "callcenter" ? "Créer l'entité + super-admin" : mode === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
           </button>
-          <p style={{ fontSize: 12, color: "#9aa6b8", margin: 0 }}>{mode === "callcenter" ? "Entité totalement séparée : ses RDV, son agenda, ses stats n'ont rien à voir avec les tiens." : "Le téléprospecteur voit les RDV de ton call center."}</p>
+          <p style={{ fontSize: 12, color: "#9aa6b8", margin: 0 }}>{mode === "callcenter" ? "Entité totalement séparée : ses RDV, son agenda, ses stats n'ont rien à voir avec les tiens." : mode === "commercial" ? "Le commercial est sélectionnable comme exécutant d'un RDV ; il voit dans son agenda/stats les RDV qui lui sont affectés." : "Le téléprospecteur voit les RDV de ton call center."}</p>
         </div>
       </div>
 
@@ -128,12 +134,15 @@ function Comptes() {
         {users.map((u) => (
           <div key={u.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {u.role === "admin" && <span style={{ fontSize: 11, color: PINK }}>(admin)</span>}</div>
+              <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {u.role === "admin" && <span style={{ fontSize: 11, color: PINK }}>(admin)</span>} {u.is_commercial && <span style={{ fontSize: 11, color: "#15803d", background: "#f0fdf4", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>🛠️ commercial</span>}</div>
               <div style={{ fontSize: 13, color: "#6b7280" }}>{u.email}</div>
             </div>
-            {u.role !== "admin" && (
-              <button onClick={() => del(u)} style={{ padding: "8px 10px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Supprimer</button>
-            )}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => toggleCommercial(u)} style={{ padding: "8px 10px", borderRadius: 8, background: u.is_commercial ? "#f0fdf4" : "#fff", color: u.is_commercial ? "#15803d" : "#6b7280", border: `1.5px solid ${u.is_commercial ? "#bbf7d0" : "#e5e7eb"}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{u.is_commercial ? "Retirer commercial" : "Marquer commercial"}</button>
+              {u.role !== "admin" && (
+                <button onClick={() => del(u)} style={{ padding: "8px 10px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Supprimer</button>
+              )}
+            </div>
           </div>
         ))}
       </div>

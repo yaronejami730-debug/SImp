@@ -20,8 +20,12 @@ export async function GET(req: Request) {
     const all = await listMobileAppts(s.callCenterId, status ? { status } : undefined);
     const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
     const myName = norm(s.name);
+    const myEmail = s.email.toLowerCase();
     const isCreator = (a: typeof all[number]) => a.teleprospecteur === s.email;
-    const isAssignee = (a: typeof all[number]) => !!myName && norm(a.commercial) === myName;
+    // Affecté : lien robuste par e-mail du compte commercial ; fallback nom pour les anciens RDV.
+    const isAssignee = (a: typeof all[number]) =>
+      (!!a.commercial_email && a.commercial_email.toLowerCase() === myEmail) ||
+      (!a.commercial_email && !!myName && norm(a.commercial) === myName);
     // Un RDV est visible par son CRÉATEUR (téléprospecteur) ET par l'AFFECTÉ (commercial). Admin : toute l'entité.
     const list = s.role === "admin" ? all : all.filter((a) => isCreator(a) || isAssignee(a));
     // Annotation de la relation pour l'affichage ("créé pour X" / "intervention à réaliser").

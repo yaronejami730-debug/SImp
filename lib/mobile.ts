@@ -4,6 +4,7 @@ import { createMobileEvent, updateMobileEvent, deleteMobileEvent, patchMobileFir
 import { geocode } from "./geocode";
 import { genRef } from "./ref";
 import { entityIdByCommercial } from "./call-centers";
+import { commercialEmailByName } from "./users";
 
 export type MobileStatus = "prospect" | "booked" | "confirmed" | "done" | "cancelled";
 
@@ -12,6 +13,7 @@ export type MobileAppt = {
   call_center_id: number;
   teleprospecteur: string;
   commercial: string;
+  commercial_email: string;
   civility: string;
   first_name: string;
   last_name: string;
@@ -56,7 +58,7 @@ export type MobileInput = {
 const evt = (a: MobileAppt) => ({
   firstName: a.first_name, lastName: a.last_name, email: a.email, phone: a.phone, civility: a.civility,
   vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "), carBrand: a.car_brand, carModel: a.car_model,
-  immatriculation: a.immatriculation, commercial: a.commercial,
+  immatriculation: a.immatriculation, commercial: a.commercial, commercialEmail: a.commercial_email,
   address: a.address, startDateTime: a.start_datetime, durationMin: SLOT_MIN, notes: a.notes, ref: a.ref,
   owner: a.teleprospecteur, callCenterId: a.call_center_id, commercialCc: a.commercial_cc,
 });
@@ -76,13 +78,14 @@ export async function isMobileSlotFree(callCenterId: number, startISO: string, i
 }
 
 export async function createMobileAppt(input: MobileInput): Promise<MobileAppt> {
+  const commercialName = input.commercial ?? "Jeremy Bonamy";
   const { rows } = await getPool().query<MobileAppt>(
     `insert into appointments_mobile
-       (call_center_id, teleprospecteur, commercial, civility, first_name, last_name, email, phone, car_brand, car_model, immatriculation, address, start_datetime, notes, status, ref, commercial_cc)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       (call_center_id, teleprospecteur, commercial, commercial_email, civility, first_name, last_name, email, phone, car_brand, car_model, immatriculation, address, start_datetime, notes, status, ref, commercial_cc)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      returning *`,
     [
-      input.callCenterId, input.teleprospecteur ?? "", input.commercial ?? "Jeremy Bonamy", input.civility ?? "",
+      input.callCenterId, input.teleprospecteur ?? "", commercialName, await commercialEmailByName(commercialName), input.civility ?? "",
       input.firstName.trim(), input.lastName ?? "", input.email ?? "", input.phone ?? "",
       input.carBrand ?? "", input.carModel ?? "", input.immatriculation ?? "", input.address ?? "",
       input.startDateTime, input.notes ?? "", input.status ?? "booked", genRef(),
@@ -138,6 +141,11 @@ export async function updateMobileAppt(id: number, patch: Partial<MobileInput>):
   for (const [k, col] of Object.entries(map)) {
     const v = (patch as Record<string, unknown>)[k];
     if (v !== undefined) { params.push(v); sets.push(`${col} = $${params.length}`); }
+  }
+  // Le commercial change -> re-résout son e-mail de compte (lien robuste).
+  if (patch.commercial !== undefined) {
+    params.push(await commercialEmailByName(patch.commercial));
+    sets.push(`commercial_email = $${params.length}`);
   }
   if (!sets.length) return getMobileAppt(id);
   params.push(id);

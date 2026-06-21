@@ -3,6 +3,7 @@ import type { Appointment } from "./parse";
 import { commercialInviteEmail } from "./commerciaux";
 import { genRef } from "./ref";
 import { entityIdByCommercial } from "./call-centers";
+import { commercialEmailByName } from "./users";
 import { SLOT_MIN } from "./slots";
 
 const COMM_BUFFER_MS = Number(process.env.MOBILE_BUFFER_MIN ?? 20) * 60000; // marge trajet autour des déplacements
@@ -146,6 +147,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const invite = commercialInviteEmail(a.commercial); // ex: Bonamy -> bonamy.mimi@gmail.com
   const ref = genRef();
   const commercialCc = await entityIdByCommercial(a.commercial); // entité du commercial (cross-entité)
+  const commercialEmail = await commercialEmailByName(a.commercial); // compte commercial affecté (lien robuste)
   const requestBody: calendar_v3.Schema$Event = {
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
@@ -179,6 +181,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           platform: a.platform,
           listingUrl: a.listingUrl,
           commercial: a.commercial ?? "",
+          commercialEmail,
           carBrand: a.carBrand ?? "",
           carModel: a.carModel ?? "",
           carFinish: a.carFinish ?? "",
@@ -333,6 +336,7 @@ export type AppointmentItem = {
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
   owner: string; // email du collaborateur ayant créé le RDV
   commercial: string; // nom du commercial qui gère le RDV
+  commercialEmail: string; // e-mail du compte commercial affecté (lien robuste)
   civility: string;
   createdAt: string | null;
   history: { t: string; at: string; info?: string }[];
@@ -383,6 +387,7 @@ export async function listAppointments(
       negotiation: p.negotiation ? Number(p.negotiation) : 0,
       owner: p.owner ?? "",
       commercial: p.commercial ?? "",
+      commercialEmail: p.commercialEmail ?? "",
       civility: p.clientCivility ?? "",
       createdAt: ev.created ?? null,
       history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),
@@ -459,12 +464,13 @@ export async function patchContact(eventId: string, fields: { phone?: string; em
   });
 }
 
-/** Met à jour le commercial qui gère un RDV. */
+/** Met à jour le commercial qui gère un RDV (+ re-résout l'e-mail du compte commercial). */
 export async function patchCommercial(eventId: string, commercial: string) {
+  const commercialEmail = await commercialEmailByName(commercial);
   await calendarClient().events.patch({
     calendarId: CALENDAR_ID,
     eventId,
-    requestBody: { extendedProperties: { private: { commercial: commercial.trim() } } },
+    requestBody: { extendedProperties: { private: { commercial: commercial.trim(), commercialEmail } } },
   });
 }
 
@@ -650,7 +656,7 @@ const MOBILE_ATTENDEE = process.env.MOBILE_ATTENDEE_EMAIL ?? "bonamy.mimi@gmail.
 
 export type MobileEventInput = {
   firstName: string; lastName?: string; email?: string; phone?: string; civility?: string;
-  vehicle?: string; carBrand?: string; carModel?: string; immatriculation?: string; commercial?: string;
+  vehicle?: string; carBrand?: string; carModel?: string; immatriculation?: string; commercial?: string; commercialEmail?: string;
   address?: string; startDateTime: string; durationMin: number; notes?: string; ref?: string;
   owner?: string; callCenterId?: number; commercialCc?: number;
 };
@@ -673,6 +679,7 @@ function mobileOwnPrivate(a: MobileEventInput): Record<string, string> {
     clientLastName: a.lastName ?? "",
     platform: "Déplacement",
     commercial: a.commercial ?? "",
+    commercialEmail: a.commercialEmail ?? "",
     carBrand: a.carBrand ?? "",
     carModel: a.carModel ?? "",
     immatriculation: a.immatriculation ?? "",

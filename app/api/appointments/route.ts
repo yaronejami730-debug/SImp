@@ -17,14 +17,22 @@ export async function GET(req: Request) {
   try {
     // Visible par l'entité créatrice (téléprospecteur) ET par l'entité du commercial.
     const items = (await listAppointments(timeMin, timeMax)).filter((a) => a.callCenterId === s.callCenterId || a.commercialCc === s.callCenterId);
-    // Collab : ses RDV (créés par lui) + ceux où il est le commercial de son entité.
-    const visible = s.role === "admin" ? items : items.filter((a) => a.owner === s.email || a.commercialCc === s.callCenterId);
     // Annotation de la relation de l'utilisateur connecté (créateur / affecté) : filtres + mentions.
     const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
     const myName = norm(s.name);
+    const myEmail = s.email.toLowerCase();
+    const isCreator = (a: typeof items[number]) => a.owner === s.email;
+    // Affecté : lien robuste par e-mail du compte commercial ; fallback nom (anciens RDV).
+    const isAssignee = (a: typeof items[number]) =>
+      (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
+      (!a.commercialEmail && !!myName && norm(a.commercial) === myName);
+    // Collab : ses RDV (créés par lui) + ceux qui lui sont affectés + ceux de son entité.
+    const visible = s.role === "admin"
+      ? items
+      : items.filter((a) => isCreator(a) || isAssignee(a) || a.commercialCc === s.callCenterId);
     const annotated = visible.map((a) => {
-      const created = a.owner === s.email;
-      const assigned = !!myName && norm(a.commercial) === myName;
+      const created = isCreator(a);
+      const assigned = isAssignee(a);
       const relation: "created" | "assigned" | "both" | "none" =
         created && assigned ? "both" : created ? "created" : assigned ? "assigned" : "none";
       return { ...a, relation };

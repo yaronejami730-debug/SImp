@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getCallCenter, listCallCenters } from "@/lib/call-centers";
-import { getUserByEmail } from "@/lib/users";
+import { getUserByEmail, listCommercials } from "@/lib/users";
 import { COMMERCIAUX } from "@/lib/commerciaux";
 
 export const dynamic = "force-dynamic";
@@ -16,13 +16,22 @@ export async function GET(req: Request) {
     try { const u = await getUserByEmail(s.email); if (u?.call_center_id) callCenterId = u.call_center_id; } catch { /* défaut token */ }
     const cc = await getCallCenter(callCenterId);
     const def = cc?.default_commercial?.trim() || "";
-    // Entité Yaron (1) : liste complète. Autres entités : UNIQUEMENT leur commercial (forcé).
-    const commerciaux = callCenterId === 1
-      ? [def, ...COMMERCIAUX].filter((c, i, arr) => c && arr.indexOf(c) === i)
-      : (def ? [def] : [...COMMERCIAUX]);
-    // Commerciaux de TOUTES les entités (pour assigner un déplacement à un commercial externe).
+
+    // Phase A : comptes commerciaux réels (sélectionnables comme exécutant), tous entités confondus.
+    const commercialAccounts = await listCommercials(); // [{ email, name, call_center_id }]
+
+    // Liste de noms (rétrocompat) = comptes commerciaux + anciens libellés + default_commercial.
     const allCcs = await listCallCenters();
-    const allCommerciaux = Array.from(new Set([...allCcs.map((c) => c.default_commercial.trim()).filter(Boolean), ...COMMERCIAUX]));
+    const accountNames = commercialAccounts.map((c) => c.name.trim()).filter(Boolean);
+    const allCommerciaux = Array.from(new Set([
+      ...accountNames,
+      ...allCcs.map((c) => c.default_commercial.trim()).filter(Boolean),
+      ...COMMERCIAUX,
+    ]));
+    // Entité 1 (Yaron) : liste complète ; autres entités : comptes commerciaux + leur default.
+    const commerciaux = callCenterId === 1
+      ? allCommerciaux
+      : Array.from(new Set([...accountNames, def].filter(Boolean)));
 
     return NextResponse.json({
       ok: true,
@@ -30,6 +39,7 @@ export async function GET(req: Request) {
       callCenter: cc ? { id: cc.id, name: cc.name, defaultCommercial: def } : null,
       commerciaux,
       allCommerciaux,
+      commercialAccounts, // {email,name} pour stocker l'e-mail du commercial sur le RDV
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
