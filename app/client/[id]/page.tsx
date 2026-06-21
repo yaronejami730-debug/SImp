@@ -208,13 +208,60 @@ function StatusBadge({ status }: { status: string }) {
     sent: { t: "Envoyé", bg: "#eff6ff", c: "#2563eb" },
     delivered: { t: "Délivré", bg: "#ecfdf5", c: "#16a34a" },
     opened: { t: "Ouvert", bg: "#eef2ff", c: "#4f46e5" },
-    error: { t: "Erreur", bg: "#fef2f2", c: "#dc2626" },
+    error: { t: "Échec", bg: "#fef2f2", c: "#dc2626" },
+    skipped: { t: "Désactivé", bg: "#fff7ed", c: "#c2410c" },
+    pending: { t: "En attente", bg: "#f1f5f9", c: "#64748b" },
   };
   const s = map[status] ?? { t: status, bg: "#f1f3f5", c: "#6b7280" };
   return <span style={{ background: s.bg, color: s.c, fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 6 }}>{s.t}</span>;
 }
 
-function MessageTimeline({ id, refreshKey }: { id: string; refreshKey: number }) {
+// Matrice de suivi des notifications attendues pour un RDV : confirmation + rappel 24h, mail & SMS.
+const NOTIF_SLOTS: { label: string; channel: "email" | "sms"; keys: string[] }[] = [
+  { label: "Confirmation — Email", channel: "email", keys: ["confirmation", "mobile_confirmation"] },
+  { label: "Confirmation — SMS", channel: "sms", keys: ["sms_confirmation", "sms_mobile_confirmation"] },
+  { label: "Rappel 24h — Email", channel: "email", keys: ["reminder24", "mobile_reminder24"] },
+  { label: "Rappel 24h — SMS", channel: "sms", keys: ["sms_reminder24", "sms_mobile_reminder24"] },
+];
+
+function NotifMatrix({ msgs, startDateTime }: { msgs: MsgMeta[]; startDateTime?: string | null }) {
+  // RDV passé depuis > 24h : un rappel manquant = vrai trou (sinon "en attente" normal).
+  const past24 = startDateTime ? new Date(startDateTime).getTime() < Date.now() : false;
+  const rows = NOTIF_SLOTS.map((slot) => {
+    const matches = msgs
+      .filter((m) => m.channel === slot.channel && slot.keys.includes(m.templateKey))
+      .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+    const m = matches[0];
+    const isReminder = slot.keys[0].includes("reminder");
+    // Pas de message : "en attente" pour un rappel futur, "manquant" si le RDV est passé.
+    const status = m?.status ?? (isReminder && !past24 ? "pending" : past24 ? "error" : "pending");
+    const error = m?.error ?? (status === "error" && !m ? "Aucun envoi enregistré." : "");
+    return { label: slot.label, status, error, sentAt: m?.sentAt };
+  });
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, marginBottom: 14, background: "#fafbfc" }}>
+      <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 12, fontWeight: 700, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>📋 Suivi des notifications</div>
+      <div style={{ display: "grid", gap: 6 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12.5, color: NAVY, fontWeight: 600 }}>{r.label}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {r.sentAt && <span style={{ fontSize: 10.5, color: "#9aa6b8" }}>{fmtDT(r.sentAt)}</span>}
+              <StatusBadge status={r.status} />
+            </span>
+          </div>
+        ))}
+      </div>
+      {rows.some((r) => r.error) && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#dc2626" }}>
+          {rows.filter((r) => r.error).map((r) => <div key={r.label}>⚠️ {r.label} : {r.error}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageTimeline({ id, refreshKey, startDateTime }: { id: string; refreshKey: number; startDateTime?: string | null }) {
   const [msgs, setMsgs] = useState<MsgMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [brevoErr, setBrevoErr] = useState("");
@@ -269,13 +316,18 @@ function MessageTimeline({ id, refreshKey }: { id: string; refreshKey: number })
     <>
       {loading ? (
         <div style={{ color: "#9aa6b8", fontSize: 13 }}>Chargement…</div>
-      ) : msgs.length === 0 ? (
-        <div style={{ color: "#9aa6b8", fontSize: 13 }}>Aucun message envoyé pour le moment.</div>
       ) : (
-        <div style={{ display: "flex", gap: 14 }}>
-          {col("📧 Mails", mails)}
-          {col("📱 SMS", sms)}
-        </div>
+        <>
+          <NotifMatrix msgs={msgs} startDateTime={startDateTime} />
+          {msgs.length === 0 ? (
+            <div style={{ color: "#9aa6b8", fontSize: 13 }}>Aucun message envoyé pour le moment.</div>
+          ) : (
+            <div style={{ display: "flex", gap: 14 }}>
+              {col("📧 Mails", mails)}
+              {col("📱 SMS", sms)}
+            </div>
+          )}
+        </>
       )}
       {brevoErr && <div style={{ marginTop: 10, fontSize: 11.5, color: "#ca8a04" }}>⚠️ Récupération Brevo : {brevoErr}</div>}
       {openMsg && <MessageModal meta={openMsg} onClose={() => setOpenMsg(null)} />}
@@ -876,6 +928,13 @@ function ClientPage({ id }: { id: string }) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* === NOTIFICATIONS & PREUVES === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>📨 Notifications</h2>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Suivi des envois attendus (confirmation + rappel 24h, mail &amp; SMS) et historique détaillé avec statut, date et erreur éventuelle.</p>
+        <MessageTimeline id={a.id} refreshKey={msgKey} startDateTime={a.startDateTime} />
       </div>
 
       {/* === LOGISTIQUE === */}

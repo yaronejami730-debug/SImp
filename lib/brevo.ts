@@ -20,8 +20,23 @@ type SendOpts = {
 
 /** Envoie un e-mail transactionnel via l'API Brevo. Renvoie { messageId } ou { skipped } si template désactivé. */
 export async function sendEmail(opts: SendOpts): Promise<{ messageId?: string; skipped?: boolean }> {
-  // Template désactivé depuis le dashboard -> on n'envoie pas.
+  // Template désactivé depuis le dashboard -> on n'envoie pas, mais on garde une trace.
   if (opts.log?.templateKey && (await isTemplateDisabled(opts.log.templateKey, "email"))) {
+    if (opts.log) {
+      await logMessage({
+        channel: "email",
+        toEmail: opts.to,
+        clientName: opts.log.clientName ?? opts.toName,
+        owner: opts.log.owner,
+        eventId: opts.log.eventId,
+        templateKey: opts.log.templateKey,
+        origin: opts.log.origin,
+        subject: opts.subject,
+        provider: "brevo",
+        status: "skipped",
+        error: "Template désactivé depuis le dashboard.",
+      });
+    }
     return { skipped: true };
   }
   try {

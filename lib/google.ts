@@ -617,7 +617,7 @@ export async function markParkingSent(eventId: string) {
   });
 }
 
-/** Marque qu'un rappel (24h ou 2h) a été envoyé + historique. */
+/** Marque qu'un rappel MAIL (24h ou 2h) a été envoyé + historique. */
 export async function markReminderSent(eventId: string, kind: "24h" | "2h" | "15min") {
   const key = kind === "24h" ? "reminder24Sent" : kind === "2h" ? "reminder2Sent" : "reminder15Sent";
   const histType = kind === "24h" ? "reminder_24h" : kind === "2h" ? "reminder_2h" : "reminder_15min";
@@ -627,6 +627,17 @@ export async function markReminderSent(eventId: string, kind: "24h" | "2h" | "15
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: { extendedProperties: { private: { [key]: "1", history: JSON.stringify(hist.slice(-40)) } } },
+  });
+}
+
+/** Marque qu'un rappel SMS (24h ou 2h) a été envoyé. Flag séparé du mail :
+ *  si le mail part mais que le SMS échoue, le SMS sera retenté au prochain cron. */
+export async function markReminderSmsSent(eventId: string, kind: "24h" | "2h") {
+  const key = kind === "24h" ? "reminder24SmsSent" : "reminder2SmsSent";
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { [key]: "1" } } },
   });
 }
 

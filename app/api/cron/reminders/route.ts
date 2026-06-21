@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listEvents, markReminderSent, markParkingSent } from "@/lib/google";
+import { listEvents, markReminderSent, markReminderSmsSent, markParkingSent } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail, noShowFollowupEmail, reminderApproachEmail } from "@/lib/email-templates";
@@ -58,49 +58,56 @@ export async function GET(req: Request) {
     if (msUntil <= 0) continue;
 
     const priv = ev.extendedProperties?.private ?? {};
-    let kind: "24h" | "2h" | null = null;
-    if (msUntil <= H2 && !priv.reminder2Sent) kind = "2h";
-    else if (msUntil <= H24 && msUntil > H2 && !priv.reminder24Sent) kind = "24h";
-    if (!kind) continue;
+    // Flags MAIL et SMS indépendants : si le mail part mais que le SMS échoue,
+    // le SMS sera retenté au prochain cron (et inversement).
+    let emailKind: "24h" | "2h" | null = null;
+    if (msUntil <= H2 && !priv.reminder2Sent) emailKind = "2h";
+    else if (msUntil <= H24 && msUntil > H2 && !priv.reminder24Sent) emailKind = "24h";
+    let smsKind: "24h" | "2h" | null = null;
+    if (msUntil <= H2 && !priv.reminder2SmsSent) smsKind = "2h";
+    else if (msUntil <= H24 && msUntil > H2 && !priv.reminder24SmsSent) smsKind = "24h";
+    if (!emailKind && !smsKind) continue;
 
     const email = priv.clientEmail;
+    const phone = priv.clientPhone;
     const firstName = priv.clientFirstName ?? "";
-    if (!email) continue;
-
-    const mail = reminderEmail({
-      civility: priv.clientCivility,
-      firstName,
-      lastName: priv.clientLastName,
-      startDateTime: startIso,
-      location: ev.location ?? "",
-      kind,
-      whatsappUrl: whatsappUrl(),
-      rescheduleUrl: rescheduleUrl(base, ev.id),
-    });
-
     const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
-    try {
-      await sendEmail({
-        to: email, toName: firstName, subject: mail.subject, html: mail.html,
-        log: { templateKey: kind === "2h" ? "reminder2" : "reminder24", clientName, owner: priv.owner, eventId: ev.id },
+
+    // Mail de rappel.
+    if (emailKind && email) {
+      const mail = reminderEmail({
+        civility: priv.clientCivility,
+        firstName,
+        lastName: priv.clientLastName,
+        startDateTime: startIso,
+        location: ev.location ?? "",
+        kind: emailKind,
+        whatsappUrl: whatsappUrl(),
+        rescheduleUrl: rescheduleUrl(base, ev.id),
       });
-      await markReminderSent(ev.id, kind);
-      sent++;
-    } catch (e) {
-      errors.push(e instanceof Error ? e.message : String(e));
+      try {
+        await sendEmail({
+          to: email, toName: firstName, subject: mail.subject, html: mail.html,
+          log: { templateKey: emailKind === "2h" ? "reminder2" : "reminder24", clientName, owner: priv.owner, eventId: ev.id },
+        });
+        await markReminderSent(ev.id, emailKind);
+        sent++;
+      } catch (e) {
+        errors.push(`Mail rappel ${emailKind}: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
-    // SMS de rappel (systématique, en plus du mail). Non-bloquant.
-    const phone = priv.clientPhone;
-    if (phone) {
+    // SMS de rappel (flag séparé du mail). Non-bloquant.
+    if (smsKind && phone) {
       try {
         await sendSMS({
-          to: phone, text: reminderSmsText(startIso, ev.location ?? "", kind),
-          log: { templateKey: kind === "2h" ? "sms_reminder2" : "sms_reminder24", clientName, owner: priv.owner, eventId: ev.id, toEmail: email },
+          to: phone, text: reminderSmsText(startIso, ev.location ?? "", smsKind),
+          log: { templateKey: smsKind === "2h" ? "sms_reminder2" : "sms_reminder24", clientName, owner: priv.owner, eventId: ev.id, toEmail: email },
         });
+        await markReminderSmsSent(ev.id, smsKind);
         smsSent++;
       } catch (e) {
-        errors.push(`SMS rappel ${kind}: ${e instanceof Error ? e.message : String(e)}`);
+        errors.push(`SMS rappel ${smsKind}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
   }

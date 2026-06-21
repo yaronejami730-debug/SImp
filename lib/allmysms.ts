@@ -33,19 +33,35 @@ export async function sendSMS(opts: SendSmsOpts) {
 
   if (!login || !apiKey) throw new Error("ALLMYSMS_LOGIN / ALLMYSMS_API_KEY manquants.");
 
-  // Template SMS désactivé depuis le dashboard -> on n'envoie pas.
+  // Import dynamique pour éviter une dépendance circulaire (messages -> allmysms).
+  const { logMessage } = await import("./messages");
+
+  // Template SMS désactivé depuis le dashboard -> on n'envoie pas, mais on garde une trace.
   if (opts.log?.templateKey) {
     const { isTemplateDisabled } = await import("./template-settings");
-    if (await isTemplateDisabled(opts.log.templateKey, "sms")) return { skipped: true };
+    if (await isTemplateDisabled(opts.log.templateKey, "sms")) {
+      await logMessage({
+        channel: "sms",
+        toPhone: opts.to,
+        toEmail: opts.log.toEmail,
+        clientName: opts.log.clientName,
+        owner: opts.log.owner,
+        eventId: opts.log.eventId,
+        templateKey: opts.log.templateKey,
+        origin: opts.log.origin,
+        bodyText: opts.text,
+        provider: "allmysms",
+        status: "skipped",
+        error: "Template désactivé depuis le dashboard.",
+      });
+      return { skipped: true };
+    }
   }
 
   const to = normalizePhoneFR(opts.to);
   if (!to) throw new Error(`Numéro invalide: ${opts.to}`);
 
   const auth = Buffer.from(`${login}:${apiKey}`).toString("base64");
-
-  // Import dynamique pour éviter une dépendance circulaire (messages -> allmysms).
-  const { logMessage } = await import("./messages");
 
   try {
     const res = await fetch("https://api.allmysms.com/sms/send/", {

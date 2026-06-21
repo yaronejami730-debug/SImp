@@ -18,8 +18,20 @@ export async function GET(req: Request) {
   const status = new URL(req.url).searchParams.get("status") as MobileStatus | null;
   try {
     const all = await listMobileAppts(s.callCenterId, status ? { status } : undefined);
-    // Collaborateur (téléprospecteur) : seulement ses RDV. Admin : toute l'entité.
-    const appts = s.role === "admin" ? all : all.filter((a) => a.teleprospecteur === s.email);
+    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+    const myName = norm(s.name);
+    const isCreator = (a: typeof all[number]) => a.teleprospecteur === s.email;
+    const isAssignee = (a: typeof all[number]) => !!myName && norm(a.commercial) === myName;
+    // Un RDV est visible par son CRÉATEUR (téléprospecteur) ET par l'AFFECTÉ (commercial). Admin : toute l'entité.
+    const list = s.role === "admin" ? all : all.filter((a) => isCreator(a) || isAssignee(a));
+    // Annotation de la relation pour l'affichage ("créé pour X" / "intervention à réaliser").
+    const appts = list.map((a) => {
+      const created = isCreator(a);
+      const assigned = isAssignee(a);
+      const relation: "created" | "assigned" | "both" | "none" =
+        created && assigned ? "both" : created ? "created" : assigned ? "assigned" : "none";
+      return { ...a, relation };
+    });
     return NextResponse.json({ ok: true, appointments: appts });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

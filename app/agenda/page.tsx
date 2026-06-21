@@ -16,6 +16,7 @@ type Appt = {
   email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
+  relation?: "created" | "assigned" | "both" | "none";
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
@@ -43,6 +44,8 @@ function Agenda() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  type RelFilter = "mine" | "created" | "assigned" | "team";
+  const [relFilter, setRelFilter] = useState<RelFilter>("mine");
 
   useEffect(() => { load(); }, []);
 
@@ -101,18 +104,30 @@ function Agenda() {
     else alert("Erreur : " + (d.error ?? ""));
   }
 
+  // Filtre par relation : tous mes RDV / créés par moi / qui me sont affectés / équipe.
+  const relMatch = (a: Appt): boolean => {
+    switch (relFilter) {
+      case "created": return a.relation === "created" || a.relation === "both";
+      case "assigned": return a.relation === "assigned" || a.relation === "both";
+      case "mine": return a.relation === "created" || a.relation === "assigned" || a.relation === "both";
+      case "team": default: return true;
+    }
+  };
+
   // Filtre recherche (garde annulés pour les voir en rouge)
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const qd = onlyDigits(q);
     return appts.filter((a) => {
       if (!a.startDateTime) return false;
+      if (!relMatch(a)) return false;
       if (!q) return true;
       if (qd && onlyDigits(a.phone).includes(qd)) return true;
       const hay = `${a.firstName} ${a.lastName} ${a.email} ${a.carBrand} ${a.carModel} ${a.carFinish} ${a.platform}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [appts, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appts, search, relFilter]);
 
   // Couleur dominante d'un jour selon priorité : annulé > signé > réfléchit > pris
   const dayColor = (list: Appt[]): string => {
@@ -201,6 +216,13 @@ function Agenda() {
   const card = (a: Appt) => (
     <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderLeft: `4px solid ${statusColor(a)}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
       {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>ANNULÉ</div>}
+      {(() => {
+        const b = a.relation === "both" ? { t: "🔁 Créé & à réaliser par moi", c: "#7c3aed", bg: "#f5f3ff" }
+          : a.relation === "created" ? { t: `📤 Créé pour ${a.commercial || "—"}`, c: "#0369a1", bg: "#f0f9ff" }
+          : a.relation === "assigned" ? { t: "🛠️ Intervention à réaliser", c: "#15803d", bg: "#f0fdf4" }
+          : null;
+        return b ? <div style={{ display: "inline-block", marginBottom: 8, marginLeft: a.cancelled ? 6 : 0, padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: b.c, background: b.bg }}>{b.t}</div> : null;
+      })()}
       <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div>
           <a href={`/client/${encodeURIComponent(a.id)}`} style={{ fontWeight: 700, color: NAVY, textDecoration: a.cancelled ? "line-through" : "none", fontSize: 15 }}>
@@ -208,7 +230,8 @@ function Agenda() {
           </a>
           {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}</div>}
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{a.commercial ? ` · 👤 ${a.commercial}` : ""}{isAdmin && a.owner ? ` · par ${a.owner}` : ""}</div>
+          <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{a.commercial ? ` · 👤 Commercial : ${a.commercial}` : ""}</div>
+          {(isAdmin || a.relation === "created" || a.relation === "both") && a.owner && <div style={{ fontSize: 12.5, color: "#9aa6b8" }}>✍️ Créé par : {a.owner}</div>}
           {a.listingUrl && <a href={safeUrl(a.listingUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "underline", fontWeight: 600, display: "inline-block", marginTop: 2 }}>🔗 Voir l&apos;annonce</a>}
         </div>
         <div style={{ textAlign: "right" }}>
@@ -340,7 +363,19 @@ function Agenda() {
 
   return (
     <>
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher dans tout l'agenda (nom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 14 }} />
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher dans tout l'agenda (nom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 10 }} />
+
+      {/* Filtres par relation au RDV */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        {([
+          { k: "mine", label: "Tous mes RDV" },
+          { k: "created", label: "Mes RDV créés" },
+          { k: "assigned", label: "Mes RDV affectés" },
+          { k: "team", label: isAdmin ? "Tous (équipe)" : "RDV de mon équipe" },
+        ] as { k: RelFilter; label: string }[]).map((f) => (
+          <button key={f.k} onClick={() => setRelFilter(f.k)} style={{ padding: "7px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${relFilter === f.k ? PINK : "#e5e7eb"}`, background: relFilter === f.k ? PINK : "#fff", color: relFilter === f.k ? "#fff" : "#6b7280" }}>{f.label}</button>
+        ))}
+      </div>
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>

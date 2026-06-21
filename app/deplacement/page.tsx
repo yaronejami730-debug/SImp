@@ -14,11 +14,23 @@ const MUTED = "#6b7280";
 const LINE = "#e5e7eb";
 
 type Status = "prospect" | "booked" | "confirmed" | "done" | "cancelled";
+type Relation = "created" | "assigned" | "both" | "none";
 type Appt = {
   id: number; teleprospecteur: string; commercial: string; civility: string;
   first_name: string; last_name: string; email: string; phone: string;
   car_brand: string; car_model: string; immatriculation: string; address: string;
   start_datetime: string; notes: string; status: Status; google_event_id: string; ref: string;
+  relation?: Relation;
+};
+
+/** Mention selon la relation de l'utilisateur connecté au RDV. */
+const relationBadge = (a: Appt): { label: string; color: string; bg: string } | null => {
+  switch (a.relation) {
+    case "both": return { label: "🔁 Créé par moi · à réaliser par moi", color: "#7c3aed", bg: "#f5f3ff" };
+    case "created": return { label: `📤 Créé pour ${a.commercial}`, color: "#0369a1", bg: "#f0f9ff" };
+    case "assigned": return { label: "🛠️ Intervention à réaliser", color: "#15803d", bg: "#f0fdf4" };
+    default: return null;
+  }
 };
 
 const STATUSES: { key: Status; label: string; color: string }[] = [
@@ -223,18 +235,22 @@ function Deplacement() {
         ))}
       </div>
 
-      {/* Mini CRM retiré : les RDV déplacement apparaissent dans CRM + Agenda (même fiche que le physique). */}
-      {false && (
+      {/* RDV déplacement : visibles par le CRÉATEUR (téléprospecteur) ET par l'AFFECTÉ (commercial).
+          Source = base de données (fiable pour les anciens RDV, indépendant de Google). */}
+      {(
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 }}>
-        <h2 style={{ margin: "0 0 12px", fontFamily: "'Cabin',sans-serif", fontSize: 13, fontWeight: 700, color: SKY, textTransform: "uppercase", letterSpacing: 0.6 }}>CRM déplacement ({active.length} actifs)</h2>
+        <h2 style={{ margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 13, fontWeight: 700, color: SKY, textTransform: "uppercase", letterSpacing: 0.6 }}>Mes RDV déplacement ({active.length} actifs)</h2>
+        <p style={{ margin: "0 0 12px", fontSize: 12, color: MUTED }}>Ceux que tu as créés <strong>et</strong> ceux qui te sont affectés.</p>
         {loading ? <div style={{ color: MUTED, fontSize: 13 }}>Chargement…</div>
           : appts.length === 0 ? <div style={{ color: "#9aa6b8", fontSize: 13 }}>Aucun RDV déplacement.</div>
           : (
             <div style={{ display: "grid", gap: 10 }}>
               {appts.map((a) => {
                 const c = stConf(a.status);
+                const badge = relationBadge(a);
                 return (
                   <div key={a.id} style={{ border: `1px solid ${LINE}`, borderLeft: `4px solid ${c.color}`, borderRadius: 10, padding: 12 }}>
+                    {badge && <div style={{ display: "inline-block", marginBottom: 7, padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: badge.color, background: badge.bg }}>{badge.label}</div>}
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 700, color: NAVY }}>{a.first_name} {a.last_name} <span style={{ fontSize: 12, fontWeight: 600, color: c.color }}>· {c.label}</span></div>

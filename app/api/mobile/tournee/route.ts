@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listMobileAppts, ensureCoords } from "@/lib/mobile";
 import { toParisISO } from "@/lib/parse";
-import { AGENCY_COORDS, nearestNeighborOrder, distanceKm, type LatLng } from "@/lib/geocode";
+import { AGENCY_COORDS, distanceKm, type LatLng } from "@/lib/geocode";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -21,14 +21,20 @@ export async function GET(req: Request) {
   try {
     const dayStart = new Date(toParisISO(date, "00:00"));
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
+    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+    const myName = norm(s.name);
     const appts = (await listMobileAppts(s.callCenterId, { from: dayStart.toISOString(), to: dayEnd.toISOString() }))
       .filter((a) => a.status !== "cancelled")
-      .filter((a) => s.role === "admin" || a.teleprospecteur === s.email);
+      // Visible par le créateur (téléprospecteur) ET par l'affecté (commercial). Admin : tout.
+      .filter((a) => s.role === "admin" || a.teleprospecteur === s.email || (myName && norm(a.commercial) === myName))
+      // L'HEURE du RDV est prioritaire : ordre chronologique strict, jamais réordonné pour gagner des km.
+      .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
 
     await ensureCoords(appts);
 
     const points: (LatLng | null)[] = appts.map((a) => (a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null));
-    const order = nearestNeighborOrder(start, points);
+    // Ordre = chronologique (index naturel). Les km sont calculés le long de cet ordre, à titre indicatif.
+    const order = appts.map((_, i) => i);
 
     let prev: LatLng = start;
     let totalKm = 0;
