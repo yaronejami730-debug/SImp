@@ -123,7 +123,7 @@ function Deplacement() {
   const [tourBusy, setTourBusy] = useState(false);
   const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
   const [locBusy, setLocBusy] = useState(false);
-  const [tour, setTour] = useState<{ count: number; totalKm: number; stops: { rank: number; client: string; address: string; time: string; vehicle: string; legKm: number | null; geocoded: boolean }[] } | null>(null);
+  const [tour, setTour] = useState<{ count: number; totalKm: number; totalMin?: number; trafficUsed?: boolean; stops: { rank: number; client: string; address: string; time: string; vehicle: string; legKm: number | null; legMin?: number | null; geocoded: boolean }[] } | null>(null);
 
   function locate() {
     if (!navigator.geolocation) { setFlash({ ok: false, msg: "Géolocalisation non supportée." }); return; }
@@ -217,7 +217,7 @@ function Deplacement() {
         </div>
         {tour && (tour.stops.length === 0 ? <div style={{ fontSize: 13, color: "#9aa6b8" }}>Aucun RDV déplacement ce jour.</div> : (
           <>
-            <div style={{ fontSize: 13, color: NAVY, marginBottom: 10 }}><strong>{tour.count}</strong> RDV · ~<strong>{tour.totalKm} km</strong> de trajet · départ {myPos ? "ta position" : "agence"}</div>
+            <div style={{ fontSize: 13, color: NAVY, marginBottom: 10 }}><strong>{tour.count}</strong> RDV · ~<strong>{tour.totalKm} km</strong>{tour.totalMin ? ` · ~${tour.totalMin} min` : ""} de trajet · départ {myPos ? "ta position" : "agence"}{tour.trafficUsed ? " · 🚦 trafic réel" : ""}</div>
             <div style={{ display: "grid", gap: 8 }}>
               {tour.stops.map((s) => (
                 <div key={s.rank} style={{ display: "flex", gap: 10, alignItems: "center", border: `1px solid ${LINE}`, borderRadius: 9, padding: "9px 11px" }}>
@@ -226,7 +226,7 @@ function Deplacement() {
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: NAVY }}>{s.client} <span style={{ fontWeight: 400, color: MUTED }}>· {new Date(s.time).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })}</span></div>
                     <div style={{ fontSize: 12, color: MUTED }}>📍 {s.address || "—"} {!s.geocoded && <span style={{ color: "#ca8a04" }}>(adresse non localisée)</span>}</div>
                   </div>
-                  {s.legKm != null && <div style={{ fontSize: 11.5, color: "#9aa6b8", flexShrink: 0 }}>+{s.legKm} km</div>}
+                  {s.legKm != null && <div style={{ fontSize: 11.5, color: "#9aa6b8", flexShrink: 0, textAlign: "right" }}>+{s.legKm} km{s.legMin != null ? <><br />~{s.legMin} min</> : null}</div>}
                 </div>
               ))}
             </div>

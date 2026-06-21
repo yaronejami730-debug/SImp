@@ -4,7 +4,8 @@ import { listAppointments } from "@/lib/google";
 import { listReminders } from "@/lib/reminders";
 import { searchLeads } from "@/lib/leads";
 import { getCommissionSchemes } from "@/lib/users";
-import { commissionOf } from "@/lib/commission";
+import { realisateurCommission, apporteurCommission } from "@/lib/commission";
+import { descendantEntityIds } from "@/lib/call-centers";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -93,7 +94,9 @@ export async function GET(req: Request) {
       searchLeads(s.callCenterId),
     ]);
 
-    const ccAppts = allAppts.filter((a) => a.callCenterId === s.callCenterId);
+    // Hiérarchie : un admin agrège son entité + ses sous-entités ; un collab ses propres RDV.
+    const entityIds = new Set(await descendantEntityIds(s.callCenterId));
+    const ccAppts = allAppts.filter((a) => entityIds.has(a.callCenterId) || entityIds.has(a.commercialCc));
     const ownerAppts = s.role === "admin" ? ccAppts : ccAppts.filter((a) => a.owner === s.email);
     const appts = ownerAppts.filter((a) => inRange(a.startDateTime));
     const reminders = allReminders.filter((r) => inRange(r.remind_at));
@@ -132,13 +135,33 @@ export async function GET(req: Request) {
     const nrpTotalContacts = nrpReminders.length;
     const nrpTotalAppels = nrpReminders.reduce((s, r) => s + r.nrp_count, 0);
 
-    // --- Commission (schéma par owner du RDV) ---
-    const schemes = await getCommissionSchemes(s.callCenterId);
-    const commission = (a: { negotiation?: number; owner?: string }) => {
-      const sc = schemes.get((a.owner ?? "").toLowerCase()) ?? { base: 50, pct: 10 };
-      return commissionOf(sc.base, sc.pct, a.negotiation || 0);
+    // --- Commission : apporteur (créateur) vs réalisateur (commercial affecté) ---
+    // Schémas de toutes les entités visibles (hiérarchie), clés = e-mail du compte.
+    const schemes = new Map<string, { base: number; pct: number }>();
+    for (const id of entityIds) {
+      const m = await getCommissionSchemes(id);
+      for (const [k, v] of m) schemes.set(k, v);
+    }
+    const myEmail = s.email.toLowerCase();
+    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+    const myName = norm(s.name);
+    const mySc = schemes.get(myEmail) ?? { base: 50, pct: 10 };
+    const isAssignee = (a: { commercialEmail?: string; commercial?: string }) =>
+      (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
+      (!a.commercialEmail && !!myName && norm(a.commercial ?? "") === myName);
+    const isCreator = (a: { owner?: string }) => (a.owner ?? "") === s.email;
+
+    // Commission PERSO de l'utilisateur sur un RDV signé selon son rôle (réalisateur prioritaire).
+    const commission = (a: { negotiation?: number; owner?: string; commercial?: string; commercialEmail?: string }) => {
+      const nego = a.negotiation || 0;
+      if (isAssignee(a)) return realisateurCommission(mySc.base, mySc.pct, nego);
+      if (isCreator(a)) return apporteurCommission(mySc.base, mySc.pct, nego);
+      return 0;
     };
-    const commissionTotal = active.filter((a) => a.signStatus === "signed").reduce((sum, a) => sum + commission(a), 0);
+    const signedActive = active.filter((a) => a.signStatus === "signed");
+    const commissionRealisateur = signedActive.filter(isAssignee).reduce((sum, a) => sum + realisateurCommission(mySc.base, mySc.pct, a.negotiation || 0), 0);
+    const commissionApporteur = signedActive.filter((a) => isCreator(a) && !isAssignee(a)).reduce((sum, a) => sum + apporteurCommission(mySc.base, mySc.pct, a.negotiation || 0), 0);
+    const commissionTotal = commissionRealisateur + commissionApporteur;
 
     // --- Évolution (granularité adaptée à la période) ---
     const buckets = buildBuckets(gran, from, now);
@@ -169,6 +192,8 @@ export async function GET(req: Request) {
       prospection: { total: leadsTotal, convertis: leadsConverted, nrp: leadsNRP, rateConversion: rate(leadsConverted, leadsTotal) },
       nrp: { distribution: nrpDistribution, totalContacts: nrpTotalContacts, totalAppels: nrpTotalAppels },
       commissionTotal,
+      commissionApporteur,
+      commissionRealisateur,
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

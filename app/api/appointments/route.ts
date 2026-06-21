@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listAppointments } from "@/lib/google";
 import { getAuth } from "@/lib/auth";
+import { descendantEntityIds } from "@/lib/call-centers";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -15,8 +16,10 @@ export async function GET(req: Request) {
   const timeMax = new Date(now.getTime() + 180 * 24 * 3600 * 1000); // +180 j
 
   try {
+    // Hiérarchie : un admin voit son entité ET toutes ses sous-entités (remontée).
+    const entityIds = new Set(await descendantEntityIds(s.callCenterId));
     // Visible par l'entité créatrice (téléprospecteur) ET par l'entité du commercial.
-    const items = (await listAppointments(timeMin, timeMax)).filter((a) => a.callCenterId === s.callCenterId || a.commercialCc === s.callCenterId);
+    const items = (await listAppointments(timeMin, timeMax)).filter((a) => entityIds.has(a.callCenterId) || entityIds.has(a.commercialCc));
     // Annotation de la relation de l'utilisateur connecté (créateur / affecté) : filtres + mentions.
     const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
     const myName = norm(s.name);
@@ -26,10 +29,10 @@ export async function GET(req: Request) {
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
       (!a.commercialEmail && !!myName && norm(a.commercial) === myName);
-    // Collab : ses RDV (créés par lui) + ceux qui lui sont affectés + ceux de son entité.
+    // Admin : tout (entité + sous-entités). Collab : ses créés + ses affectés + son entité.
     const visible = s.role === "admin"
       ? items
-      : items.filter((a) => isCreator(a) || isAssignee(a) || a.commercialCc === s.callCenterId);
+      : items.filter((a) => isCreator(a) || isAssignee(a) || a.commercialCc === s.callCenterId || a.callCenterId === s.callCenterId);
     const annotated = visible.map((a) => {
       const created = isCreator(a);
       const assigned = isAssignee(a);

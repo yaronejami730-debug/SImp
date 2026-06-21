@@ -148,11 +148,12 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const ref = genRef();
   const commercialCc = await entityIdByCommercial(a.commercial); // entité du commercial (cross-entité)
   const commercialEmail = await commercialEmailByName(a.commercial); // compte commercial affecté (lien robuste)
+  const typeLabel = a.type === "visio" ? "Visioconférence" : a.type === "telephone" ? "Téléphone" : "Physique";
   const requestBody: calendar_v3.Schema$Event = {
       summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
       colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
       description: [
-        `Mode : Physique`,
+        `Mode : ${typeLabel}`,
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
         `Téléphone : ${a.phone}`,
@@ -182,6 +183,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           listingUrl: a.listingUrl,
           commercial: a.commercial ?? "",
           commercialEmail,
+          type: a.type ?? "physique",
           carBrand: a.carBrand ?? "",
           carModel: a.carModel ?? "",
           carFinish: a.carFinish ?? "",
@@ -337,6 +339,7 @@ export type AppointmentItem = {
   owner: string; // email du collaborateur ayant créé le RDV
   commercial: string; // nom du commercial qui gère le RDV
   commercialEmail: string; // e-mail du compte commercial affecté (lien robuste)
+  type: "physique" | "visio" | "telephone" | "deplacement";
   civility: string;
   createdAt: string | null;
   history: { t: string; at: string; info?: string }[];
@@ -388,6 +391,7 @@ export async function listAppointments(
       owner: p.owner ?? "",
       commercial: p.commercial ?? "",
       commercialEmail: p.commercialEmail ?? "",
+      type: p.deplacement === "1" ? "deplacement" : ((p.type as AppointmentItem["type"]) || "physique"),
       civility: p.clientCivility ?? "",
       createdAt: ev.created ?? null,
       history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),

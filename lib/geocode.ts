@@ -67,4 +67,33 @@ export function nearestNeighborOrder(start: LatLng, points: (LatLng | null)[]): 
   return order;
 }
 
+export type DrivingLeg = { km: number; min: number };
+
+/** Trajets routiers réels (distance + durée AVEC trafic) le long d'un ordre donné.
+ *  Utilise Google Directions (departure_time=now, traffic_model=best_guess) SANS réordonner.
+ *  Renvoie null si pas de clé GOOGLE_MAPS_API_KEY ou en cas d'erreur -> fallback haversine. */
+export async function drivingLegsGoogle(ordered: LatLng[]): Promise<DrivingLeg[] | null> {
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  if (!key || ordered.length < 2) return null;
+  try {
+    const origin = ordered[0];
+    const dest = ordered[ordered.length - 1];
+    const mid = ordered.slice(1, -1).map((p) => `${p.lat},${p.lng}`).join("|");
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${dest.lat},${dest.lng}`
+      + (mid ? `&waypoints=${encodeURIComponent(mid)}` : "")
+      + `&departure_time=now&traffic_model=best_guess&key=${key}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const legs = json?.routes?.[0]?.legs;
+    if (!Array.isArray(legs) || !legs.length) return null;
+    return legs.map((l: { distance?: { value: number }; duration?: { value: number }; duration_in_traffic?: { value: number } }) => ({
+      km: Math.round(((l.distance?.value ?? 0) / 1000) * 10) / 10,
+      min: Math.round(((l.duration_in_traffic?.value ?? l.duration?.value ?? 0) / 60)),
+    }));
+  } catch {
+    return null;
+  }
+}
+
 export { AGENCY_ADDRESS };

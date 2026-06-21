@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listMobileAppts, ensureCoords } from "@/lib/mobile";
 import { toParisISO } from "@/lib/parse";
-import { AGENCY_COORDS, distanceKm, type LatLng } from "@/lib/geocode";
+import { AGENCY_COORDS, distanceKm, drivingLegsGoogle, type LatLng } from "@/lib/geocode";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -33,16 +33,35 @@ export async function GET(req: Request) {
     await ensureCoords(appts);
 
     const points: (LatLng | null)[] = appts.map((a) => (a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null));
-    // Ordre = chronologique (index naturel). Les km sont calculés le long de cet ordre, à titre indicatif.
+    // Ordre = chronologique (index naturel). L'heure prime ; le trajet est informatif.
     const order = appts.map((_, i) => i);
+
+    // Trajets routiers réels (trafic) si clé Google Maps : départ -> stops géocodés, dans l'ordre.
+    const geoSeq: LatLng[] = [start, ...order.map((idx) => points[idx]).filter((p): p is LatLng => !!p)];
+    const realLegs = await drivingLegsGoogle(geoSeq); // null si pas de clé -> fallback haversine
+    const trafficUsed = !!realLegs;
 
     let prev: LatLng = start;
     let totalKm = 0;
+    let totalMin = 0;
+    let geoLegIdx = 0; // index dans realLegs (uniquement les stops géocodés)
     const stops = order.map((idx, i) => {
       const a = appts[idx];
       const p = points[idx];
-      const leg = p ? distanceKm(prev, p) : 0;
-      if (p) { totalKm += leg; prev = p; }
+      let legKm: number | null = null;
+      let legMin: number | null = null;
+      if (p) {
+        if (realLegs && realLegs[geoLegIdx]) {
+          legKm = realLegs[geoLegIdx].km;
+          legMin = realLegs[geoLegIdx].min;
+        } else {
+          legKm = Math.round(distanceKm(prev, p) * 10) / 10;
+        }
+        geoLegIdx++;
+        totalKm += legKm ?? 0;
+        if (legMin != null) totalMin += legMin;
+        prev = p;
+      }
       return {
         rank: i + 1,
         id: a.id,
@@ -51,12 +70,13 @@ export async function GET(req: Request) {
         time: a.start_datetime,
         vehicle: [a.car_brand, a.car_model].filter(Boolean).join(" "),
         phone: a.phone,
-        legKm: p ? Math.round(leg * 10) / 10 : null,
+        legKm,
+        legMin,
         geocoded: !!p,
       };
     });
 
-    return NextResponse.json({ ok: true, date, start, count: stops.length, totalKm: Math.round(totalKm * 10) / 10, stops });
+    return NextResponse.json({ ok: true, date, start, count: stops.length, totalKm: Math.round(totalKm * 10) / 10, totalMin, trafficUsed, stops });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

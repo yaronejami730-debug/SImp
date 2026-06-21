@@ -1,15 +1,39 @@
 import { getPool } from "./db";
 
-export type CallCenter = { id: number; name: string; default_commercial: string; created_at: string };
+export type CallCenter = { id: number; name: string; default_commercial: string; parent_id: number | null; created_at: string };
 
 export async function listCallCenters(): Promise<CallCenter[]> {
-  const { rows } = await getPool().query<CallCenter>(`select id, name, default_commercial, created_at from call_centers order by id`);
+  const { rows } = await getPool().query<CallCenter>(`select id, name, default_commercial, parent_id, created_at from call_centers order by id`);
   return rows;
 }
 
 export async function getCallCenter(id: number): Promise<CallCenter | null> {
-  const { rows } = await getPool().query<CallCenter>(`select id, name, default_commercial, created_at from call_centers where id = $1`, [id]);
+  const { rows } = await getPool().query<CallCenter>(`select id, name, default_commercial, parent_id, created_at from call_centers where id = $1`, [id]);
   return rows[0] ?? null;
+}
+
+/** IDs de l'entité + toutes ses descendantes (hiérarchie). Sert à la remontée RDV/stats. */
+export async function descendantEntityIds(rootId: number): Promise<number[]> {
+  const all = await listCallCenters();
+  const childrenOf = new Map<number, number[]>();
+  for (const cc of all) {
+    if (cc.parent_id != null) {
+      const list = childrenOf.get(cc.parent_id) ?? [];
+      list.push(cc.id);
+      childrenOf.set(cc.parent_id, list);
+    }
+  }
+  const out: number[] = [];
+  const stack = [rootId];
+  const seen = new Set<number>();
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    for (const c of childrenOf.get(id) ?? []) stack.push(c);
+  }
+  return out;
 }
 
 // Normalise un nom en jeu de mots trié (insensible à l'ordre / accents / casse).
@@ -36,10 +60,10 @@ export async function entityCommissionScheme(callCenterId: number): Promise<{ ba
   return { base: 50, pct: 10 };
 }
 
-export async function createCallCenter(name: string, defaultCommercial: string): Promise<CallCenter> {
+export async function createCallCenter(name: string, defaultCommercial: string, parentId: number | null = null): Promise<CallCenter> {
   const { rows } = await getPool().query<CallCenter>(
-    `insert into call_centers (name, default_commercial) values ($1, $2) returning id, name, default_commercial, created_at`,
-    [name.trim(), defaultCommercial.trim()],
+    `insert into call_centers (name, default_commercial, parent_id) values ($1, $2, $3) returning id, name, default_commercial, parent_id, created_at`,
+    [name.trim(), defaultCommercial.trim(), parentId],
   );
   return rows[0];
 }

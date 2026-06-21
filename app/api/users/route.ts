@@ -44,7 +44,8 @@ export async function POST(req: Request) {
 
     if (b.mode === "callcenter") {
       if (!b.ccName?.trim()) return NextResponse.json({ error: "Nom de l'entité (call center) requis." }, { status: 400 });
-      const cc = await createCallCenter(b.ccName, b.defaultCommercial ?? "");
+      // Hiérarchie : la nouvelle entité devient une sous-entité de celle qui la crée.
+      const cc = await createCallCenter(b.ccName, b.defaultCommercial ?? "", s.callCenterId);
       // L'utilisateur créé est l'admin (super-administrateur) de la NOUVELLE entité.
       const user = await createUser(b.email, b.password, b.name, "admin", cc.id, sch.base, sch.pct);
       return NextResponse.json({ ok: true, user, callCenter: cc });

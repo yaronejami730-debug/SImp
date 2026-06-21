@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { createMobileAppt, listMobileAppts, isMobileSlotFree, type MobileStatus } from "@/lib/mobile";
+import { createMobileAppt, listMobileApptsForEntities, listMobileApptsAssignedTo, isMobileSlotFree, type MobileStatus } from "@/lib/mobile";
+import { descendantEntityIds } from "@/lib/call-centers";
 import { commercialConflict } from "@/lib/google";
 import { toParisISO } from "@/lib/parse";
 import { sendEmail } from "@/lib/brevo";
@@ -17,7 +18,17 @@ export async function GET(req: Request) {
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   const status = new URL(req.url).searchParams.get("status") as MobileStatus | null;
   try {
-    const all = await listMobileAppts(s.callCenterId, status ? { status } : undefined);
+    // Hiérarchie : un admin voit son entité + ses sous-entités. Plus les RDV affectés à
+    // l'utilisateur dans une AUTRE entité (commercial cross-entité), dédupliqués.
+    const entityIds = s.role === "admin" ? await descendantEntityIds(s.callCenterId) : [s.callCenterId];
+    const opt = status ? { status } : undefined;
+    const [inEntity, assignedToMe] = await Promise.all([
+      listMobileApptsForEntities(entityIds, opt),
+      listMobileApptsAssignedTo(s.email, status ? { status } : undefined),
+    ]);
+    const byId = new Map<number, typeof inEntity[number]>();
+    for (const a of [...inEntity, ...assignedToMe]) byId.set(a.id, a);
+    const all = Array.from(byId.values()).sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
     const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
     const myName = norm(s.name);
     const myEmail = s.email.toLowerCase();

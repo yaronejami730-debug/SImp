@@ -125,6 +125,34 @@ export async function listMobileAppts(callCenterId: number, opts?: { from?: stri
   return rows;
 }
 
+/** RDV déplacement de PLUSIEURS entités (hiérarchie : entité + sous-entités). */
+export async function listMobileApptsForEntities(callCenterIds: number[], opts?: { from?: string; to?: string; status?: MobileStatus }): Promise<MobileAppt[]> {
+  if (!callCenterIds.length) return [];
+  const where: string[] = [`call_center_id = any($1)`];
+  const params: unknown[] = [callCenterIds];
+  if (opts?.from) { params.push(opts.from); where.push(`start_datetime >= $${params.length}`); }
+  if (opts?.to) { params.push(opts.to); where.push(`start_datetime <= $${params.length}`); }
+  if (opts?.status) { params.push(opts.status); where.push(`status = $${params.length}`); }
+  const { rows } = await getPool().query<MobileAppt>(
+    `select * from appointments_mobile where ${where.join(" and ")} order by start_datetime asc limit 1000`,
+    params,
+  );
+  return rows;
+}
+
+/** RDV déplacement affectés à un commercial (par e-mail de compte), toutes entités. */
+export async function listMobileApptsAssignedTo(commercialEmail: string, opts?: { status?: MobileStatus }): Promise<MobileAppt[]> {
+  if (!commercialEmail) return [];
+  const params: unknown[] = [commercialEmail.toLowerCase()];
+  let extra = "";
+  if (opts?.status) { params.push(opts.status); extra = ` and status = $${params.length}`; }
+  const { rows } = await getPool().query<MobileAppt>(
+    `select * from appointments_mobile where lower(commercial_email) = $1${extra} order by start_datetime asc limit 1000`,
+    params,
+  );
+  return rows;
+}
+
 export async function getMobileAppt(id: number): Promise<MobileAppt | null> {
   const { rows } = await getPool().query<MobileAppt>(`select * from appointments_mobile where id = $1`, [id]);
   return rows[0] ?? null;

@@ -37,6 +37,8 @@ type Stats = {
   prospection: Prospection;
   nrp: NrpStats;
   commissionTotal: number;
+  commissionApporteur: number;
+  commissionRealisateur: number;
 };
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -333,7 +335,7 @@ function NrpCard({ data }: { data: NrpStats }) {
 
 // ── Contenu principal ────────────────────────────────────
 function StatsView({ data, period, onPeriod, busy }: { data: Stats; period: Period; onPeriod: (p: Period) => void; busy: boolean }) {
-  const { funnel, evolution, heuresRdv, heuresRappels, prospection, nrp, commissionTotal } = data;
+  const { funnel, evolution, heuresRdv, heuresRappels, prospection, nrp, commissionTotal, commissionApporteur, commissionRealisateur } = data;
   const periodLabel = PERIOD_LABEL[period];
 
   return (
@@ -353,8 +355,12 @@ function StatsView({ data, period, onPeriod, busy }: { data: Stats; period: Peri
           <Gauge value={funnel.rateGlobal} caption={`${funnel.signed} signés sur ${funnel.total} RDV`} />
           <div style={{ flex: 1, minWidth: 210, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff", borderRadius: 12, padding: "16px 18px" }}>
-              <div style={{ fontSize: 12.5, opacity: 0.9 }}>🏆 Commission cumulée</div>
+              <div style={{ fontSize: 12.5, opacity: 0.9 }}>🏆 Ma commission cumulée</div>
               <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 32, fontWeight: 700, lineHeight: 1.1 }}>{eur(commissionTotal)}</div>
+              <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 12, opacity: 0.95 }}>
+                <span>🛠️ Réalisateur (+25 %) : <strong>{eur(commissionRealisateur)}</strong></span>
+                <span>📤 Apporteur (50 %) : <strong>{eur(commissionApporteur)}</strong></span>
+              </div>
             </div>
             <Grid cols={2}>
               <Stat label="RDV pris" value={`🚗 ${funnel.total}`} />

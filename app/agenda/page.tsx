@@ -17,6 +17,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string; location: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
   relation?: "created" | "assigned" | "both" | "none";
+  type?: "physique" | "visio" | "telephone" | "deplacement";
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
@@ -230,7 +231,7 @@ function Agenda() {
           </a>
           {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}</div>}
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>{a.platform}{a.commercial ? ` · 👤 Commercial : ${a.commercial}` : ""}</div>
+          <div style={{ fontSize: 13, color: "#6b7280" }}>{({ physique: "🏢 Physique", visio: "💻 Visio", telephone: "📞 Téléphone", deplacement: "🚗 Déplacement" }[a.type ?? "physique"])}{a.platform ? ` · ${a.platform}` : ""}{a.commercial ? ` · 👤 Commercial : ${a.commercial}` : ""}</div>
           {(isAdmin || a.relation === "created" || a.relation === "both") && a.owner && <div style={{ fontSize: 12.5, color: "#9aa6b8" }}>✍️ Créé par : {a.owner}</div>}
           {a.listingUrl && <a href={safeUrl(a.listingUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "underline", fontWeight: 600, display: "inline-block", marginTop: 2 }}>🔗 Voir l&apos;annonce</a>}
         </div>

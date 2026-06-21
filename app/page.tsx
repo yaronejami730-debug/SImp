@@ -24,7 +24,7 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", type: "physique", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
 const SOURCES = ["LeBonCoin", "LaCentrale", "Autre"];
 
 const inputStyle: React.CSSProperties = {
@@ -253,6 +253,14 @@ function Home() {
         <div>
           <label style={labelStyle}>Véhicule</label>
           <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
+        </div>
+        <div>
+          <label style={labelStyle}>Type de RDV</label>
+          <select style={inputStyle} value={form.type} onChange={(e) => set("type", e.target.value)}>
+            <option value="physique">🏢 Physique (agence)</option>
+            <option value="visio">💻 Visioconférence</option>
+            <option value="telephone">📞 Téléphone</option>
+          </select>
         </div>
         <div>
           <label style={labelStyle}>Commercial</label>
