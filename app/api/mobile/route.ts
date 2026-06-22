@@ -29,14 +29,14 @@ export async function GET(req: Request) {
     const byId = new Map<number, typeof inEntity[number]>();
     for (const a of [...inEntity, ...assignedToMe]) byId.set(a.id, a);
     const all = Array.from(byId.values()).sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
-    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
-    const myName = norm(s.name);
+    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    const myName = tokset(s.name);
     const myEmail = s.email.toLowerCase();
     const isCreator = (a: typeof all[number]) => a.teleprospecteur === s.email;
-    // Affecté : lien robuste par e-mail du compte commercial ; fallback nom pour les anciens RDV.
+    // Affecté : lien robuste par e-mail du compte commercial ; fallback nom (insensible à l'ordre).
     const isAssignee = (a: typeof all[number]) =>
       (!!a.commercial_email && a.commercial_email.toLowerCase() === myEmail) ||
-      (!a.commercial_email && !!myName && norm(a.commercial) === myName);
+      (!a.commercial_email && !!myName && tokset(a.commercial) === myName);
     // Un RDV est visible par son CRÉATEUR (téléprospecteur) ET par l'AFFECTÉ (commercial). Admin : toute l'entité.
     const list = s.role === "admin" ? all : all.filter((a) => isCreator(a) || isAssignee(a));
     // Annotation de la relation pour l'affichage ("créé pour X" / "intervention à réaliser").

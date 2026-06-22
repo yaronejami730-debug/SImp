@@ -358,8 +358,8 @@ function StatsView({ data, period, onPeriod, busy }: { data: Stats; period: Peri
               <div style={{ fontSize: 12.5, opacity: 0.9 }}>🏆 Ma commission cumulée</div>
               <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 32, fontWeight: 700, lineHeight: 1.1 }}>{eur(commissionTotal)}</div>
               <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 12, opacity: 0.95 }}>
-                <span>🛠️ Réalisateur (+25 %) : <strong>{eur(commissionRealisateur)}</strong></span>
-                <span>📤 Apporteur (50 %) : <strong>{eur(commissionApporteur)}</strong></span>
+                <span>🛠️ Réalisateur : <strong>{eur(commissionRealisateur)}</strong></span>
+                <span>📤 Apporteur : <strong>{eur(commissionApporteur)}</strong></span>
               </div>
             </div>
             <Grid cols={2}>

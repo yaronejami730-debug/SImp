@@ -21,14 +21,15 @@ export async function GET(req: Request) {
     // Visible par l'entité créatrice (téléprospecteur) ET par l'entité du commercial.
     const items = (await listAppointments(timeMin, timeMax)).filter((a) => entityIds.has(a.callCenterId) || entityIds.has(a.commercialCc));
     // Annotation de la relation de l'utilisateur connecté (créateur / affecté) : filtres + mentions.
-    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
-    const myName = norm(s.name);
+    // tokset = jeu de mots trié -> insensible à l'ordre/accents/casse ("Bonamy jeremy" == "Jérémy Bonamy").
+    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    const myName = tokset(s.name);
     const myEmail = s.email.toLowerCase();
     const isCreator = (a: typeof items[number]) => a.owner === s.email;
     // Affecté : lien robuste par e-mail du compte commercial ; fallback nom (anciens RDV).
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
-      (!a.commercialEmail && !!myName && norm(a.commercial) === myName);
+      (!a.commercialEmail && !!myName && tokset(a.commercial) === myName);
     // Admin : tout (entité + sous-entités). Collab : ses créés + ses affectés + son entité.
     const visible = s.role === "admin"
       ? items

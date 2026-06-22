@@ -21,12 +21,13 @@ export async function GET(req: Request) {
   try {
     const dayStart = new Date(toParisISO(date, "00:00"));
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
-    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
-    const myName = norm(s.name);
+    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    const myName = tokset(s.name);
+    const myEmail = s.email.toLowerCase();
     const appts = (await listMobileAppts(s.callCenterId, { from: dayStart.toISOString(), to: dayEnd.toISOString() }))
       .filter((a) => a.status !== "cancelled")
       // Visible par le créateur (téléprospecteur) ET par l'affecté (commercial). Admin : tout.
-      .filter((a) => s.role === "admin" || a.teleprospecteur === s.email || (myName && norm(a.commercial) === myName))
+      .filter((a) => s.role === "admin" || a.teleprospecteur === s.email || (a.commercial_email && a.commercial_email.toLowerCase() === myEmail) || (myName && tokset(a.commercial) === myName))
       // L'HEURE du RDV est prioritaire : ordre chronologique strict, jamais réordonné pour gagner des km.
       .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
 

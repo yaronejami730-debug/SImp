@@ -322,10 +322,15 @@ function MessageTimeline({ id, refreshKey, startDateTime }: { id: string; refres
           {msgs.length === 0 ? (
             <div style={{ color: "#9aa6b8", fontSize: 13 }}>Aucun message envoyé pour le moment.</div>
           ) : (
-            <div style={{ display: "flex", gap: 14 }}>
-              {col("📧 Mails", mails)}
-              {col("📱 SMS", sms)}
-            </div>
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: 12.5, color: "#6b7280", fontWeight: 600, padding: "4px 0" }}>
+                Historique détaillé ({msgs.length} messages)
+              </summary>
+              <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
+                {col("📧 Mails", mails)}
+                {col("📱 SMS", sms)}
+              </div>
+            </details>
           )}
         </>
       )}

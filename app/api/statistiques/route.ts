@@ -143,12 +143,12 @@ export async function GET(req: Request) {
       for (const [k, v] of m) schemes.set(k, v);
     }
     const myEmail = s.email.toLowerCase();
-    const norm = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
-    const myName = norm(s.name);
+    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    const myName = tokset(s.name);
     const mySc = schemes.get(myEmail) ?? { base: 50, pct: 10 };
     const isAssignee = (a: { commercialEmail?: string; commercial?: string }) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
-      (!a.commercialEmail && !!myName && norm(a.commercial ?? "") === myName);
+      (!a.commercialEmail && !!myName && tokset(a.commercial ?? "") === myName);
     const isCreator = (a: { owner?: string }) => (a.owner ?? "") === s.email;
 
     // Commission PERSO de l'utilisateur sur un RDV signé selon son rôle (réalisateur prioritaire).

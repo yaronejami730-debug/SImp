@@ -36,13 +36,27 @@ export async function listCommercials(): Promise<Commercial[]> {
   return rows;
 }
 
-/** Résout l'e-mail du compte commercial à partir de son nom (insensible casse/accents/ordre). */
+/** Résout l'e-mail du compte commercial à partir de son nom (insensible casse/accents/ordre).
+ *  1) compte marqué commercial dont le nom correspond ;
+ *  2) sinon, entité dont `default_commercial` correspond -> son admin (= le commercial de l'entité). */
 export async function commercialEmailByName(name?: string): Promise<string> {
   if (!name?.trim()) return "";
   const tokset = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
   const target = tokset(name);
   const list = await listCommercials();
-  return list.find((c) => tokset(c.name) === target)?.email ?? "";
+  const byName = list.find((c) => tokset(c.name) === target);
+  if (byName) return byName.email;
+  // Fallback entité : le commercial "X" correspond à l'entité dont default_commercial = "X".
+  const ccs = await getPool().query<{ id: number; default_commercial: string }>(
+    `select id, default_commercial from call_centers where default_commercial <> ''`,
+  );
+  const match = ccs.rows.find((c) => tokset(c.default_commercial) === target);
+  if (!match) return "";
+  const admin = await getPool().query<{ email: string }>(
+    `select email from users where call_center_id = $1 and role = 'admin' order by id limit 1`,
+    [match.id],
+  );
+  return admin.rows[0]?.email ?? "";
 }
 
 export async function createUser(

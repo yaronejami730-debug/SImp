@@ -58,8 +58,11 @@ export async function GET(req: Request) {
     if (msUntil <= 0) continue;
 
     const priv = ev.extendedProperties?.private ?? {};
-    // Flags MAIL et SMS indépendants : si le mail part mais que le SMS échoue,
-    // le SMS sera retenté au prochain cron (et inversement).
+    // Les RDV DÉPLACEMENT sont gérés par leur propre section (table appointments_mobile).
+    // On les ignore ici pour éviter les rappels EN DOUBLE (physique + déplacement).
+    if (priv.mobile === "1" || priv.deplacement === "1") continue;
+
+    // Flags MAIL et SMS indépendants.
     let emailKind: "24h" | "2h" | null = null;
     if (msUntil <= H2 && !priv.reminder2Sent) emailKind = "2h";
     else if (msUntil <= H24 && msUntil > H2 && !priv.reminder24Sent) emailKind = "24h";
@@ -73,7 +76,8 @@ export async function GET(req: Request) {
     const firstName = priv.clientFirstName ?? "";
     const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
 
-    // Mail de rappel.
+    // Mail de rappel. IMPORTANT : on marque le flag APRÈS LA TENTATIVE (succès OU échec)
+    // pour qu'un destinataire invalide ne fasse pas reboucler le cron toutes les 10 min.
     if (emailKind && email) {
       const mail = reminderEmail({
         civility: priv.clientCivility,
@@ -90,25 +94,25 @@ export async function GET(req: Request) {
           to: email, toName: firstName, subject: mail.subject, html: mail.html,
           log: { templateKey: emailKind === "2h" ? "reminder2" : "reminder24", clientName, owner: priv.owner, eventId: ev.id },
         });
-        await markReminderSent(ev.id, emailKind);
         sent++;
       } catch (e) {
         errors.push(`Mail rappel ${emailKind}: ${e instanceof Error ? e.message : String(e)}`);
       }
+      try { await markReminderSent(ev.id, emailKind); } catch { /* non-bloquant */ }
     }
 
-    // SMS de rappel (flag séparé du mail). Non-bloquant.
+    // SMS de rappel (flag séparé). Marqué après tentative (succès OU échec).
     if (smsKind && phone) {
       try {
         await sendSMS({
           to: phone, text: reminderSmsText(startIso, ev.location ?? "", smsKind),
           log: { templateKey: smsKind === "2h" ? "sms_reminder2" : "sms_reminder24", clientName, owner: priv.owner, eventId: ev.id, toEmail: email },
         });
-        await markReminderSmsSent(ev.id, smsKind);
         smsSent++;
       } catch (e) {
         errors.push(`SMS rappel ${smsKind}: ${e instanceof Error ? e.message : String(e)}`);
       }
+      try { await markReminderSmsSent(ev.id, smsKind); } catch { /* non-bloquant */ }
     }
   }
 
@@ -121,6 +125,7 @@ export async function GET(req: Request) {
     if (msUntil <= 0 || msUntil > MIN15) continue;
     const priv = ev.extendedProperties?.private ?? {};
     if (priv.reminder15Sent === "1") continue;
+    if (priv.mobile === "1" || priv.deplacement === "1") continue; // déplacement géré ailleurs
     const phone = priv.clientPhone;
     const email = priv.clientEmail;
     if (!phone && !email) continue;
@@ -128,24 +133,24 @@ export async function GET(req: Request) {
     const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
     const commercial = priv.commercial || "votre conseiller";
     const tel = commercialPhone(priv.commercial);
-    let any = false;
+    let attempted = false; // marqué après tentative (succès OU échec) -> pas de reboucle
     // SMS
     if (phone) {
+      attempted = true;
       const text = `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre conseiller: M. ${commercial} - ${tel}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`;
       try {
         await sendSMS({ to: phone, text, log: { templateKey: "sms_reminder15", clientName, owner: priv.owner, eventId: ev.id, toEmail: email } });
-        any = true;
       } catch (e) { errors.push(`SMS 15min: ${e instanceof Error ? e.message : String(e)}`); }
     }
     // Mail (en même temps)
     if (email) {
+      attempted = true;
       try {
         const mail = reminderApproachEmail({ firstName, commercial, phone: tel });
         await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { templateKey: "reminder15", clientName, owner: priv.owner, eventId: ev.id } });
-        any = true;
       } catch (e) { errors.push(`Mail 15min: ${e instanceof Error ? e.message : String(e)}`); }
     }
-    if (any) {
+    if (attempted) {
       try { await markReminderSent(ev.id, "15min"); } catch { /* non-bloquant */ }
       sms15Sent++;
     }

@@ -23,17 +23,16 @@ export function commissionOf(base: number, pct: number, negotiation: number): nu
 }
 
 // ─────────── Rôles : apporteur (créateur) vs réalisateur (commercial) ───────────
-// Réalisateur : sa commission habituelle MAJORÉE de +25 %.
-// Apporteur   : 50 % de la commission de base du RDV.
-export const COMMERCIAL_MAJORATION = 0.25; // +25 % pour le réalisateur
-export const APPORTEUR_RATE = 0.5;         // 50 % pour l'apporteur
+// Chaque personne est payée selon SON PROPRE barème (commission_base/pct de son compte).
+// Ex : Yaron créateur = 50 € + 10 % ; Bonamy commercial = 0 € + 25 %.
+// Les deux touchent sur le même RDV signé (rôles indépendants).
 
-/** Commission du réalisateur (commercial affecté) : sa commission × (1 + 25 %). */
+/** Commission du réalisateur (commercial affecté), selon SON barème. */
 export function realisateurCommission(base: number, pct: number, negotiation: number): number {
-  return commissionOf(base, pct, negotiation) * (1 + COMMERCIAL_MAJORATION);
+  return commissionOf(base, pct, negotiation);
 }
 
-/** Commission de l'apporteur (créateur) : 50 % de la commission de base. */
+/** Commission de l'apporteur (créateur), selon SON barème. */
 export function apporteurCommission(base: number, pct: number, negotiation: number): number {
-  return commissionOf(base, pct, negotiation) * APPORTEUR_RATE;
+  return commissionOf(base, pct, negotiation);
 }
