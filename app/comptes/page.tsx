@@ -8,65 +8,49 @@ import { COMMISSION_SCHEMES } from "@/lib/commission";
 const NAVY = "#1a273a";
 const PINK = "#DB407A";
 
-type User = { id: number; email: string; name: string; role: "admin" | "collab"; is_commercial?: boolean };
-type CallCenter = { id: number; name: string; default_commercial: string };
+type User = {
+  id: number; email: string; name: string; role: "admin" | "collab";
+  is_commercial?: boolean; is_teleprospector?: boolean; phone?: string; active?: boolean;
+  commission_base?: number; commission_pct?: number;
+};
 
 const inp: React.CSSProperties = { width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" };
 
 function Comptes() {
   const [users, setUsers] = useState<User[]>([]);
-  const [callCenter, setCallCenter] = useState<CallCenter | null>(null);
   const [err, setErr] = useState("");
-  const [mode, setMode] = useState<"telepro" | "commercial" | "callcenter">("telepro");
+  const [type, setType] = useState<"commercial" | "telepro">("commercial");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [ccName, setCcName] = useState("");
-  const [defaultCommercial, setDefaultCommercial] = useState("");
+  const [phone, setPhone] = useState("");
   const [schemeKey, setSchemeKey] = useState("50+10");
   const [busy, setBusy] = useState(false);
-  const [syncBusy, setSyncBusy] = useState(false);
-  const [syncMsg, setSyncMsg] = useState("");
-
-  async function syncColors() {
-    if (!confirm("Réappliquer les couleurs Google Agenda sur tous les RDV et rappels (±1 an) ?")) return;
-    setSyncBusy(true); setSyncMsg("");
-    try {
-      const r = await fetch("/api/admin/sync-colors", { method: "POST", headers: authHeaders() });
-      const d = await r.json();
-      if (d.ok) setSyncMsg(`✅ ${d.updated} events recolorés (${d.rdvCount} RDV + ${d.reminderCount} rappels analysés sur ${d.checked}).`);
-      else setSyncMsg("❌ " + (d.error ?? "Erreur"));
-    } catch (e) { setSyncMsg("❌ " + (e instanceof Error ? e.message : "Erreur")); }
-    finally { setSyncBusy(false); }
-  }
 
   async function load() {
     setErr("");
     try {
       const res = await fetch("/api/users", { headers: authHeaders() });
       const d = await res.json();
-      if (d.ok) { setUsers(d.users); setCallCenter(d.callCenter ?? null); }
-      else setErr(d.error ?? "Erreur");
+      if (d.ok) setUsers(d.users); else setErr(d.error ?? "Erreur");
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
   useEffect(() => { load(); }, []);
 
   async function add() {
     if (!name.trim() || !email.trim() || !password.trim()) return;
-    if (mode === "callcenter" && !ccName.trim()) { alert("Nom de l'entité requis."); return; }
     setBusy(true);
     try {
-      const body = mode === "callcenter"
-        ? { mode, name, email, password, ccName, defaultCommercial, schemeKey }
-        : { mode, name, email, password, schemeKey }; // telepro | commercial
-      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body) });
+      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type, name, email, password, phone, schemeKey }) });
       const d = await res.json();
-      if (d.ok) {
-        setName(""); setEmail(""); setPassword(""); setCcName(""); setDefaultCommercial("");
-        if (mode === "callcenter") alert(`✅ Nouvelle entité « ${d.callCenter?.name} » créée. Son admin se connecte avec ${email}. Elle est totalement indépendante de ton call center.`);
-        load();
-      } else alert(d.error ?? "Erreur");
+      if (d.ok) { setName(""); setEmail(""); setPassword(""); setPhone(""); load(); }
+      else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
+  }
+  async function patch(id: number, body: Record<string, unknown>) {
+    const res = await fetch("/api/users", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ id, ...body }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
   async function del(u: User) {
     if (!confirm(`Supprimer le compte de ${u.name} ?`)) return;
@@ -74,57 +58,47 @@ function Comptes() {
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
-  async function toggleCommercial(u: User) {
-    const res = await fetch("/api/users", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ id: u.id, isCommercial: !u.is_commercial }) });
-    const d = await res.json();
-    if (d.ok) load(); else alert(d.error ?? "Erreur");
-  }
 
-  const renderHeader = (
-    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-      <h2 style={{ margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 14, color: PINK, textTransform: "uppercase", letterSpacing: 0.5 }}>🎨 Synchroniser couleurs Google Agenda</h2>
-      <p style={{ margin: "0 0 10px", fontSize: 13, color: "#6b7280" }}>Applique les couleurs : 🔵 bleu (RDV pris) · 🟢 vert (signé/BC/vendu) · 🟠 orange (réfléchit) · ⚫ gris (pas signé) · 🔴 rouge (annulé) · 🟣 violet (rappels téléphoniques). Affecte RDV et rappels des 12 derniers/prochains mois.</p>
-      <button onClick={syncColors} disabled={syncBusy} style={{ padding: "10px 18px", borderRadius: 8, background: syncBusy ? "#cbd5e1" : PINK, color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: syncBusy ? "not-allowed" : "pointer" }}>
-        {syncBusy ? "Sync en cours…" : "🎨 Synchroniser maintenant"}
-      </button>
-      {syncMsg && <p style={{ marginTop: 10, fontSize: 13, color: syncMsg.startsWith("✅") ? "#166534" : "#dc2626", fontWeight: 600 }}>{syncMsg}</p>}
-    </div>
+  const schemeLabel = (u: User) => {
+    const base = Number(u.commission_base ?? 0), pct = Number(u.commission_pct ?? 0);
+    return `${base ? `${base} €` : ""}${base && pct ? " + " : ""}${pct ? `${pct} %` : ""}` || "—";
+  };
+  const roleBadges = (u: User) => (
+    <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
+      {u.role === "admin" && <span style={{ fontSize: 11, color: PINK, fontWeight: 700 }}>super-admin</span>}
+      {u.is_commercial && <span style={{ fontSize: 11, color: "#15803d", background: "#f0fdf4", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>🛠️ commercial</span>}
+      {u.is_teleprospector && <span style={{ fontSize: 11, color: "#0369a1", background: "#f0f9ff", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>📞 téléprospecteur</span>}
+      {u.active === false && <span style={{ fontSize: 11, color: "#9aa6b8" }}>(inactif)</span>}
+    </span>
   );
 
   return (
     <>
-      {renderHeader}
+      <header style={{ marginBottom: 16 }}>
+        <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: NAVY }}>Comptes</h1>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6b7280" }}>Crée des commerciaux et des téléprospecteurs (avec login). Chacun a sa commission.</p>
+      </header>
+
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Nouveau compte</div>
-        <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "#6b7280" }}>Ton entité : <strong>{callCenter?.name ?? "—"}</strong></p>
-
+        <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Nouveau compte</div>
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <button onClick={() => setMode("telepro")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "telepro" ? NAVY : "#e5e7eb"}`, background: mode === "telepro" ? NAVY : "#fff", color: mode === "telepro" ? "#fff" : "#6b7280" }}>👤 Téléprospecteur<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(mon call center)</span></button>
-          <button onClick={() => setMode("commercial")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "commercial" ? NAVY : "#e5e7eb"}`, background: mode === "commercial" ? NAVY : "#fff", color: mode === "commercial" ? "#fff" : "#6b7280" }}>🛠️ Commercial<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(exécutant de RDV)</span></button>
-          <button onClick={() => setMode("callcenter")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${mode === "callcenter" ? NAVY : "#e5e7eb"}`, background: mode === "callcenter" ? NAVY : "#fff", color: mode === "callcenter" ? "#fff" : "#6b7280" }}>🏢 Nouvelle entité<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(call center indépendant)</span></button>
+          <button onClick={() => setType("commercial")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${type === "commercial" ? NAVY : "#e5e7eb"}`, background: type === "commercial" ? NAVY : "#fff", color: type === "commercial" ? "#fff" : "#6b7280" }}>🛠️ Commercial<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(réalise les RDV)</span></button>
+          <button onClick={() => setType("telepro")} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${type === "telepro" ? NAVY : "#e5e7eb"}`, background: type === "telepro" ? NAVY : "#fff", color: type === "telepro" ? "#fff" : "#6b7280" }}>📞 Téléprospecteur<br /><span style={{ fontWeight: 400, fontSize: 11 }}>(crée les RDV)</span></button>
         </div>
-
         <div style={{ display: "grid", gap: 10 }}>
-          {mode === "callcenter" && (
-            <>
-              <input style={inp} value={ccName} onChange={(e) => setCcName(e.target.value)} placeholder="Nom de l'entité (ex: Bonamy Jérémy)" />
-              <input style={inp} value={defaultCommercial} onChange={(e) => setDefaultCommercial(e.target.value)} placeholder="Commercial par défaut (ex: Jérémy Bonamy)" />
-              <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: -2 }}>Le compte ci-dessous sera le <strong>super-administrateur</strong> de cette entité (indépendante de la tienne).</div>
-            </>
-          )}
-          <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "callcenter" ? "Nom du super-admin" : mode === "commercial" ? "Nom du commercial (ex: Jérémy Bonamy)" : "Nom du téléprospecteur"} />
-          <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail" />
+          <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "commercial" ? "Nom du commercial (ex: Jérémie Bonamy)" : "Nom du téléprospecteur"} />
+          <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail (login)" />
           <input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" />
+          <input style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Téléphone (injecté dans les mails/SMS clients)" />
           <div>
-            <label style={{ display: "block", fontSize: 12.5, color: "#6b7280", marginBottom: 5 }}>💰 Base de rémunération (par RDV signé)</label>
+            <label style={{ display: "block", fontSize: 12.5, color: "#6b7280", marginBottom: 5 }}>💰 Commission (par RDV signé)</label>
             <select style={inp} value={schemeKey} onChange={(e) => setSchemeKey(e.target.value)}>
               {COMMISSION_SCHEMES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </div>
           <button onClick={add} disabled={busy || !name.trim() || !email.trim() || !password.trim()} style={{ padding: 13, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
-            {busy ? "…" : mode === "callcenter" ? "Créer l'entité + super-admin" : mode === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
+            {busy ? "…" : type === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
           </button>
-          <p style={{ fontSize: 12, color: "#9aa6b8", margin: 0 }}>{mode === "callcenter" ? "Entité totalement séparée : ses RDV, son agenda, ses stats n'ont rien à voir avec les tiens." : mode === "commercial" ? "Le commercial est sélectionnable comme exécutant d'un RDV ; il voit dans son agenda/stats les RDV qui lui sont affectés." : "Le téléprospecteur voit les RDV de ton call center."}</p>
         </div>
       </div>
 
@@ -132,16 +106,21 @@ function Comptes() {
 
       <div style={{ display: "grid", gap: 10 }}>
         {users.map((u) => (
-          <div key={u.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {u.role === "admin" && <span style={{ fontSize: 11, color: PINK }}>(admin)</span>} {u.is_commercial && <span style={{ fontSize: 11, color: "#15803d", background: "#f0fdf4", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>🛠️ commercial</span>}</div>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>{u.email}</div>
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => toggleCommercial(u)} style={{ padding: "8px 10px", borderRadius: 8, background: u.is_commercial ? "#f0fdf4" : "#fff", color: u.is_commercial ? "#15803d" : "#6b7280", border: `1.5px solid ${u.is_commercial ? "#bbf7d0" : "#e5e7eb"}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{u.is_commercial ? "Retirer commercial" : "Marquer commercial"}</button>
+          <div key={u.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {roleBadges(u)}</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>{u.email}{u.phone ? ` · ${u.phone}` : ""}</div>
+                <div style={{ fontSize: 12.5, color: "#15803d", marginTop: 2 }}>💰 {schemeLabel(u)}</div>
+              </div>
               {u.role !== "admin" && (
                 <button onClick={() => del(u)} style={{ padding: "8px 10px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Supprimer</button>
               )}
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+              <button onClick={() => patch(u.id, { isCommercial: !u.is_commercial })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${u.is_commercial ? "#15803d" : "#e5e7eb"}`, background: u.is_commercial ? "#f0fdf4" : "#fff", color: u.is_commercial ? "#15803d" : "#6b7280" }}>{u.is_commercial ? "✓ commercial" : "commercial"}</button>
+              <button onClick={() => patch(u.id, { isTeleprospector: !u.is_teleprospector })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${u.is_teleprospector ? "#0369a1" : "#e5e7eb"}`, background: u.is_teleprospector ? "#f0f9ff" : "#fff", color: u.is_teleprospector ? "#0369a1" : "#6b7280" }}>{u.is_teleprospector ? "✓ téléprospecteur" : "téléprospecteur"}</button>
+              <button onClick={() => patch(u.id, { active: u.active === false })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1.5px solid #e5e7eb", background: "#fff", color: u.active === false ? "#15803d" : "#9aa6b8" }}>{u.active === false ? "Réactiver" : "Désactiver"}</button>
             </div>
           </div>
         ))}

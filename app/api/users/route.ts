@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { listUsers, createUser, deleteUser, setUserCommercial } from "@/lib/users";
-import { createCallCenter, getCallCenter } from "@/lib/call-centers";
+import { listUsers, createUser, deleteUser, updateUserFlags } from "@/lib/users";
 import { schemeByKey } from "@/lib/commission";
 import { getAuth } from "@/lib/auth";
 
@@ -12,53 +11,38 @@ function requireAdmin(req: Request) {
   return s && s.role === "admin" ? s : null;
 }
 
-/** GET -> comptes du call center courant + infos de l'entité. */
+/** GET -> tous les comptes (commerciaux + téléprospecteurs). */
 export async function GET(req: Request) {
   const s = requireAdmin(req);
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
-    const [users, callCenter] = await Promise.all([listUsers(s.callCenterId), getCallCenter(s.callCenterId)]);
-    return NextResponse.json({ ok: true, users, callCenter });
+    const users = await listUsers();
+    return NextResponse.json({ ok: true, users });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
 }
 
-/** POST -> deux modes :
- *  - { mode:"telepro", email, password, name } : ajoute un téléprospecteur à TON call center.
- *  - { mode:"callcenter", ccName, defaultCommercial, name, email, password } : crée une NOUVELLE entité
- *    indépendante + son super-administrateur (n'a rien à voir avec ton call center). */
+/** POST -> crée un compte commercial OU téléprospecteur (login), avec sa commission.
+ *  { type:"commercial"|"telepro", name, email, password, phone, schemeKey } */
 export async function POST(req: Request) {
   const s = requireAdmin(req);
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
     const b = (await req.json()) as {
-      mode?: "telepro" | "callcenter" | "commercial";
-      email?: string; password?: string; name?: string;
-      ccName?: string; defaultCommercial?: string; schemeKey?: string;
+      type?: "commercial" | "telepro";
+      email?: string; password?: string; name?: string; phone?: string; schemeKey?: string;
     };
     if (!b.email?.trim() || !b.password?.trim() || !b.name?.trim()) {
       return NextResponse.json({ error: "Nom, email et mot de passe requis." }, { status: 400 });
     }
     const sch = schemeByKey(b.schemeKey);
-
-    if (b.mode === "callcenter") {
-      if (!b.ccName?.trim()) return NextResponse.json({ error: "Nom de l'entité (call center) requis." }, { status: 400 });
-      // Hiérarchie : la nouvelle entité devient une sous-entité de celle qui la crée.
-      const cc = await createCallCenter(b.ccName, b.defaultCommercial ?? "", s.callCenterId);
-      // L'utilisateur créé est l'admin (super-administrateur) de la NOUVELLE entité.
-      const user = await createUser(b.email, b.password, b.name, "admin", cc.id, sch.base, sch.pct);
-      return NextResponse.json({ ok: true, user, callCenter: cc });
-    }
-
-    if (b.mode === "commercial") {
-      // Compte commercial (exécutant des RDV) rattaché à ton call center, sélectionnable comme affecté.
-      const user = await createUser(b.email, b.password, b.name, "collab", s.callCenterId, sch.base, sch.pct, true);
-      return NextResponse.json({ ok: true, user });
-    }
-
-    // Téléprospecteur rattaché à ton call center.
-    const user = await createUser(b.email, b.password, b.name, "collab", s.callCenterId, sch.base, sch.pct);
+    const isCommercial = b.type === "commercial";
+    const user = await createUser({
+      email: b.email, password: b.password, name: b.name, role: "collab",
+      commissionBase: sch.base, commissionPct: sch.pct, phone: b.phone,
+      isCommercial, isTeleprospector: !isCommercial,
+    });
     return NextResponse.json({ ok: true, user });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erreur.";
@@ -66,21 +50,25 @@ export async function POST(req: Request) {
   }
 }
 
-/** PATCH -> active/désactive le statut commercial d'un compte de ton call center. */
+/** PATCH -> met à jour flags/infos d'un compte (rôles, actif, tél, commission). */
 export async function PATCH(req: Request) {
   const s = requireAdmin(req);
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { id?: number; isCommercial?: boolean };
+    const b = (await req.json()) as { id?: number; isCommercial?: boolean; isTeleprospector?: boolean; active?: boolean; phone?: string; schemeKey?: string };
     if (!b.id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
-    await setUserCommercial(b.id, s.callCenterId, !!b.isCommercial);
+    const patch: Parameters<typeof updateUserFlags>[1] = {
+      isCommercial: b.isCommercial, isTeleprospector: b.isTeleprospector, active: b.active, phone: b.phone,
+    };
+    if (b.schemeKey) { const sch = schemeByKey(b.schemeKey); patch.commissionBase = sch.base; patch.commissionPct = sch.pct; }
+    await updateUserFlags(b.id, patch);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
 }
 
-/** DELETE ?id= -> supprime un téléprospecteur de ton call center (pas un admin). */
+/** DELETE ?id= -> supprime un compte (pas un admin). */
 export async function DELETE(req: Request) {
   const s = requireAdmin(req);
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
