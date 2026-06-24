@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { listAppointments } from "@/lib/google";
 import { getAuth } from "@/lib/auth";
-import { descendantEntityIds } from "@/lib/call-centers";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-/** GET -> liste des RDV. Admin = tous ; collaborateur = seulement les siens. */
+const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+
+/** GET -> liste des RDV. Visibilité par RÔLE (sans entités) :
+ *  super-admin = tout ; commercial = ses RDV affectés ; téléprospecteur = ses RDV créés. */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
@@ -16,24 +18,15 @@ export async function GET(req: Request) {
   const timeMax = new Date(now.getTime() + 180 * 24 * 3600 * 1000); // +180 j
 
   try {
-    // Hiérarchie : un admin voit son entité ET toutes ses sous-entités (remontée).
-    const entityIds = new Set(await descendantEntityIds(s.callCenterId));
-    // Visible par l'entité créatrice (téléprospecteur) ET par l'entité du commercial.
-    const items = (await listAppointments(timeMin, timeMax)).filter((a) => entityIds.has(a.callCenterId) || entityIds.has(a.commercialCc));
-    // Annotation de la relation de l'utilisateur connecté (créateur / affecté) : filtres + mentions.
-    // tokset = jeu de mots trié -> insensible à l'ordre/accents/casse ("Bonamy jeremy" == "Jérémy Bonamy").
-    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    const items = await listAppointments(timeMin, timeMax);
     const myName = tokset(s.name);
     const myEmail = s.email.toLowerCase();
     const isCreator = (a: typeof items[number]) => a.owner === s.email;
-    // Affecté : lien robuste par e-mail du compte commercial ; fallback nom (anciens RDV).
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
       (!a.commercialEmail && !!myName && tokset(a.commercial) === myName);
-    // Admin : tout (entité + sous-entités). Collab : ses créés + ses affectés + son entité.
-    const visible = s.role === "admin"
-      ? items
-      : items.filter((a) => isCreator(a) || isAssignee(a) || a.commercialCc === s.callCenterId || a.callCenterId === s.callCenterId);
+    // Super-admin : tout. Sinon : ses RDV créés (téléprospecteur) + affectés (commercial).
+    const visible = s.role === "admin" ? items : items.filter((a) => isCreator(a) || isAssignee(a));
     const annotated = visible.map((a) => {
       const created = isCreator(a);
       const assigned = isAssignee(a);

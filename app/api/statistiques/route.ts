@@ -5,7 +5,6 @@ import { listReminders } from "@/lib/reminders";
 import { searchLeads } from "@/lib/leads";
 import { getCommissionSchemes } from "@/lib/users";
 import { realisateurCommission, apporteurCommission } from "@/lib/commission";
-import { descendantEntityIds } from "@/lib/call-centers";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -94,10 +93,15 @@ export async function GET(req: Request) {
       searchLeads(s.callCenterId),
     ]);
 
-    // Hiérarchie : un admin agrège son entité + ses sous-entités ; un collab ses propres RDV.
-    const entityIds = new Set(await descendantEntityIds(s.callCenterId));
-    const ccAppts = allAppts.filter((a) => entityIds.has(a.callCenterId) || entityIds.has(a.commercialCc));
-    const ownerAppts = s.role === "admin" ? ccAppts : ccAppts.filter((a) => a.owner === s.email);
+    // Visibilité par rôle (sans entités) : super-admin = tout ; sinon ses RDV créés + affectés.
+    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    const myEmailLc = s.email.toLowerCase();
+    const myNameTok = tokset(s.name);
+    const mineApptFn = (a: { owner?: string; commercial?: string; commercialEmail?: string }) =>
+      a.owner === s.email ||
+      (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmailLc) ||
+      (!a.commercialEmail && !!myNameTok && tokset(a.commercial ?? "") === myNameTok);
+    const ownerAppts = s.role === "admin" ? allAppts : allAppts.filter(mineApptFn);
     const appts = ownerAppts.filter((a) => inRange(a.startDateTime));
     const reminders = allReminders.filter((r) => inRange(r.remind_at));
     const leads = allLeads.filter((l) => inRange(l.created_at));
@@ -136,15 +140,9 @@ export async function GET(req: Request) {
     const nrpTotalAppels = nrpReminders.reduce((s, r) => s + r.nrp_count, 0);
 
     // --- Commission : apporteur (créateur) vs réalisateur (commercial affecté) ---
-    // Schémas de toutes les entités visibles (hiérarchie), clés = e-mail du compte.
-    const schemes = new Map<string, { base: number; pct: number }>();
-    for (const id of entityIds) {
-      const m = await getCommissionSchemes(id);
-      for (const [k, v] of m) schemes.set(k, v);
-    }
-    const myEmail = s.email.toLowerCase();
-    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
-    const myName = tokset(s.name);
+    const schemes = await getCommissionSchemes(); // tous les comptes, clé = e-mail
+    const myEmail = myEmailLc;
+    const myName = myNameTok;
     const mySc = schemes.get(myEmail) ?? { base: 50, pct: 10 };
     const isAssignee = (a: { commercialEmail?: string; commercial?: string }) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||

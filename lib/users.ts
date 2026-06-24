@@ -120,11 +120,10 @@ export async function deleteUser(id: number, _callCenterId: number): Promise<voi
   await getPool().query(`delete from users where id = $1 and role <> 'admin'`, [id]);
 }
 
-/** Schémas de commission par e-mail (pour calculer la commission par owner du RDV). */
-export async function getCommissionSchemes(callCenterId: number): Promise<Map<string, { base: number; pct: number }>> {
+/** Schémas de commission par e-mail (tous les comptes). */
+export async function getCommissionSchemes(): Promise<Map<string, { base: number; pct: number }>> {
   const { rows } = await getPool().query<{ email: string; commission_base: number; commission_pct: number }>(
-    `select email, commission_base, commission_pct from users where call_center_id = $1`,
-    [callCenterId],
+    `select email, commission_base, commission_pct from users`,
   );
   const m = new Map<string, { base: number; pct: number }>();
   for (const r of rows) m.set(r.email.toLowerCase(), { base: Number(r.commission_base), pct: Number(r.commission_pct) });
