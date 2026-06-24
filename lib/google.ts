@@ -148,19 +148,22 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const ref = genRef();
   const commercialCc = await entityIdByCommercial(a.commercial); // entité du commercial (cross-entité)
   const commercialEmail = await commercialEmailByName(a.commercial); // compte commercial affecté (lien robuste)
-  const typeLabel = a.type === "visio" ? "Visioconférence" : a.type === "telephone" ? "Téléphone" : "Physique";
+  const isDeplacement = a.type === "deplacement";
+  const typeLabel = isDeplacement ? "Déplacement" : "Agence";
   const requestBody: calendar_v3.Schema$Event = {
-      summary: `RDV ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
-      colorId: "9", // Blueberry = bleu (RDV pris, sans statut)
+      summary: `${isDeplacement ? "🚗 Déplacement" : "RDV"} ${a.firstName} ${a.lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
+      colorId: isDeplacement ? "7" : "9", // Peacock (déplacement) / Blueberry (agence)
       description: [
         `Mode : ${typeLabel}`,
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
         `Téléphone : ${a.phone}`,
         vehicle ? `Véhicule : ${vehicle}` : "",
+        a.immatriculation ? `Immatriculation : ${a.immatriculation}` : "",
         `Plateforme : ${a.platform}`,
         `Annonce : ${a.listingUrl}`,
         a.commercial ? `Commercial : ${a.commercial}` : "",
+        a.teleprospector ? `Téléprospecteur : ${a.teleprospector}` : "",
         `Lieu : ${a.location}`,
       ].filter(Boolean).join("\n") + `\n\nRéférence : ${ref}`,
       location: a.location,
@@ -183,7 +186,13 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           listingUrl: a.listingUrl,
           commercial: a.commercial ?? "",
           commercialEmail,
-          type: a.type ?? "physique",
+          teleprospector: a.teleprospector ?? "",
+          teleprospectorEmail: a.teleprospectorEmail ?? "",
+          type: a.type ?? "agence",
+          deplacement: isDeplacement ? "1" : "",
+          immatriculation: a.immatriculation ?? "",
+          vehiclePhotoUrl: a.vehiclePhotoUrl ?? "",
+          address: isDeplacement ? a.location : "",
           carBrand: a.carBrand ?? "",
           carModel: a.carModel ?? "",
           carFinish: a.carFinish ?? "",
@@ -339,7 +348,11 @@ export type AppointmentItem = {
   owner: string; // email du collaborateur ayant créé le RDV
   commercial: string; // nom du commercial qui gère le RDV
   commercialEmail: string; // e-mail du compte commercial affecté (lien robuste)
-  type: "physique" | "visio" | "telephone" | "deplacement";
+  teleprospector: string; // nom du téléprospecteur qui a généré le RDV
+  teleprospectorEmail: string;
+  type: "agence" | "deplacement";
+  immatriculation: string;
+  vehiclePhotoUrl: string;
   civility: string;
   createdAt: string | null;
   history: { t: string; at: string; info?: string }[];
@@ -391,7 +404,12 @@ export async function listAppointments(
       owner: p.owner ?? "",
       commercial: p.commercial ?? "",
       commercialEmail: p.commercialEmail ?? "",
-      type: p.deplacement === "1" ? "deplacement" : ((p.type as AppointmentItem["type"]) || "physique"),
+      teleprospector: p.teleprospector ?? "",
+      teleprospectorEmail: p.teleprospectorEmail ?? "",
+      // déplacement explicite, sinon agence (les anciens "physique/visio/telephone" -> agence).
+      type: p.deplacement === "1" ? "deplacement" : "agence",
+      immatriculation: p.immatriculation ?? "",
+      vehiclePhotoUrl: p.vehiclePhotoUrl ?? "",
       civility: p.clientCivility ?? "",
       createdAt: ev.created ?? null,
       history: (() => { try { return JSON.parse(p.history ?? "[]"); } catch { return []; } })(),

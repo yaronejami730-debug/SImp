@@ -16,16 +16,10 @@ const TABS = [
   // Masqués pour l'instant (code conservé) : recherche, relances, hesitants, assistant.
 ];
 
-export default function Nav({ active, callCenterId }: { active: string; callCenterId?: number }) {
+export default function Nav({ active }: { active: string; callCenterId?: number }) {
   const user = getUser();
-  const cc = callCenterId ?? user?.callCenterId ?? 1;
-  // Entité Yaron (1) : onglets standards + bouton "?" flottant pour le déplacement.
-  // Autres entités : pas de bouton flottant, mais 2 onglets distincts physique / déplacement.
-  const tabs = cc === 1 ? TABS : [
-    { key: "rdv", label: "RDV physique", href: "/" },
-    { key: "deplacement", label: "RDV déplacement", href: "/deplacement" },
-    ...TABS.filter((t) => t.key !== "rdv"),
-  ];
+  // Plus d'entités : onglets uniques. Le déplacement est un type dans le formulaire de RDV.
+  const tabs = TABS;
 
   function logout() {
     clearAuth();

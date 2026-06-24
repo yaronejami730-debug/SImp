@@ -24,7 +24,7 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", type: "physique", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", type: "agence", immatriculation: "", address: "", vehiclePhotoUrl: "", teleprospector: "", teleprospectorEmail: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
 const SOURCES = ["LeBonCoin", "LaCentrale", "Autre"];
 
 const inputStyle: React.CSSProperties = {
@@ -39,23 +39,40 @@ const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, color:
 function Home() {
   const [form, setForm] = useState(EMPTY);
   const [commerciaux, setCommerciaux] = useState<string[]>([...COMMERCIAUX]);
+  const [teleprospecteurs, setTeleprospecteurs] = useState<{ name: string; email: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
-  // Commercial par défaut + liste selon l'entité (call center).
+  async function uploadVehiclePhoto(file?: File) {
+    if (!file) return;
+    setPhotoBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch("/api/upload", { method: "POST", headers: authHeaders(), body: fd });
+      const d = await r.json();
+      if (d.ok) setForm((f) => ({ ...f, vehiclePhotoUrl: d.url }));
+      else alert(d.error ?? "Erreur upload photo");
+    } finally { setPhotoBusy(false); }
+  }
+
+  // Listes commerciaux + téléprospecteurs (comptes). Défaut téléprospecteur = moi.
   useEffect(() => {
     (async () => {
       try {
         const r = await fetch("/api/me", { headers: authHeaders() });
         const d = await r.json();
-        if (d.ok && (d.allCommerciaux?.length || d.commerciaux?.length)) {
-          setCommerciaux(d.allCommerciaux ?? d.commerciaux); // toutes entités -> attribution cross-entité possible
-          const def = d.callCenter?.defaultCommercial || d.commerciaux?.[0];
-          if (def) {
-            setForm((f) => ({ ...f, commercial: def }));
-            setLinkCommercial(def);
-            setHesCommercial(def);
-          }
+        if (!d.ok) return;
+        const coms: string[] = (d.commercials?.map((c: { name: string }) => c.name)) ?? d.commerciaux ?? [];
+        if (coms.length) {
+          setCommerciaux(coms);
+          const def = coms[0];
+          setForm((f) => ({ ...f, commercial: f.commercial || def }));
+          setLinkCommercial(def); setHesCommercial(def);
         }
+        setTeleprospecteurs(d.teleprospectors ?? []);
+        // Par défaut, le téléprospecteur = l'utilisateur connecté.
+        setForm((f) => ({ ...f, teleprospector: f.teleprospector || d.name || "", teleprospectorEmail: f.teleprospectorEmail || d.email || "" }));
       } catch { /* défaut COMMERCIAUX */ }
     })();
   }, []);
@@ -254,18 +271,40 @@ function Home() {
           <label style={labelStyle}>Véhicule</label>
           <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
         </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div><label style={labelStyle}>Immatriculation</label><input style={inputStyle} value={form.immatriculation} onChange={(e) => set("immatriculation", e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
+          <div>
+            <label style={labelStyle}>Photo du véhicule</label>
+            <input type="file" accept="image/*" onChange={(e) => uploadVehiclePhoto(e.target.files?.[0])} style={{ fontSize: 13 }} />
+            {photoBusy && <span style={{ fontSize: 12, color: "#9aa6b8" }}> envoi…</span>}
+            {form.vehiclePhotoUrl && <a href={form.vehiclePhotoUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: PINK, display: "block", marginTop: 4 }}>📷 voir la photo</a>}
+          </div>
+        </div>
         <div>
           <label style={labelStyle}>Type de RDV</label>
           <select style={inputStyle} value={form.type} onChange={(e) => set("type", e.target.value)}>
-            <option value="physique">🏢 Physique (agence)</option>
-            <option value="visio">💻 Visioconférence</option>
-            <option value="telephone">📞 Téléphone</option>
+            <option value="agence">🏢 En agence</option>
+            <option value="deplacement">🚗 En déplacement</option>
+          </select>
+        </div>
+        {form.type === "deplacement" && (
+          <div>
+            <label style={labelStyle}>Adresse du client (déplacement)</label>
+            <input style={inputStyle} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="N°, rue, code postal, ville" />
+          </div>
+        )}
+        <div>
+          <label style={labelStyle}>Commercial assigné</label>
+          <select style={inputStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
+            {commerciaux.length === 0 && <option value="">— Crée un commercial dans Comptes —</option>}
+            {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
-          <label style={labelStyle}>Commercial</label>
-          <select style={inputStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
-            {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
+          <label style={labelStyle}>Téléprospecteur <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(qui génère le RDV)</span></label>
+          <select style={inputStyle} value={form.teleprospectorEmail} onChange={(e) => { const t = teleprospecteurs.find((x) => x.email === e.target.value); setForm((f) => ({ ...f, teleprospectorEmail: e.target.value, teleprospector: t?.name ?? f.teleprospector })); }}>
+            {teleprospecteurs.length === 0 && <option value={form.teleprospectorEmail}>{form.teleprospector || "Moi"}</option>}
+            {teleprospecteurs.map((t) => <option key={t.email} value={t.email}>{t.name}</option>)}
           </select>
         </div>
         <div>

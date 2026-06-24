@@ -34,6 +34,10 @@ export async function POST(req: Request) {
       );
     }
 
+    // Téléprospecteur par défaut = l'utilisateur connecté (créateur du RDV).
+    if (!body.teleprospectorEmail) body.teleprospectorEmail = auth.email;
+    if (!body.teleprospector) body.teleprospector = auth.name;
+
     // 1. Champs du formulaire -> rendez-vous structuré (sans IA)
     const appt = buildAppointment(body as AppointmentInput);
 

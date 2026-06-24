@@ -16,7 +16,11 @@ export const appointmentSchema = z.object({
   carModel: z.string().describe("Modèle du véhicule (ex: Clio)").default(""),
   carFinish: z.string().describe("Finition / version (ex: GT Line, Intens, dCi 110)").default(""),
   location: z.string().describe("Adresse ou lieu du rendez-vous"),
-  type: z.enum(["physique", "visio", "telephone"]).describe("Type de RDV : physique, visioconférence ou téléphone").default("physique"),
+  type: z.enum(["agence", "deplacement"]).describe("Type de RDV : en agence ou en déplacement").default("agence"),
+  immatriculation: z.string().describe("Plaque d'immatriculation du véhicule").default(""),
+  vehiclePhotoUrl: z.string().describe("URL de la photo du véhicule").default(""),
+  teleprospector: z.string().describe("Nom du téléprospecteur ayant généré le RDV").default(""),
+  teleprospectorEmail: z.string().describe("E-mail du téléprospecteur").default(""),
   commercial: z.string().describe("Nom du commercial qui gère le RDV").default(""),
   startDateTime: z
     .string()
@@ -44,7 +48,12 @@ export type AppointmentInput = {
   carModel?: string;
   carFinish?: string;
   location?: string; // optionnel : si absent, lieu fixe par défaut
-  type?: "physique" | "visio" | "telephone"; // type de RDV (défaut physique)
+  type?: "agence" | "deplacement"; // type de RDV (défaut agence)
+  address?: string; // adresse du client (RDV en déplacement)
+  immatriculation?: string;
+  vehiclePhotoUrl?: string;
+  teleprospector?: string; // nom du téléprospecteur (qui a généré le RDV)
+  teleprospectorEmail?: string;
   commercial?: string; // nom du commercial (ex: Raphaël Dahan)
   date: string; // "YYYY-MM-DD"
   time: string; // "HH:MM"
@@ -120,8 +129,15 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     carBrand: input.carBrand?.trim() || "",
     carModel: input.carModel?.trim() || "",
     carFinish: input.carFinish?.trim() || "",
-    location: input.location?.trim() || DEFAULT_LOCATION,
-    type: input.type ?? "physique",
+    // RDV en déplacement -> lieu = adresse du client ; en agence -> lieu fixe par défaut.
+    location: input.type === "deplacement"
+      ? (input.address?.trim() || input.location?.trim() || "")
+      : (input.location?.trim() || DEFAULT_LOCATION),
+    type: input.type ?? "agence",
+    immatriculation: input.immatriculation?.trim() || "",
+    vehiclePhotoUrl: input.vehiclePhotoUrl?.trim() || "",
+    teleprospector: input.teleprospector?.trim() || "",
+    teleprospectorEmail: input.teleprospectorEmail?.trim() || "",
     commercial: input.commercial?.trim() || "",
     startDateTime: toParisISO(input.date, input.time),
   };
