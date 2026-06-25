@@ -233,11 +233,11 @@ function Home() {
             ))}
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
           <div><label style={labelStyle}>Prénom</label><input style={inputStyle} value={form.firstName} onChange={(e) => set("firstName", e.target.value)} placeholder="Jean" /></div>
           <div><label style={labelStyle}>Nom</label><input style={inputStyle} value={form.lastName} onChange={(e) => set("lastName", e.target.value)} placeholder="Dupont" /></div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
           <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="jean.dupont@email.com" /></div>
           <div><label style={labelStyle}>Téléphone du client</label><input style={inputStyle} type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="06 12 34 56 78" /></div>
         </div>
@@ -271,7 +271,7 @@ function Home() {
           <label style={labelStyle}>Véhicule</label>
           <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
           <div><label style={labelStyle}>Immatriculation</label><input style={inputStyle} value={form.immatriculation} onChange={(e) => set("immatriculation", e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
           <div>
             <label style={labelStyle}>Photo du véhicule</label>
@@ -282,7 +282,7 @@ function Home() {
         </div>
         <div>
           <label style={labelStyle}>Type de RDV</label>
-          <select style={inputStyle} value={form.type} onChange={(e) => set("type", e.target.value)}>
+          <select style={inputStyle} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value, date: "", time: "" }))}>
             <option value="agence">🏢 En agence</option>
             <option value="deplacement">🚗 En déplacement</option>
           </select>
@@ -308,8 +308,8 @@ function Home() {
           </select>
         </div>
         <div>
-          <label style={labelStyle}>Créneau du rendez-vous</label>
-          <SlotPicker value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} />
+          <label style={labelStyle}>Créneau du rendez-vous {form.type === "deplacement" ? "(déplacement)" : "(agence)"}</label>
+          <SlotPicker type={form.type} value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} />
         </div>
       </div>
 
@@ -365,7 +365,7 @@ function Home() {
                 ))}
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
               <div><label style={labelStyle}>E-mail <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(ou tél)</span></label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
               <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour SMS)</span></label><input style={inputStyle} type="tel" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
             </div>
@@ -416,7 +416,7 @@ function Home() {
                 ))}
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
               <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={hesEmail} onChange={(e) => setHesEmail(e.target.value)} placeholder="client@email.com" /></div>
               <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label><input style={inputStyle} type="tel" value={hesPhone} onChange={(e) => setHesPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
             </div>

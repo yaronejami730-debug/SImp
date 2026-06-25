@@ -3,7 +3,7 @@ import type { Appointment } from "./parse";
 import { commercialInviteEmail } from "./commerciaux";
 import { genRef } from "./ref";
 import { entityIdByCommercial } from "./call-centers";
-import { commercialEmailByName } from "./users";
+import { commercialEmailByName, commercialPhoneByName } from "./users";
 import { SLOT_MIN } from "./slots";
 
 const COMM_BUFFER_MS = Number(process.env.MOBILE_BUFFER_MIN ?? 20) * 60000; // marge trajet autour des déplacements
@@ -148,6 +148,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const ref = genRef();
   const commercialCc = await entityIdByCommercial(a.commercial); // entité du commercial (cross-entité)
   const commercialEmail = await commercialEmailByName(a.commercial); // compte commercial affecté (lien robuste)
+  const commercialPhone = await commercialPhoneByName(a.commercial);  // tél commercial (depuis la base, pas de hardcode)
   const isDeplacement = a.type === "deplacement";
   const typeLabel = isDeplacement ? "Déplacement" : "Agence";
   const requestBody: calendar_v3.Schema$Event = {
@@ -186,6 +187,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           listingUrl: a.listingUrl,
           commercial: a.commercial ?? "",
           commercialEmail,
+          commercialPhone,
           teleprospector: a.teleprospector ?? "",
           teleprospectorEmail: a.teleprospectorEmail ?? "",
           type: a.type ?? "agence",

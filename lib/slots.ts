@@ -1,7 +1,6 @@
 // Configuration des créneaux de rendez-vous.
 export const SLOT_MIN = Number(process.env.SLOT_MINUTES ?? 40);
 const OPEN = process.env.OPEN_TIME ?? "11:00"; // ouverture
-const END = process.env.CLOSE_TIME ?? "20:00"; // dernier créneau doit finir avant
 const LUNCH_START = process.env.LUNCH_START ?? "13:00";
 const LUNCH_END = process.env.LUNCH_END ?? "14:00";
 
@@ -12,14 +11,14 @@ const toMin = (hhmm: string) => {
 const fromMin = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
-/** Heures de début des créneaux (HH:MM), pause déjeuner exclue. Lun-Ven. */
+/** Créneaux AGENCE : toutes les 40 min de 11:00 à 19:00, pause déjeuner exclue. Lun-Ven. */
 export function slotTimes(): string[] {
   const open = toMin(OPEN);
-  const end = toMin(END);
+  const lastStart = toMin(process.env.AGENCE_LAST_START ?? "19:00"); // dernier créneau démarre à 19:00
   const ls = toMin(LUNCH_START);
   const le = toMin(LUNCH_END);
   const out: string[] = [];
-  for (let s = open; s + SLOT_MIN <= end; s += SLOT_MIN) {
+  for (let s = open; s <= lastStart; s += SLOT_MIN) {
     const e = s + SLOT_MIN;
     if (s < le && e > ls) continue; // chevauche la pause déjeuner
     out.push(fromMin(s));
@@ -27,15 +26,20 @@ export function slotTimes(): string[] {
   return out;
 }
 
-/** Créneaux DÉPLACEMENT : plage plus large (matin tôt → soir tard), pas de 20 min, sans pause déj.
- *  Configurable : MOBILE_OPEN (10:00), MOBILE_CLOSE (21:40), MOBILE_STEP (20). */
+/** Créneaux DÉPLACEMENT : toutes les 2 h de 10:00 à 20:00 (10,12,14,16,18,20).
+ *  Configurable : MOBILE_OPEN (10:00), MOBILE_LAST (20:00), MOBILE_STEP (120). */
 export function slotTimesMobile(): string[] {
   const open = toMin(process.env.MOBILE_OPEN ?? "10:00");
-  const end = toMin(process.env.MOBILE_CLOSE ?? "21:40");
-  const step = Number(process.env.MOBILE_STEP ?? 20);
+  const last = toMin(process.env.MOBILE_LAST ?? "20:00");
+  const step = Number(process.env.MOBILE_STEP ?? 120);
   const out: string[] = [];
-  for (let s = open; s <= end - step; s += step) out.push(fromMin(s));
+  for (let s = open; s <= last; s += step) out.push(fromMin(s));
   return out;
+}
+
+/** Créneaux selon le type de RDV. */
+export function slotTimesForType(type?: string): string[] {
+  return type === "deplacement" ? slotTimesMobile() : slotTimes();
 }
 
 /** date "YYYY-MM-DD" -> jour de semaine (1=lundi … 7=dimanche). */

@@ -3,11 +3,13 @@ import { buildAppointment, type AppointmentInput } from "@/lib/parse";
 import { createEvent, isSlotFree, createGoogleContact, commercialConflict } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
-import { confirmationEmail } from "@/lib/email-templates";
+import { confirmationEmail, mobileConfirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { SLOT_MIN } from "@/lib/slots";
 import { getAuth } from "@/lib/auth";
 import { cancelFollowup } from "@/lib/followups";
+import { commercialPhoneByName } from "@/lib/users";
+import { DEFAULT_LOCATION } from "@/lib/parse";
 
 export const maxDuration = 60;
 
@@ -63,44 +65,52 @@ export async function POST(req: Request) {
     // 2b. Stoppe une éventuelle séquence de relances en cours pour ce client.
     try { await cancelFollowup(appt.email); } catch { /* non-bloquant */ }
 
-    // 3. Mail de confirmation via Brevo (non-bloquant : si ça échoue,
-    //    l'événement reste créé et la requête réussit quand même).
+    // Téléphone du commercial (depuis la base — aucun numéro codé en dur).
+    const commPhone = await commercialPhoneByName(appt.commercial);
+    const isDeplacement = appt.type === "deplacement";
+
+    // 3. Mail de confirmation PAR TYPE (non-bloquant).
     let emailSent = false;
     let emailError: string | undefined;
     try {
       const base = baseUrlFrom(req);
-      const mail = confirmationEmail({
-        civility: appt.civility,
-        firstName: appt.firstName,
-        lastName: appt.lastName,
-        startDateTime: appt.startDateTime,
-        location: appt.location,
-        platform: appt.platform,
-        listingUrl: appt.listingUrl,
-        whatsappUrl: whatsappUrl(),
-        rescheduleUrl: event.id ? rescheduleUrl(base, event.id) : undefined,
-      });
+      const mail = isDeplacement
+        ? mobileConfirmationEmail({
+            civility: appt.civility, firstName: appt.firstName, lastName: appt.lastName,
+            startDateTime: appt.startDateTime, address: appt.location,
+            conseiller: appt.commercial, phone: commPhone,
+          })
+        : confirmationEmail({
+            civility: appt.civility, firstName: appt.firstName, lastName: appt.lastName,
+            startDateTime: appt.startDateTime, location: appt.location,
+            platform: appt.platform, listingUrl: appt.listingUrl, whatsappUrl: whatsappUrl(),
+            rescheduleUrl: event.id ? rescheduleUrl(base, event.id) : undefined,
+            commercial: appt.commercial, phone: commPhone,
+          });
       await sendEmail({
         to: appt.email,
         toName: `${appt.firstName} ${appt.lastName}`,
         subject: mail.subject,
         html: mail.html,
-        log: { templateKey: "confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: appt.commercial, eventId: event.id ?? undefined },
+        log: { templateKey: isDeplacement ? "mobile_confirmation" : "confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: appt.commercial, eventId: event.id ?? undefined },
       });
       emailSent = true;
     } catch (e) {
       emailError = e instanceof Error ? e.message : "Erreur e-mail.";
     }
 
-    // 3b. SMS confirmation (non-bloquant).
+    // 3b. SMS confirmation PAR TYPE (non-bloquant). Inclut le commercial + son tél.
     let smsSent = false;
     let smsError: string | undefined;
     try {
       const d = new Date(appt.startDateTime);
       const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
-      const text = `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location}. STOP au 36180`;
-      await sendSMS({ to: appt.phone, text, log: { templateKey: "sms_confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: appt.commercial, eventId: event.id ?? undefined, toEmail: appt.email } });
+      const conseiller = appt.commercial ? ` Conseiller M. ${appt.commercial}${commPhone ? ` (${commPhone})` : ""}.` : "";
+      const text = isDeplacement
+        ? `Simplicicar: RDV a domicile confirme ${date} a ${heure}, a votre adresse.${conseiller} STOP au 36180`
+        : `Simplicicar: RDV confirme ${date} a ${heure} - ${appt.location || DEFAULT_LOCATION}.${conseiller} STOP au 36180`;
+      await sendSMS({ to: appt.phone, text, log: { templateKey: isDeplacement ? "sms_mobile_confirmation" : "sms_confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: appt.commercial, eventId: event.id ?? undefined, toEmail: appt.email } });
       smsSent = true;
     } catch (e) {
       smsError = e instanceof Error ? e.message : "Erreur SMS.";

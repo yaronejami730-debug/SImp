@@ -73,15 +73,18 @@ type ConfirmData = {
   civility?: string; firstName: string; lastName?: string;
   startDateTime: string; location: string;
   platform?: string; listingUrl?: string; whatsappUrl?: string; rescheduleUrl?: string;
+  commercial?: string; phone?: string;
 };
 
 export function confirmationEmail(d: ConfirmData) {
   const { date, heure } = fmtLong(d.startDateTime);
+  const conseiller = d.commercial ? conseillerLine({ conseiller: d.commercial, phone: d.phone }) : "";
   const content = `
     <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
     <p style="margin:0 0 16px;font-size:15px">Suite à notre conversation téléphonique, je vous envoie les coordonnées de notre agence :</p>
     <p style="margin:0 0 16px;font-size:15px">${addressLine}</p>
     <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">Votre rendez-vous est prévu le ${date} à ${heure}.</p>
+    ${conseiller}
     <p style="margin:0 0 4px;font-size:15px">N'oubliez pas de vous munir de votre <strong>carte grise</strong> et de votre <strong>pièce d'identité</strong>.</p>
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
   const buttons = btn(WAZE, "🧭 Itinéraire vers l'agence", C.navy) + btn(d.rescheduleUrl, "Reprogrammer le rendez-vous", C.primary);

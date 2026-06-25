@@ -8,7 +8,7 @@ import { signBooking, signReview } from "@/lib/auth";
 import { dueFollowups, advanceFollowup } from "@/lib/followups";
 import { dueReminders, markReminderNotified } from "@/lib/reminders";
 import { getUserByEmail } from "@/lib/users";
-import { commercialPhone, commercialPhoneStrict } from "@/lib/commerciaux";
+import { commercialPhoneStrict } from "@/lib/commerciaux";
 import { mobileReminderEmail } from "@/lib/email-templates";
 import { upcomingMobileAppts, markMobileReminderSent } from "@/lib/mobile";
 
@@ -42,13 +42,16 @@ export async function GET(req: Request) {
   let parkingSentCount = 0;
   const errors: string[] = [];
 
-  // Texte SMS de rappel (24h ou 2h avant le RDV).
-  const reminderSmsText = (startIso: string, location: string, kind: "24h" | "2h") => {
+  // Texte SMS de rappel (24h ou 2h avant le RDV), par type (agence / déplacement).
+  const reminderSmsText = (startIso: string, location: string, kind: "24h" | "2h", isDep = false, commercial = "") => {
     const d = new Date(startIso);
     const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
     const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
     const quand = kind === "2h" ? "dans 2h" : "demain";
-    return `Simplicicar: rappel RDV ${quand}, ${date} a ${heure}${location ? ` - ${location}` : ""}. A bientot! STOP au 36180`;
+    const conseiller = commercial ? ` Conseiller M. ${commercial}.` : "";
+    return isDep
+      ? `Simplicicar: rappel RDV a domicile ${quand}, ${date} a ${heure}, a votre adresse.${conseiller} STOP au 36180`
+      : `Simplicicar: rappel RDV ${quand}, ${date} a ${heure}${location ? ` - ${location}` : ""}.${conseiller} A bientot! STOP au 36180`;
   };
 
   for (const ev of events) {
@@ -58,9 +61,10 @@ export async function GET(req: Request) {
     if (msUntil <= 0) continue;
 
     const priv = ev.extendedProperties?.private ?? {};
-    // Les RDV DÉPLACEMENT sont gérés par leur propre section (table appointments_mobile).
-    // On les ignore ici pour éviter les rappels EN DOUBLE (physique + déplacement).
-    if (priv.mobile === "1" || priv.deplacement === "1") continue;
+    // Anciens RDV déplacement de la table appointments_mobile : ils ont aussi un event Google
+    // tagué mobile=1 ; gérés par leur propre section. On les ignore ici pour éviter le double.
+    if (priv.mobile === "1") continue;
+    const isDep = priv.deplacement === "1";
 
     // Flags MAIL et SMS indépendants.
     let emailKind: "24h" | "2h" | null = null;
@@ -75,24 +79,18 @@ export async function GET(req: Request) {
     const phone = priv.clientPhone;
     const firstName = priv.clientFirstName ?? "";
     const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
+    const commPhone = priv.commercialPhone || commercialPhoneStrict(priv.commercial);
 
-    // Mail de rappel. IMPORTANT : on marque le flag APRÈS LA TENTATIVE (succès OU échec)
-    // pour qu'un destinataire invalide ne fasse pas reboucler le cron toutes les 10 min.
+    // Mail de rappel (par type). Flag marqué APRÈS LA TENTATIVE (succès OU échec)
+    // -> un destinataire invalide ne fait pas reboucler le cron toutes les 10 min.
     if (emailKind && email) {
-      const mail = reminderEmail({
-        civility: priv.clientCivility,
-        firstName,
-        lastName: priv.clientLastName,
-        startDateTime: startIso,
-        location: ev.location ?? "",
-        kind: emailKind,
-        whatsappUrl: whatsappUrl(),
-        rescheduleUrl: rescheduleUrl(base, ev.id),
-      });
+      const mail = isDep
+        ? mobileReminderEmail({ civility: priv.clientCivility, firstName, lastName: priv.clientLastName, startDateTime: startIso, address: ev.location ?? "", conseiller: priv.commercial || "", phone: commPhone, kind: emailKind })
+        : reminderEmail({ civility: priv.clientCivility, firstName, lastName: priv.clientLastName, startDateTime: startIso, location: ev.location ?? "", kind: emailKind, whatsappUrl: whatsappUrl(), rescheduleUrl: rescheduleUrl(base, ev.id) });
       try {
         await sendEmail({
           to: email, toName: firstName, subject: mail.subject, html: mail.html,
-          log: { templateKey: emailKind === "2h" ? "reminder2" : "reminder24", clientName, owner: priv.owner, eventId: ev.id },
+          log: { templateKey: `${isDep ? "mobile_" : ""}reminder${emailKind === "2h" ? "2" : "24"}`, clientName, owner: priv.owner, eventId: ev.id },
         });
         sent++;
       } catch (e) {
@@ -101,12 +99,12 @@ export async function GET(req: Request) {
       try { await markReminderSent(ev.id, emailKind); } catch { /* non-bloquant */ }
     }
 
-    // SMS de rappel (flag séparé). Marqué après tentative (succès OU échec).
+    // SMS de rappel (flag séparé). Marqué après tentative.
     if (smsKind && phone) {
       try {
         await sendSMS({
-          to: phone, text: reminderSmsText(startIso, ev.location ?? "", smsKind),
-          log: { templateKey: smsKind === "2h" ? "sms_reminder2" : "sms_reminder24", clientName, owner: priv.owner, eventId: ev.id, toEmail: email },
+          to: phone, text: reminderSmsText(startIso, ev.location ?? "", smsKind, isDep, priv.commercial),
+          log: { templateKey: `${isDep ? "sms_mobile_" : "sms_"}reminder${smsKind === "2h" ? "2" : "24"}`, clientName, owner: priv.owner, eventId: ev.id, toEmail: email },
         });
         smsSent++;
       } catch (e) {
@@ -125,19 +123,23 @@ export async function GET(req: Request) {
     if (msUntil <= 0 || msUntil > MIN15) continue;
     const priv = ev.extendedProperties?.private ?? {};
     if (priv.reminder15Sent === "1") continue;
-    if (priv.mobile === "1" || priv.deplacement === "1") continue; // déplacement géré ailleurs
+    if (priv.mobile === "1") continue; // anciens RDV déplacement (table) gérés ailleurs
+    const isDep = priv.deplacement === "1";
     const phone = priv.clientPhone;
     const email = priv.clientEmail;
     if (!phone && !email) continue;
     const firstName = priv.clientFirstName ?? "";
     const clientName = `${firstName} ${priv.clientLastName ?? ""}`.trim();
     const commercial = priv.commercial || "votre conseiller";
-    const tel = commercialPhone(priv.commercial);
+    // Coordonnées DU commercial sélectionné (stockées sur l'event ; fallback legacy).
+    const tel = priv.commercialPhone || commercialPhoneStrict(priv.commercial);
     let attempted = false; // marqué après tentative (succès OU échec) -> pas de reboucle
     // SMS
     if (phone) {
       attempted = true;
-      const text = `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre conseiller: M. ${commercial} - ${tel}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`;
+      const text = isDep
+        ? `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous a domicile chez Simplicicar. Votre conseiller M. ${commercial}${tel ? ` - ${tel}` : ""} arrive. STOP au 36180`
+        : `Bonjour ${firstName}, nous sommes a 15 minutes de votre rendez-vous chez Simplicicar. Voici le contact de votre conseiller: M. ${commercial}${tel ? ` - ${tel}` : ""}. N'hesitez pas a l'appeler une fois proche de l'agence. STOP au 36180`;
       try {
         await sendSMS({ to: phone, text, log: { templateKey: "sms_reminder15", clientName, owner: priv.owner, eventId: ev.id, toEmail: email } });
       } catch (e) { errors.push(`SMS 15min: ${e instanceof Error ? e.message : String(e)}`); }
