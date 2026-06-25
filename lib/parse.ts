@@ -33,7 +33,7 @@ export type Appointment = z.infer<typeof appointmentSchema>;
 
 /** Lieu de rendez-vous fixe (toujours le même). */
 export const DEFAULT_LOCATION =
-  process.env.DEFAULT_LOCATION ?? "3 rue Bolidor, 75017 Paris";
+  process.env.DEFAULT_LOCATION ?? "3 rue Bélidor, 75017 Paris";
 
 /** Champs bruts envoyés par le formulaire (sans IA). */
 export type AppointmentInput = {

@@ -219,7 +219,7 @@ function Home() {
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "26px 24px", boxShadow: "0 4px 6px rgba(26,39,58,0.06)" }}>
       <h1 style={{ margin: "0 0 6px", fontFamily: "'Cabin','Manrope',Arial,sans-serif", fontSize: 22, fontWeight: 700, color: NAVY, textTransform: "uppercase" }}>Prise de rendez-vous</h1>
-      <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 22, fontSize: 14 }}>Rendez-vous au 3 rue Bolidor, 75017 Paris. Le client reçoit une confirmation par e-mail.</p>
+      <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 22, fontSize: 14 }}>Rendez-vous au 3 rue Bélidor, 75017 Paris. Le client reçoit une confirmation par e-mail.</p>
 
       <div style={{ display: "grid", gap: 16 }}>
         <div>
