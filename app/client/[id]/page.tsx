@@ -18,6 +18,7 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   civility: string; email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
+  immatriculation?: string; vehiclePhotoUrl?: string; teleprospector?: string;
   note: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
   commissionBase?: number; commissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
@@ -360,6 +361,8 @@ function ClientPage({ id }: { id: string }) {
   const [customSmsText, setCustomSmsText] = useState("");
   const [photos, setPhotos] = useState<{ path: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null); // URL photo plein écran
+  const [zoomed, setZoomed] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteDirty, setNoteDirty] = useState(false);
   const [timelineDraft, setTimelineDraft] = useState("");
@@ -731,6 +734,7 @@ function ClientPage({ id }: { id: string }) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ fontSize: 16, color: NAVY, fontWeight: 600 }}>
               {vehicle === "—" ? <span style={{ color: "#9aa6b8", fontStyle: "italic" }}>Non renseigné (annonce supprimée ?)</span> : vehicle}
+              {a.immatriculation && <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 6, background: "#1a273a", color: "#fff", fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>{a.immatriculation}</span>}
             </div>
             <button onClick={() => { setDraftBrand(a.carBrand); setDraftModel(a.carModel); setDraftFinish(a.carFinish); setEditVehicle(true); }} style={{ padding: "8px 14px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
               ✏️ {vehicle === "—" ? "Renseigner" : "Modifier"}
@@ -764,6 +768,7 @@ function ClientPage({ id }: { id: string }) {
           <option value="">— Non attribué —</option>
           {COMMERCIAUX.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        {a.teleprospector && <div style={{ marginTop: 12, fontSize: 14 }}><span style={{ color: "#9aa6b8", fontSize: 11, textTransform: "uppercase" }}>Téléprospecteur</span><div style={{ fontWeight: 600, color: NAVY }}>📞 {a.teleprospector}</div></div>}
       </div>
 
       {flash && (
@@ -786,18 +791,37 @@ function ClientPage({ id }: { id: string }) {
             style={{ display: "none" }}
           />
         </label>
-        {photos.length > 0 && (
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
-            {photos.map((p) => (
-              <div key={p.path} style={{ position: "relative", paddingTop: "100%", borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} /></a>
-                <button onClick={() => removePhoto(p.path)} title="Supprimer" style={{ position: "absolute", top: 4, right: 4, padding: "3px 7px", borderRadius: 6, background: "rgba(220,38,38,0.85)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
+        {(() => {
+          // Photo prise au RDV (vehiclePhotoUrl) en tête + photos ajoutées ensuite.
+          const all = [
+            ...(a.vehiclePhotoUrl ? [{ path: "__vehicle", url: a.vehiclePhotoUrl }] : []),
+            ...photos,
+          ];
+          if (!all.length) return null;
+          return (
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+              {all.map((p) => (
+                <div key={p.path} style={{ position: "relative", paddingTop: "100%", borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" onClick={() => { setLightbox(p.url); setZoomed(false); }} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in" }} />
+                  {p.path === "__vehicle"
+                    ? <span style={{ position: "absolute", bottom: 4, left: 4, padding: "2px 6px", borderRadius: 5, background: "rgba(26,39,58,0.85)", color: "#fff", fontSize: 10, fontWeight: 700 }}>RDV</span>
+                    : <button onClick={() => removePhoto(p.path)} title="Supprimer" style={{ position: "absolute", top: 4, right: 4, padding: "3px 7px", borderRadius: 6, background: "rgba(220,38,38,0.85)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✕</button>}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
+
+      {/* === LIGHTBOX plein écran + zoom === */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 12, overflow: "auto" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox} alt="" onClick={(e) => { e.stopPropagation(); setZoomed((z) => !z); }} style={{ maxWidth: zoomed ? "none" : "100%", maxHeight: zoomed ? "none" : "100%", width: zoomed ? "auto" : undefined, transform: zoomed ? "scale(2)" : "scale(1)", transformOrigin: "center", transition: "transform 0.2s", cursor: zoomed ? "zoom-out" : "zoom-in", objectFit: "contain" }} />
+          <button onClick={() => setLightbox(null)} style={{ position: "fixed", top: 16, right: 16, width: 40, height: 40, borderRadius: 20, background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+      )}
 
       {/* === NOTES === */}
       <div style={card}>
