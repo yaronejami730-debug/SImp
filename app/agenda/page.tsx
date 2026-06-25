@@ -220,7 +220,7 @@ function Agenda() {
       {(() => {
         const b = a.relation === "both" ? { t: "🔁 Créé & à réaliser par moi", c: "#7c3aed", bg: "#f5f3ff" }
           : a.relation === "created" ? { t: `📤 Créé pour ${a.commercial || "—"}`, c: "#0369a1", bg: "#f0f9ff" }
-          : a.relation === "assigned" ? { t: "🛠️ Intervention à réaliser", c: "#15803d", bg: "#f0fdf4" }
+          : a.relation === "assigned" ? { t: "🛠️ Rendez-vous à réaliser", c: "#15803d", bg: "#f0fdf4" }
           : null;
         return b ? <div style={{ display: "inline-block", marginBottom: 8, marginLeft: a.cancelled ? 6 : 0, padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: b.c, background: b.bg }}>{b.t}</div> : null;
       })()}
