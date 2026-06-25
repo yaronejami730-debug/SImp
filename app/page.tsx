@@ -354,11 +354,11 @@ function Home() {
 
       <div style={{ marginTop: 26, borderTop: "1px solid #ececec", paddingTop: 18 }}>
         <button type="button" onClick={() => setShowLink((s) => !s)} style={{ background: "none", border: "none", color: PINK, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-          {showLink ? "▲ " : "▼ "}📞 Appel de mauvaise qualité — j&apos;impose le créneau (le client confirme)
+          {showLink ? "▲ " : "▼ "}📅 Imposer un créneau — le client confirme son identité
         </button>
         {showLink && (
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Quand on s&apos;entend mal au téléphone : tu fixes <strong>date + heure</strong> (+ véhicule), le client reçoit un SMS/mail et n&apos;a plus qu&apos;à <strong>confirmer son identité</strong>. Il ne voit ni le commercial, ni la source, ni le lien.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Tu fixes <strong>date + heure</strong> (+ véhicule), le client reçoit un SMS/mail et n&apos;a plus qu&apos;à <strong>confirmer son identité</strong>. Il ne voit ni le commercial, ni la source, ni le lien.</p>
             <div>
               <label style={labelStyle}>Civilité</label>
               <div style={{ display: "flex", gap: 8 }}>

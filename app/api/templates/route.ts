@@ -50,7 +50,7 @@ const buildCatalog = (conseiller: string, tel: string): Entry[] => [
 
   // ===== Invitations / liens =====
   { key: "booking_invite", channel: "email", group: "Invitations", label: "Invitation — le client choisit", when: "Feature « client hésitant » : il ne sait pas quand. On envoie un mail, il choisit son créneau.", render: () => mail(T.bookingInviteEmail({ bookUrl: u.bookUrl })) },
-  { key: "booking_confirm", channel: "email", group: "Invitations", label: "Invitation — créneau imposé", when: "Feature « appel de mauvaise qualité » : on fixe le créneau, le client confirme juste son identité.", render: () => mail(T.bookingConfirmInviteEmail({ bookUrl: u.bookUrl })) },
+  { key: "booking_confirm", channel: "email", group: "Invitations", label: "Invitation — créneau imposé", when: "Créneau imposé : on fixe le créneau, le client confirme juste son identité.", render: () => mail(T.bookingConfirmInviteEmail({ bookUrl: u.bookUrl })) },
 
   // ===== Rappel téléphonique (prospection) =====
   { key: "phone_rappel_organizer", channel: "email", group: "Rappel téléphonique", label: "Rappel tél — collaborateur", when: "Auto ~30 min avant un RDV téléphonique : prévient le commercial.", render: () => mail(T.phoneRappelOrganizerEmail({ organizerName: "Marie", firstName: "Jean", lastName: "Dupont", phone: "06 12 34 56 78", remindAt: inHours(0.5), listingUrl: u.listingUrl, note: "Veut vendre vite" })) },

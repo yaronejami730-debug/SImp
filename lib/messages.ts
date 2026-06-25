@@ -140,6 +140,8 @@ export async function listRelances(owner?: string): Promise<RelanceGroup[]> {
 
 export type BookingInvite = {
   to_email: string;
+  to_phone: string;
+  client_name: string;
   template_key: string;
   provider_message_id: string;
   sent_at: string;
@@ -154,7 +156,7 @@ export async function listBookingInvites(owner?: string): Promise<BookingInvite[
   if (owner) { params.push(owner); ownerClause = "and owner = $1"; }
   const { rows } = await getPool().query<BookingInvite>(
     `select distinct on (to_email)
-            to_email, template_key, provider_message_id, sent_at, owner,
+            to_email, to_phone, client_name, template_key, provider_message_id, sent_at, owner,
             count(*) over (partition by to_email)::int as invite_count
      from messages
      where channel = 'email'

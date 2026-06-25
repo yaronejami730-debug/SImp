@@ -10,7 +10,7 @@ const GREEN = "#16a34a";
 const MUTED = "#6b7280";
 const LINE = "#e5e7eb";
 
-type Hesitant = { email: string; type: string; sentAt: string; invites: number; opened: boolean; clicked: boolean; eventsKnown: boolean };
+type Hesitant = { email: string; phone: string; clientName: string; teleprospector: string; type: string; sentAt: string; invites: number; opened: boolean; clicked: boolean; eventsKnown: boolean };
 
 const fmt = (iso: string) => new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" });
 const typeLabel = (t: string) => (t === "booking_confirm" ? "Créneau imposé" : "Choix du créneau");
@@ -79,8 +79,9 @@ function Hesitants() {
             <div key={i} style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 11, padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: NAVY, wordBreak: "break-all" }}>{h.email}</div>
-                  <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: 2 }}>{typeLabel(h.type)} · invité {h.invites}× · dernier {fmt(h.sentAt)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: NAVY, wordBreak: "break-word" }}>{h.clientName || h.email}</div>
+                  <div style={{ fontSize: 12.5, color: "#475569", marginTop: 2, wordBreak: "break-all" }}>{h.email}{h.phone ? ` · ${h.phone}` : ""}</div>
+                  <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: 2 }}>{typeLabel(h.type)}{h.teleprospector ? ` · 📞 ${h.teleprospector}` : ""} · invité {h.invites}× · dernier {fmt(h.sentAt)}</div>
                 </div>
                 <button onClick={() => relancer(h.email)} disabled={busy === h.email} style={{ fontSize: 12.5, fontWeight: 700, color: "#fff", background: PINK, border: "none", borderRadius: 8, padding: "8px 12px", cursor: busy === h.email ? "default" : "pointer", whiteSpace: "nowrap", opacity: busy === h.email ? 0.6 : 1 }}>
                   {busy === h.email ? "Envoi…" : "🔁 Relancer"}

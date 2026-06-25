@@ -37,6 +37,9 @@ export async function GET(req: Request) {
         }
         return {
           email: i.to_email,
+          phone: i.to_phone ?? "",
+          clientName: i.client_name ?? "",
+          teleprospector: i.owner ?? "",
           type: i.template_key,
           sentAt: i.sent_at,
           invites: i.invite_count,

@@ -175,11 +175,10 @@ export async function GET(req: Request) {
     if (norm10(commercial).includes("bonamy")) { try { await markCommercialNotified(ev.id); } catch { /* non-bloquant */ } continue; }
     const commTel = priv.commercialPhone || commercialPhoneStrict(commercial);
     if (!commTel) continue;
-    const commFirst = commercial.split(/\s+/)[0];
     const clientName = `${priv.clientFirstName ?? ""} ${priv.clientLastName ?? ""}`.trim();
     const vehicle = [priv.carBrand, priv.carModel, priv.carFinish].filter(Boolean).join(" ");
     const civ = priv.clientCivility ? `${priv.clientCivility} ` : "";
-    const text = `${commFirst}, tu as un rendez-vous avec ${civ}${clientName}${vehicle ? ` pour ${vehicle}` : ""} dans 10 minutes. Numero du client: ${priv.clientPhone || "-"}.`;
+    const text = `${commercial}, tu as un rendez-vous avec ${civ}${clientName}${vehicle ? ` pour ${vehicle}` : ""} dans 10 minutes. Numero du client: ${priv.clientPhone || "-"}.`;
     try {
       await sendSMS({ to: commTel, text, log: { templateKey: "sms_commercial_10min", clientName, owner: priv.owner, eventId: ev.id, toEmail: priv.clientEmail } });
       commercialSmsSent++;
