@@ -12,6 +12,8 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string;
+  immatriculation: string; vehiclePhotoUrl: string;
+  commercial: string; teleprospector: string; type: string; address: string;
   present: boolean; signStatus: Sign; negotiation: number; owner: string;
   civility: string; cancelled: boolean; bcSigned: boolean; vehicleSold: boolean;
   photos: string[];
@@ -95,11 +97,13 @@ function CRM() {
     const q = search.trim().toLowerCase();
     if (q) {
       const qd = onlyDigits(q);
+      const qa = q.replace(/[^a-z0-9]/g, ""); // normalise immat (AB-123-CD -> ab123cd)
       list = list.filter((c) =>
         `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
         (qd && onlyDigits(c.phone).includes(qd)) ||
-        c.vehicles.some((v) => v.toLowerCase().includes(q))
+        c.vehicles.some((v) => v.toLowerCase().includes(q)) ||
+        (qa && c.appts.some((a) => a.immatriculation && a.immatriculation.toLowerCase().replace(/[^a-z0-9]/g, "").includes(qa)))
       );
     }
     if (filter === "sold") list = list.filter((c) => c.appts.some((a) => a.vehicleSold));
@@ -223,7 +227,7 @@ function CRM() {
         )}
       </div>
 
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher (nom, téléphone, e-mail, véhicule)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 10 }} />
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher (nom, prénom, téléphone, e-mail, marque, modèle, immatriculation)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 10 }} />
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
         {filterBtn("all", "Tous")}
