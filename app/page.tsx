@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import SlotPicker from "@/components/SlotPicker";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
-import { authHeaders } from "@/lib/client";
+import { authHeaders, getUser } from "@/lib/client";
 import { extractUrl } from "@/lib/parse";
 import { COMMERCIAUX, DEFAULT_COMMERCIAL } from "@/lib/commerciaux";
 
@@ -42,6 +42,14 @@ function Home() {
   const [teleprospecteurs, setTeleprospecteurs] = useState<{ name: string; email: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+
+  // Commercial pur (ni admin ni téléprospecteur) ne crée pas de RDV -> renvoyé vers son agenda.
+  useEffect(() => {
+    const u = getUser();
+    if (u && u.role !== "admin" && !u.isTeleprospector && u.isCommercial) {
+      window.location.href = "/agenda";
+    }
+  }, []);
 
   async function uploadVehiclePhoto(file?: File) {
     if (!file) return;

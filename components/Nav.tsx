@@ -6,20 +6,23 @@ const NAVY = "#1a273a";
 const PINK = "#DB407A";
 const LOGO = "/logo.png";
 
+// teleOnly = réservé aux téléprospecteurs (et admin) : créer des RDV / gérer les prospects.
 const TABS = [
-  { key: "rdv", label: "Prise de RDV", href: "/" },
+  { key: "rdv", label: "Prise de RDV", href: "/", teleOnly: true },
   { key: "agenda", label: "Agenda", href: "/agenda" },
   { key: "crm", label: "CRM", href: "/crm" },
-  { key: "prospection", label: "Prospection", href: "/prospection" },
-  { key: "rappels", label: "Rappels", href: "/rappels" },
+  { key: "prospection", label: "Prospection", href: "/prospection", teleOnly: true },
+  { key: "rappels", label: "Rappels", href: "/rappels", teleOnly: true },
   { key: "statistiques", label: "Stats", href: "/statistiques" },
   // Masqués pour l'instant (code conservé) : recherche, relances, hesitants, assistant.
 ];
 
 export default function Nav({ active }: { active: string; callCenterId?: number }) {
   const user = getUser();
-  // Plus d'entités : onglets uniques. Le déplacement est un type dans le formulaire de RDV.
-  const tabs = TABS;
+  // Téléprospecteur (ou admin) = peut créer des RDV / gérer les prospects.
+  // Commercial pur = voit seulement Agenda / CRM / Stats (ses RDV affectés).
+  const canCreate = user?.role === "admin" || !!user?.isTeleprospector;
+  const tabs = TABS.filter((t) => !t.teleOnly || canCreate);
 
   function logout() {
     clearAuth();

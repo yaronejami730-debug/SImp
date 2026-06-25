@@ -17,7 +17,7 @@ export function verifyPassword(pw: string, stored: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export type Session = { email: string; name: string; role: "admin" | "collab"; callCenterId: number };
+export type Session = { email: string; name: string; role: "admin" | "collab"; callCenterId: number; isCommercial?: boolean; isTeleprospector?: boolean };
 
 export function signToken(s: Session): string {
   const body = Buffer.from(JSON.stringify({ ...s, exp: Date.now() + TOKEN_TTL })).toString("base64url");
@@ -33,7 +33,7 @@ export function verifyToken(token: string): Session | null {
   try {
     const p = JSON.parse(Buffer.from(body, "base64url").toString());
     if (!p.exp || p.exp < Date.now()) return null;
-    return { email: p.email, name: p.name, role: p.role, callCenterId: Number(p.callCenterId ?? 1) };
+    return { email: p.email, name: p.name, role: p.role, callCenterId: Number(p.callCenterId ?? 1), isCommercial: !!p.isCommercial, isTeleprospector: !!p.isTeleprospector };
   } catch {
     return null;
   }
