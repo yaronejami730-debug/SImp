@@ -168,7 +168,8 @@ function Rappels() {
   }
   function goToDeplacement(r: Reminder) {
     prefill(r);
-    window.location.href = "/deplacement";
+    sessionStorage.setItem("prefillType", "deplacement");
+    window.location.href = "/";
   }
 
   // ---------- Group reminders ----------

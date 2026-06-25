@@ -3,8 +3,7 @@ import { getAuth } from "@/lib/auth";
 import * as T from "@/lib/email-templates";
 import { templateUsage } from "@/lib/messages";
 import { listTemplateSettings, setTemplateEnabled } from "@/lib/template-settings";
-import { getCallCenter } from "@/lib/call-centers";
-import { commercialPhone } from "@/lib/commerciaux";
+import { commercialPhone, DEFAULT_COMMERCIAL } from "@/lib/commerciaux";
 
 export const dynamic = "force-dynamic";
 
@@ -90,9 +89,8 @@ export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
-  // Catalogue paramétré par l'entité : conseiller + numéro réels (reflète le terrain).
-  const cc = await getCallCenter(s.callCenterId);
-  const conseiller = cc?.default_commercial?.trim() || "Raphaël Dahan";
+  // Aperçu des templates : conseiller par défaut (les vraies coordonnées sont injectées par RDV).
+  const conseiller = DEFAULT_COMMERCIAL;
   const tel = commercialPhone(conseiller);
   const CATALOG = buildCatalog(conseiller, tel);
 

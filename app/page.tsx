@@ -158,6 +158,8 @@ function Home() {
     const pFn = sessionStorage.getItem("prefillFirstName");
     const pLn = sessionStorage.getItem("prefillLastName");
     const pEm = sessionStorage.getItem("prefillEmail");
+    const pType = sessionStorage.getItem("prefillType");
+    if (pType) { sessionStorage.removeItem("prefillType"); setForm((f) => ({ ...f, type: pType, date: "", time: "" })); }
     if (prefillUrl) { sessionStorage.removeItem("prefillListingUrl"); setForm((f) => ({ ...f, listingUrl: prefillUrl })); }
     if (prefillPhone) { sessionStorage.removeItem("prefillPhone"); setForm((f) => ({ ...f, phone: prefillPhone })); }
     if (pFn) { sessionStorage.removeItem("prefillFirstName"); setForm((f) => ({ ...f, firstName: pFn })); }

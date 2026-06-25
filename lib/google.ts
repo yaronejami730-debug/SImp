@@ -2,7 +2,6 @@ import { google, type calendar_v3 } from "googleapis";
 import type { Appointment } from "./parse";
 import { commercialInviteEmail } from "./commerciaux";
 import { genRef } from "./ref";
-import { entityIdByCommercial } from "./call-centers";
 import { commercialEmailByName, commercialPhoneByName } from "./users";
 import { SLOT_MIN } from "./slots";
 
@@ -146,7 +145,6 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
   const invite = commercialInviteEmail(a.commercial); // ex: Bonamy -> bonamy.mimi@gmail.com
   const ref = genRef();
-  const commercialCc = await entityIdByCommercial(a.commercial); // entité du commercial (cross-entité)
   const commercialEmail = await commercialEmailByName(a.commercial); // compte commercial affecté (lien robuste)
   const commercialPhone = await commercialPhoneByName(a.commercial);  // tél commercial (depuis la base, pas de hardcode)
   const isDeplacement = a.type === "deplacement";
@@ -176,7 +174,6 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           app: "simplici-rdv",
           owner,
           cc: String(callCenterId),
-          commercialCc: commercialCc ? String(commercialCc) : "",
           ref,
           clientCivility: a.civility ?? "",
           clientEmail: a.email,
@@ -329,7 +326,6 @@ export async function deleteEvent(eventId: string) {
 export type AppointmentItem = {
   id: string;
   callCenterId: number;
-  commercialCc: number;
   ref: string;
   deplacement: boolean;
   address: string;
@@ -385,7 +381,6 @@ export async function listAppointments(
     return {
       id: ev.id ?? "",
       callCenterId: Number(p.cc ?? "1"),
-      commercialCc: Number(p.commercialCc || "0"),
       ref: p.ref ?? "",
       deplacement: p.deplacement === "1",
       address: p.address ?? ev.location ?? "",
@@ -671,129 +666,3 @@ export async function markReminderSmsSent(eventId: string, kind: "24h" | "2h") {
   });
 }
 
-// ─────────── Agenda EN DÉPLACEMENT (calendrier Google séparé, bleu ciel) ───────────
-// Partage le calendrier de bonami.minier@gmail.com avec le compte de service, puis
-// renseigne GOOGLE_MOBILE_CALENDAR_ID. Si absent -> sync ignorée (best-effort).
-const MOBILE_CALENDAR_ID = process.env.GOOGLE_MOBILE_CALENDAR_ID;
-const MOBILE_COLOR = "7"; // Peacock = bleu ciel
-const MOBILE_ATTENDEE = process.env.MOBILE_ATTENDEE_EMAIL ?? "bonamy.mimi@gmail.com"; // invité par défaut des déplacements
-
-export type MobileEventInput = {
-  firstName: string; lastName?: string; email?: string; phone?: string; civility?: string;
-  vehicle?: string; carBrand?: string; carModel?: string; immatriculation?: string; commercial?: string; commercialEmail?: string;
-  address?: string; startDateTime: string; durationMin: number; notes?: string; ref?: string;
-  owner?: string; callCenterId?: number; commercialCc?: number;
-};
-
-/** Propriétés privées d'un RDV déplacement : tagué simplici-rdv pour apparaître dans le CRM/agenda/fiche
- *  comme un vrai RDV, + deplacement=1 (bleu ciel, adresse) + mobile=1 (ne bloque pas le physique). */
-function mobileOwnPrivate(a: MobileEventInput): Record<string, string> {
-  return {
-    app: "simplici-rdv",
-    owner: a.owner ?? "",
-    cc: String(a.callCenterId ?? 1),
-    commercialCc: a.commercialCc ? String(a.commercialCc) : "",
-    deplacement: "1",
-    mobile: "1",
-    ref: a.ref ?? "",
-    clientCivility: a.civility ?? "",
-    clientEmail: a.email ?? "",
-    clientPhone: a.phone ?? "",
-    clientFirstName: a.firstName,
-    clientLastName: a.lastName ?? "",
-    platform: "Déplacement",
-    commercial: a.commercial ?? "",
-    commercialEmail: a.commercialEmail ?? "",
-    carBrand: a.carBrand ?? "",
-    carModel: a.carModel ?? "",
-    immatriculation: a.immatriculation ?? "",
-    address: a.address ?? "",
-    history: JSON.stringify([{ t: "created", at: new Date().toISOString() }]),
-  };
-}
-
-function mobileEventBody(a: MobileEventInput): calendar_v3.Schema$Event {
-  const end = new Date(new Date(a.startDateTime).getTime() + a.durationMin * 60000).toISOString();
-  const name = `${a.firstName} ${a.lastName ?? ""}`.trim();
-  const description = [
-    `Mode : Déplacement`,
-    `Client : ${name}`,
-    `E-mail : ${a.email ?? ""}`,
-    `Téléphone : ${a.phone ?? ""}`,
-    a.vehicle ? `Véhicule : ${a.vehicle}` : "",
-    a.immatriculation ? `Immatriculation : ${a.immatriculation}` : "",
-    a.commercial ? `Commercial : ${a.commercial}` : "",
-    `Lieu : ${a.address ?? ""}`,
-    a.notes ? `Notes : ${a.notes}` : "",
-  ].filter(Boolean).join("\n") + (a.ref ? `\n\nRéférence : ${a.ref}` : "");
-  return {
-    summary: `🚗 Déplacement — ${name}${a.vehicle ? ` — ${a.vehicle}` : ""} — ${BUSINESS}`,
-    location: a.address || undefined,
-    description,
-    colorId: MOBILE_COLOR,
-    attendees: MOBILE_ATTENDEE ? [{ email: MOBILE_ATTENDEE }] : undefined,
-    start: { dateTime: a.startDateTime, timeZone: "Europe/Paris" },
-    end: { dateTime: end, timeZone: "Europe/Paris" },
-  };
-}
-
-export type MobileEventIds = { ownId: string; mobileId: string };
-
-/** Crée le RDV déplacement sur DEUX agendas : le tien (CALENDAR_ID, tagué `mobile`
- *  pour ne PAS bloquer tes créneaux physiques) + celui de Bonamy (MOBILE_CALENDAR_ID). */
-/** Insert avec invité ; si le compte refuse les invités (service account sans DWD), réessaie sans. */
-async function insertWithAttendeeFallback(calendarId: string, body: calendar_v3.Schema$Event): Promise<string> {
-  const cal = calendarClient();
-  try {
-    const res = await cal.events.insert({ calendarId, requestBody: body, sendUpdates: "none" });
-    return res.data.id ?? "";
-  } catch (e) {
-    if (body.attendees?.length) {
-      try {
-        const { attendees, ...noAtt } = body; void attendees;
-        const res = await cal.events.insert({ calendarId, requestBody: noAtt });
-        return res.data.id ?? "";
-      } catch (e2) { console.error("insert (no attendee) failed", e2); return ""; }
-    }
-    console.error("insert failed", e);
-    return "";
-  }
-}
-
-export async function createMobileEvent(a: MobileEventInput): Promise<MobileEventIds> {
-  const body = mobileEventBody(a);
-  // Ton agenda — RDV first-class (CRM/agenda/fiche) tagué déplacement.
-  const ownId = await insertWithAttendeeFallback(CALENDAR_ID, { ...body, extendedProperties: { private: mobileOwnPrivate(a) } });
-  // Agenda Bonamy (si configuré).
-  const mobileId = MOBILE_CALENDAR_ID ? await insertWithAttendeeFallback(MOBILE_CALENDAR_ID, body) : "";
-  return { ownId, mobileId };
-}
-
-/** Backfill : retag un event déplacement existant en RDV first-class (CRM/agenda/fiche). */
-export async function patchMobileFirstClass(ownEventId: string, a: MobileEventInput): Promise<void> {
-  if (!ownEventId) return;
-  await calendarClient().events.patch({
-    calendarId: CALENDAR_ID,
-    eventId: ownEventId,
-    requestBody: { ...mobileEventBody(a), extendedProperties: { private: mobileOwnPrivate(a) } },
-    sendUpdates: "none",
-  });
-}
-
-export async function updateMobileEvent(ids: MobileEventIds, a: MobileEventInput): Promise<void> {
-  const cal = calendarClient();
-  if (ids.ownId) {
-    try { await cal.events.patch({ calendarId: CALENDAR_ID, eventId: ids.ownId, requestBody: mobileEventBody(a), sendUpdates: "none" }); }
-    catch (e) { console.error("updateMobileEvent (own) failed", e); }
-  }
-  if (MOBILE_CALENDAR_ID && ids.mobileId) {
-    try { await cal.events.patch({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId, requestBody: mobileEventBody(a), sendUpdates: "none" }); }
-    catch (e) { console.error("updateMobileEvent (bonamy) failed", e); }
-  }
-}
-
-export async function deleteMobileEvent(ids: MobileEventIds): Promise<void> {
-  const cal = calendarClient();
-  if (ids.ownId) { try { await cal.events.delete({ calendarId: CALENDAR_ID, eventId: ids.ownId, sendUpdates: "none" }); } catch (e) { console.error("deleteMobileEvent (own) failed", e); } }
-  if (MOBILE_CALENDAR_ID && ids.mobileId) { try { await cal.events.delete({ calendarId: MOBILE_CALENDAR_ID, eventId: ids.mobileId, sendUpdates: "none" }); } catch (e) { console.error("deleteMobileEvent (bonamy) failed", e); } }
-}

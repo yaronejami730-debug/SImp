@@ -10,7 +10,6 @@ import { dueReminders, markReminderNotified } from "@/lib/reminders";
 import { getUserByEmail } from "@/lib/users";
 import { commercialPhoneStrict } from "@/lib/commerciaux";
 import { mobileReminderEmail } from "@/lib/email-templates";
-import { upcomingMobileAppts, markMobileReminderSent } from "@/lib/mobile";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -158,39 +157,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // === Rappels RDV DÉPLACEMENT (24h / 2h) : mail + SMS, à l'adresse du client ===
-  let mobileReminders = 0;
-  try {
-    const mob = await upcomingMobileAppts(H24 + 60 * 60 * 1000);
-    for (const a of mob) {
-      const msUntil = new Date(a.start_datetime).getTime() - now.getTime();
-      let kind: "24h" | "2h" | null = null;
-      if (msUntil <= H2 && !a.reminder2_sent) kind = "2h";
-      else if (msUntil <= H24 && msUntil > H2 && !a.reminder24_sent) kind = "24h";
-      if (!kind) continue;
-      const clientName = `${a.first_name} ${a.last_name}`.trim();
-      const phone = commercialPhoneStrict(a.commercial);
-      if (a.email) {
-        try {
-          const mail = mobileReminderEmail({ civility: a.civility, firstName: a.first_name, lastName: a.last_name, startDateTime: a.start_datetime, address: a.address, conseiller: a.commercial, phone, kind });
-          await sendEmail({ to: a.email, toName: a.first_name, subject: mail.subject, html: mail.html, log: { templateKey: kind === "2h" ? "mobile_reminder2" : "mobile_reminder24", clientName, owner: a.teleprospecteur } });
-        } catch (e) { errors.push(`Mail mobile ${kind}: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-      if (a.phone) {
-        try {
-          const d = new Date(a.start_datetime);
-          const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
-          const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");
-          const quand = kind === "2h" ? "dans 2h" : "demain";
-          const text = `Simplicicar: rappel RDV a domicile ${quand}, ${date} a ${heure}, a votre adresse. Conseiller M. ${a.commercial}. STOP au 36180`;
-          await sendSMS({ to: a.phone, text, log: { templateKey: kind === "2h" ? "sms_mobile_reminder2" : "sms_mobile_reminder24", clientName, owner: a.teleprospecteur, toEmail: a.email } });
-        } catch (e) { errors.push(`SMS mobile ${kind}: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-      await markMobileReminderSent(a.id, kind);
-      mobileReminders++;
-    }
-  } catch (e) { errors.push(`Mobile reminders: ${e instanceof Error ? e.message : String(e)}`); }
-
   // === Mail parking : envoyé ~2h avant le RDV si parkingRequested et pas encore envoyé ===
   for (const ev of events) {
     const startIso = ev.start?.dateTime;
@@ -311,5 +277,5 @@ export async function GET(req: Request) {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
-  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, sms15Sent, mobileReminders, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
+  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, sms15Sent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
 }

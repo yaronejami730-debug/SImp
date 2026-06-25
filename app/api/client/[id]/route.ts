@@ -9,7 +9,6 @@ import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
 import { getUserByEmail } from "@/lib/users";
-import { entityCommissionScheme } from "@/lib/call-centers";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -33,15 +32,9 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
     const p = ev.extendedProperties?.private ?? {};
-    // Commission affichée selon le VIEWER : côté commercial (autre entité) -> schéma commercial ;
-    // sinon côté téléprospecteur -> schéma de l'owner. Calculée dynamiquement, jamais stockée.
-    const rdvCc = Number(p.cc ?? "1");
-    const commCc = Number(p.commercialCc || "0");
+    // Commission = barème de la personne qui a créé le RDV (owner). Calculée dynamiquement, jamais stockée.
     let commissionBase = 50, commissionPct = 10;
-    if (commCc && s.callCenterId === commCc && commCc !== rdvCc) {
-      const sc = await entityCommissionScheme(commCc);
-      commissionBase = sc.base; commissionPct = sc.pct;
-    } else if (p.owner) {
+    if (p.owner) {
       try { const u = await getUserByEmail(p.owner); if (u) { commissionBase = Number(u.commission_base); commissionPct = Number(u.commission_pct); } } catch { /* défaut */ }
     }
     return NextResponse.json({
