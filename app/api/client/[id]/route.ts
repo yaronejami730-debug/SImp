@@ -17,8 +17,11 @@ type Params = { params: Promise<{ id: string }> };
 
 type GEvent = Awaited<ReturnType<typeof getEvent>>;
 function ownsOrAdmin(ev: GEvent, email: string, role: string) {
-  const owner = ev.extendedProperties?.private?.owner ?? "";
-  return role === "admin" || owner === email;
+  const p = ev.extendedProperties?.private ?? {};
+  const owner = p.owner ?? "";
+  const commercialEmail = (p.commercialEmail ?? "").toLowerCase();
+  // Admin, ou le téléprospecteur créateur, ou le commercial assigné.
+  return role === "admin" || owner === email || (!!commercialEmail && commercialEmail === email.toLowerCase());
 }
 
 /** GET → renvoie le RDV complet (extendedProperties incluses). */
@@ -32,10 +35,16 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
     const p = ev.extendedProperties?.private ?? {};
-    // Commission = barème de la personne qui a créé le RDV (owner). Calculée dynamiquement, jamais stockée.
-    let commissionBase = 50, commissionPct = 10;
+    // Deux commissions calculées dynamiquement (jamais stockées) :
+    //  - téléprospecteur = barème du créateur (owner)
+    //  - commercial = barème du compte commercial assigné
+    let commissionBase = 50, commissionPct = 10;          // téléprospecteur (owner)
+    let commercialCommissionBase = 0, commercialCommissionPct = 0; // commercial assigné
     if (p.owner) {
       try { const u = await getUserByEmail(p.owner); if (u) { commissionBase = Number(u.commission_base); commissionPct = Number(u.commission_pct); } } catch { /* défaut */ }
+    }
+    if (p.commercialEmail) {
+      try { const cu = await getUserByEmail(p.commercialEmail); if (cu) { commercialCommissionBase = Number(cu.commission_base); commercialCommissionPct = Number(cu.commission_pct); } } catch { /* défaut */ }
     }
     return NextResponse.json({
       ok: true,
@@ -46,6 +55,8 @@ export async function GET(req: Request, { params }: Params) {
         address: p.address ?? ev.location ?? "",
         commissionBase,
         commissionPct,
+        commercialCommissionBase,
+        commercialCommissionPct,
         startDateTime: ev.start?.dateTime ?? null,
         firstName: p.clientFirstName ?? "",
         lastName: p.clientLastName ?? "",
