@@ -34,7 +34,9 @@ export async function GET(req: Request) {
   }
 
   const now = new Date();
-  const events = await listEvents(now, new Date(now.getTime() + H24 + 60 * 60 * 1000));
+  // RDV annulés : exclus de TOUS les rappels/SMS (confirmation, 24h, 2h, 15min, SMS commercial 10min).
+  const events = (await listEvents(now, new Date(now.getTime() + H24 + 60 * 60 * 1000)))
+    .filter((ev) => ev.extendedProperties?.private?.cancelled !== "1");
 
   const base = baseUrlFrom();
   let sent = 0;
