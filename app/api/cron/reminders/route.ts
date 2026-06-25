@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listEvents, markReminderSent, markReminderSmsSent, markParkingSent } from "@/lib/google";
+import { listEvents, markReminderSent, markReminderSmsSent, markParkingSent, markCommercialNotified } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { reminderEmail, cancellationFollowupEmail, thinkingFollowupEmail, unsignedFollowupEmail, signedRatingEmail, phoneRappelOrganizerEmail, phoneRappelClientEmail, parkingReservationEmail, noShowFollowupEmail, reminderApproachEmail } from "@/lib/email-templates";
@@ -17,6 +17,7 @@ export const dynamic = "force-dynamic";
 const H24 = 24 * 60 * 60 * 1000;
 const H2 = 2 * 60 * 60 * 1000;
 const MIN15 = 15 * 60 * 1000;
+const MIN10 = 12 * 60 * 1000; // fenêtre "10 min avant" (marge pour la cadence du cron)
 
 /**
  * Rappels dynamiques. À lancer souvent (~toutes les 15 min).
@@ -157,6 +158,35 @@ export async function GET(req: Request) {
     }
   }
 
+  // === SMS au COMMERCIAL assigné ~10 min avant (1 seul). Sauf Bonamy (lui a le partage de l'event). ===
+  let commercialSmsSent = 0;
+  const norm10 = (x: string) => (x || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  for (const ev of events) {
+    const startIso = ev.start?.dateTime;
+    if (!startIso || !ev.id) continue;
+    const msUntil = new Date(startIso).getTime() - now.getTime();
+    if (msUntil <= 0 || msUntil > MIN10) continue;
+    const priv = ev.extendedProperties?.private ?? {};
+    if (priv.mobile === "1") continue;
+    if (priv.commercialSms10Sent === "1") continue;
+    const commercial = priv.commercial || "";
+    if (!commercial) continue; // seulement si un commercial est assigné
+    // Bonamy : déjà invité sur l'event Google -> pas de SMS, mais on marque pour ne pas re-vérifier.
+    if (norm10(commercial).includes("bonamy")) { try { await markCommercialNotified(ev.id); } catch { /* non-bloquant */ } continue; }
+    const commTel = priv.commercialPhone || commercialPhoneStrict(commercial);
+    if (!commTel) continue;
+    const commFirst = commercial.split(/\s+/)[0];
+    const clientName = `${priv.clientFirstName ?? ""} ${priv.clientLastName ?? ""}`.trim();
+    const vehicle = [priv.carBrand, priv.carModel, priv.carFinish].filter(Boolean).join(" ");
+    const civ = priv.clientCivility ? `${priv.clientCivility} ` : "";
+    const text = `Bonjour ${commFirst}, tu as RDV avec ${civ}${clientName}${vehicle ? ` pour ${vehicle}` : ""} dans 10 min. Numero du client: ${priv.clientPhone || "-"}. Simplicicar`;
+    try {
+      await sendSMS({ to: commTel, text, log: { templateKey: "sms_commercial_10min", clientName, owner: priv.owner, eventId: ev.id, toEmail: priv.clientEmail } });
+      commercialSmsSent++;
+    } catch (e) { errors.push(`SMS commercial 10min: ${e instanceof Error ? e.message : String(e)}`); }
+    try { await markCommercialNotified(ev.id); } catch { /* non-bloquant */ }
+  }
+
   // === Mail parking : envoyé ~2h avant le RDV si parkingRequested et pas encore envoyé ===
   for (const ev of events) {
     const startIso = ev.start?.dateTime;
@@ -277,5 +307,5 @@ export async function GET(req: Request) {
     errors.push(e instanceof Error ? e.message : String(e));
   }
 
-  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, sms15Sent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
+  return NextResponse.json({ ok: true, checked: events.length, sent, smsSent, sms15Sent, commercialSmsSent, parkingSent: parkingSentCount, followupsSent, phoneRappelsSent, errors });
 }

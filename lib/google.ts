@@ -666,3 +666,12 @@ export async function markReminderSmsSent(eventId: string, kind: "24h" | "2h") {
   });
 }
 
+/** Marque que le SMS d'alerte au COMMERCIAL (10 min avant) a été envoyé (1 seul). */
+export async function markCommercialNotified(eventId: string) {
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { commercialSms10Sent: "1" } } },
+  });
+}
+
