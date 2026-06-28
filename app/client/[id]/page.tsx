@@ -3,7 +3,6 @@
 import { use, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
-import SignatureModal from "@/components/SignatureModal";
 import { authHeaders } from "@/lib/client";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
 import { SMS_TEMPLATES, SMS_TEMPLATE_CATEGORIES } from "@/lib/sms-templates-list";
@@ -28,7 +27,6 @@ type Appt = {
   reminder24Sent: boolean; reminder2Sent: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
-  mandatSignedUrl?: string; mandatSignedAt?: string | null;
 };
 
 const histLabel = (t: string) =>
@@ -41,7 +39,6 @@ const histLabel = (t: string) =>
     parking_cancelled: "Réservation parking annulée",
     parking_sent: "Mail parking envoyé au client",
     cancelled: "RDV annulé",
-    mandat_signed: "✍️ Mandat signé électroniquement",
     note: "💬 Note",
   } as Record<string, string>)[t] ?? t;
 
@@ -351,7 +348,6 @@ function ClientPage({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string>("");
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
-  const [signOpen, setSignOpen] = useState(false);
   const [editVehicle, setEditVehicle] = useState(false);
   const [draftBrand, setDraftBrand] = useState("");
   const [draftModel, setDraftModel] = useState("");
@@ -1018,21 +1014,6 @@ function ClientPage({ id }: { id: string }) {
       <div style={card}>
         <h2 style={sectionTitle}>📊 Statut & commission</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
-
-        {/* Signature électronique du mandat */}
-        {a.mandatSignedUrl ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-            <div style={{ fontSize: 13, color: "#15803d", fontWeight: 600 }}>
-              ✍️ Mandat signé électroniquement{a.mandatSignedAt ? ` le ${new Date(a.mandatSignedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}` : ""}
-            </div>
-            <a href={a.mandatSignedUrl} target="_blank" rel="noreferrer" style={{ color: "#15803d", fontWeight: 700, fontSize: 13, textDecoration: "none", border: "1.5px solid #bbf7d0", borderRadius: 7, padding: "6px 12px" }}>📄 Voir le mandat signé</a>
-          </div>
-        ) : !a.cancelled ? (
-          <button onClick={() => setSignOpen(true)} style={{ width: "100%", padding: "13px 14px", borderRadius: 9, background: PINK, color: "#fff", border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>
-            ✍️ Ajouter une signature (mandat signé)
-          </button>
-        ) : null}
-
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {(() => {
             const isNoShow = a.history.some((h) => h.t === "noshow");
@@ -1129,7 +1110,6 @@ function ClientPage({ id }: { id: string }) {
                 <div style={{ fontSize: 13, color: NAVY, fontWeight: 600 }}>{histLabel(h.t)}</div>
                 {h.t === "note" && h.info && <div style={{ fontSize: 13, color: "#232323", marginTop: 2, whiteSpace: "pre-wrap" }}>{h.info}</div>}
                 {h.t === "rescheduled" && h.info && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>→ {new Date(h.info).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
-                {h.t === "mandat_signed" && h.info && <a href={h.info} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#15803d", fontWeight: 600, textDecoration: "none", marginTop: 2, display: "inline-block" }}>📄 Voir le mandat signé</a>}
                 <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 2 }}>{new Date(h.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>
               </div>
             ))}
@@ -1150,17 +1130,6 @@ function ClientPage({ id }: { id: string }) {
             {busy === "cancel" ? "Annulation…" : rdvFuture ? "❌ Annuler le RDV (envoie un mail au client)" : "❌ Annuler le RDV (interne, sans mail)"}
           </button>
         </div>
-      )}
-
-      {signOpen && (
-        <SignatureModal
-          eid={a.id}
-          clientName={`${a.firstName} ${a.lastName}`.trim()}
-          vehicle={vehicle === "—" ? "" : vehicle}
-          commercial={a.commercial || ""}
-          onClose={() => setSignOpen(false)}
-          onDone={() => { setSignOpen(false); setFlash({ kind: "ok", msg: "Mandat signé enregistré" }); load(); }}
-        />
       )}
     </>
   );

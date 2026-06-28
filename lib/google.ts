@@ -367,9 +367,6 @@ export type AppointmentItem = {
   vehicleSold: boolean;
   soldAt: string | null;
   photos: string[];
-  // Mandat signé électroniquement (PDF stocké) — alimenté par "Ajouter une signature".
-  mandatSignedUrl: string;
-  mandatSignedAt: string | null;
   // ── Facturation (module Bilan) ──
   // Frais fixes (50 €) : facturables dès le mandat signé.
   ffStatus: "" | "invoiced" | "paid"; // "" = à facturer
@@ -442,8 +439,6 @@ export async function listAppointments(
       vehicleSold: p.vehicleSold === "1",
       soldAt: p.soldAt || null,
       photos: (() => { try { return JSON.parse(p.photos ?? "[]"); } catch { return []; } })(),
-      mandatSignedUrl: p.mandatSignedUrl ?? "",
-      mandatSignedAt: p.mandatSignedAt || null,
       ffStatus: (p.ffStatus as AppointmentItem["ffStatus"]) ?? "",
       ffNo: p.ffNo ?? "",
       ffDate: p.ffDate || null,
@@ -675,36 +670,6 @@ export async function markCancelled(eventId: string) {
       summary: undefined,
       colorId: "11", // rouge (calendar color "Tomate")
       extendedProperties: { private: { cancelled: "1", history: JSON.stringify(hist.slice(-40)) } },
-    },
-  });
-}
-
-/** Mandat signé électroniquement : enregistre le PDF signé + force l'état du dossier.
- *  - mandatSignedUrl / mandatSignedAt : le PDF signé (stocké sur Blob)
- *  - present = 1 (le client était forcément là pour signer)
- *  - signStatus = signed + signStatusAt
- *  - couleur verte + entrée d'historique.
- *  Le mandat est signé en présence du commercial déjà attribué au RDV : on ne
- *  touche donc pas au commercial. */
-export async function markMandateSigned(eventId: string, url: string) {
-  const now = new Date().toISOString();
-  const hist = await readHistory(eventId);
-  hist.push({ t: "mandat_signed", at: now, info: url });
-  await calendarClient().events.patch({
-    calendarId: CALENDAR_ID,
-    eventId,
-    requestBody: {
-      colorId: "10", // vert (signé)
-      extendedProperties: {
-        private: {
-          mandatSignedUrl: url,
-          mandatSignedAt: now,
-          present: "1",
-          signStatus: "signed",
-          signStatusAt: now,
-          history: JSON.stringify(hist.slice(-40)),
-        } as unknown as { [k: string]: string },
-      },
     },
   });
 }
