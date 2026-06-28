@@ -1129,6 +1129,7 @@ function ClientPage({ id }: { id: string }) {
                 <div style={{ fontSize: 13, color: NAVY, fontWeight: 600 }}>{histLabel(h.t)}</div>
                 {h.t === "note" && h.info && <div style={{ fontSize: 13, color: "#232323", marginTop: 2, whiteSpace: "pre-wrap" }}>{h.info}</div>}
                 {h.t === "rescheduled" && h.info && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>→ {new Date(h.info).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
+                {h.t === "mandat_signed" && h.info && <a href={h.info} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#15803d", fontWeight: 600, textDecoration: "none", marginTop: 2, display: "inline-block" }}>📄 Voir le mandat signé</a>}
                 <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 2 }}>{new Date(h.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>
               </div>
             ))}
