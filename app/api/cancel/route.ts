@@ -45,8 +45,14 @@ export async function POST(req: Request) {
 
     await markCancelled(eid);
 
+    // Mail d'annulation envoyé UNIQUEMENT si le RDV est encore à venir.
+    // Si le RDV est déjà passé, l'annulation est purement interne (pas de mail :
+    // inutile/déroutant d'annoncer l'annulation d'un RDV déjà écoulé). La relance
+    // (séquence followup ci-dessous) prendra le relais pour reproposer un créneau.
+    const isFuture = !!startDateTime && new Date(startDateTime).getTime() > Date.now();
+
     let emailSent = false;
-    if (email && startDateTime) {
+    if (email && startDateTime && isFuture) {
       try {
         const mail = cancelledEmail({
           civility,
@@ -68,7 +74,7 @@ export async function POST(req: Request) {
       try { await scheduleFollowup({ email, civility, firstName, lastName, listingUrl, owner, type: "cancel" }); } catch { /* non-bloquant */ }
     }
 
-    return NextResponse.json({ ok: true, emailSent });
+    return NextResponse.json({ ok: true, emailSent, wasFuture: isFuture });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erreur inconnue.";
     return NextResponse.json({ error: message }, { status: 500 });

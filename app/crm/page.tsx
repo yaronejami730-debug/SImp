@@ -182,8 +182,15 @@ function CRM() {
   return (
     <>
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-        <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 22, color: NAVY, textTransform: "uppercase" }}>CRM — Clients</h1>
-        <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>{clients.length} client{clients.length > 1 ? "s" : ""} · clic pour ouvrir la fiche</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 22, color: NAVY, textTransform: "uppercase" }}>CRM — Clients</h1>
+            <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>{clients.length} client{clients.length > 1 ? "s" : ""} · clic pour ouvrir la fiche</p>
+          </div>
+          <a href="/bilan" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: NAVY, color: "#fff", textDecoration: "none", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 14, whiteSpace: "nowrap" }}>
+            📊 Bilan de facturation
+          </a>
+        </div>
         <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
           <span style={{ fontSize: 13, color: "#166534", fontWeight: 600 }}>💰 Gain total (toutes commissions signées)</span>
           <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 22, fontWeight: 700, color: "#16a34a" }}>{eur(totalGain)}</span>

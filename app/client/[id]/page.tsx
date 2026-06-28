@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
+import SignatureModal from "@/components/SignatureModal";
 import { authHeaders } from "@/lib/client";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
 import { SMS_TEMPLATES, SMS_TEMPLATE_CATEGORIES } from "@/lib/sms-templates-list";
@@ -27,6 +28,7 @@ type Appt = {
   reminder24Sent: boolean; reminder2Sent: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
+  mandatSignedUrl?: string; mandatSignedAt?: string | null;
 };
 
 const histLabel = (t: string) =>
@@ -39,6 +41,7 @@ const histLabel = (t: string) =>
     parking_cancelled: "Réservation parking annulée",
     parking_sent: "Mail parking envoyé au client",
     cancelled: "RDV annulé",
+    mandat_signed: "✍️ Mandat signé électroniquement",
     note: "💬 Note",
   } as Record<string, string>)[t] ?? t;
 
@@ -348,6 +351,7 @@ function ClientPage({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string>("");
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [signOpen, setSignOpen] = useState(false);
   const [editVehicle, setEditVehicle] = useState(false);
   const [draftBrand, setDraftBrand] = useState("");
   const [draftModel, setDraftModel] = useState("");
@@ -611,7 +615,11 @@ function ClientPage({ id }: { id: string }) {
 
   async function cancelRdv() {
     if (!a) return;
-    if (!confirm(`Annuler définitivement le RDV de ${a.firstName} ${a.lastName} ? Un mail d'annulation sera envoyé au client.`)) return;
+    const willEmail = a.startDateTime ? new Date(a.startDateTime).getTime() > Date.now() : false;
+    const msg = willEmail
+      ? `Annuler le RDV de ${a.firstName} ${a.lastName} ? Un mail d'annulation sera envoyé au client.`
+      : `Annuler le RDV de ${a.firstName} ${a.lastName} ? RDV déjà passé → annulation interne uniquement, AUCUN mail ne sera envoyé au client.`;
+    if (!confirm(msg)) return;
     setBusy("cancel");
     try {
       const r = await fetch("/api/cancel", {
@@ -631,6 +639,13 @@ function ClientPage({ id }: { id: string }) {
 
   const fmtLong = (iso: string) => new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ") || "—";
+
+  // Règles métier RDV :
+  // - RDV futur -> l'annulation envoie un mail au client. RDV passé -> annulation interne, pas de mail.
+  const rdvFuture = a.startDateTime ? new Date(a.startDateTime).getTime() > Date.now() : false;
+  // - Reprogrammer : possible UNIQUEMENT si mandat non signé ET client non présenté (et non annulé).
+  //   Si le RDV a été honoré (présent) ou signé, le bouton disparaît.
+  const canReprogram = !a.cancelled && a.signStatus !== "signed" && !a.present;
 
   const sectionTitle: React.CSSProperties = { fontFamily: "'Cabin',sans-serif", fontSize: 12, color: PINK, textTransform: "uppercase", letterSpacing: 0.6, margin: "0 0 12px", fontWeight: 700 };
   const card: React.CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18, marginBottom: 14 };
@@ -978,13 +993,24 @@ function ClientPage({ id }: { id: string }) {
             "parking",
             { onClick: toggleParking, color: a.parkingRequested ? PINK : NAVY, outline: !a.parkingRequested }
           )}
-          {a.cancelled
-            ? actionBtn("📅 Reprogrammer", "RDV annulé", "noop", { disabled: true })
-            : <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" title="Ouvre la page pour choisir un nouveau créneau (envoie un mail de reprogrammation au client)" style={{ flex: "1 1 calc(50% - 5px)", minWidth: 160, padding: "12px 14px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600, textAlign: "left", lineHeight: 1.3, border: `1.5px solid ${NAVY}` }}>
-                <div>📅 Reprogrammer le RDV</div>
-                <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>Page créneaux → mail de reprogrammation</div>
+          {a.cancelled ? (
+            // RDV annulé -> relancer le client : reprogrammer le même RDV OU reprendre un nouveau RDV.
+            <>
+              <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" title="Reproposer un créneau pour ce même RDV (mail de reprogrammation au client)" style={{ flex: "1 1 calc(50% - 5px)", minWidth: 160, padding: "12px 14px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600, textAlign: "left", lineHeight: 1.3, border: `1.5px solid ${NAVY}` }}>
+                <div>🔁 Reprogrammer ce RDV</div>
+                <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>RDV annulé → reproposer un créneau</div>
               </a>
-          }
+              <a href="/agenda" title="Créer un tout nouveau rendez-vous pour ce client" style={{ flex: "1 1 calc(50% - 5px)", minWidth: 160, padding: "12px 14px", borderRadius: 8, background: "#fff", color: PINK, textDecoration: "none", fontSize: 14, fontWeight: 600, textAlign: "left", lineHeight: 1.3, border: `1.5px solid ${PINK}` }}>
+                <div>➕ Reprendre un nouveau RDV</div>
+                <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>Repartir de zéro dans l&apos;agenda</div>
+              </a>
+            </>
+          ) : canReprogram ? (
+            <a href={`/reschedule?eid=${encodeURIComponent(a.id)}`} target="_blank" rel="noreferrer" title={rdvFuture ? "Choisir un nouveau créneau (mail de reprogrammation au client)" : "RDV passé non honoré → reproposer un créneau au client"} style={{ flex: "1 1 calc(50% - 5px)", minWidth: 160, padding: "12px 14px", borderRadius: 8, background: NAVY, color: "#fff", textDecoration: "none", fontSize: 14, fontWeight: 600, textAlign: "left", lineHeight: 1.3, border: `1.5px solid ${NAVY}` }}>
+              <div>📅 Reprogrammer le RDV</div>
+              <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>Page créneaux → mail de reprogrammation</div>
+            </a>
+          ) : null /* RDV signé ou honoré : reprogrammation impossible, bouton masqué */}
         </div>
       </div>
 
@@ -992,6 +1018,21 @@ function ClientPage({ id }: { id: string }) {
       <div style={card}>
         <h2 style={sectionTitle}>📊 Statut & commission</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
+
+        {/* Signature électronique du mandat */}
+        {a.mandatSignedUrl ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, color: "#15803d", fontWeight: 600 }}>
+              ✍️ Mandat signé électroniquement{a.mandatSignedAt ? ` le ${new Date(a.mandatSignedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}` : ""}
+            </div>
+            <a href={a.mandatSignedUrl} target="_blank" rel="noreferrer" style={{ color: "#15803d", fontWeight: 700, fontSize: 13, textDecoration: "none", border: "1.5px solid #bbf7d0", borderRadius: 7, padding: "6px 12px" }}>📄 Voir le mandat signé</a>
+          </div>
+        ) : !a.cancelled ? (
+          <button onClick={() => setSignOpen(true)} style={{ width: "100%", padding: "13px 14px", borderRadius: 9, background: PINK, color: "#fff", border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>
+            ✍️ Ajouter une signature (mandat signé)
+          </button>
+        ) : null}
+
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {(() => {
             const isNoShow = a.history.some((h) => h.t === "noshow");
@@ -1099,11 +1140,26 @@ function ClientPage({ id }: { id: string }) {
       {!a.cancelled && (
         <div style={{ ...card, borderColor: "#fecaca", background: "#fff" }}>
           <h2 style={{ ...sectionTitle, color: "#dc2626" }}>⚠️ Zone d&apos;annulation</h2>
-          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Annule le RDV et envoie un mail d&apos;annulation au client. Action réversible (le RDV reste visible, marqué annulé).</p>
+          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>
+            {rdvFuture
+              ? "Annule le RDV et envoie un mail d'annulation au client. Action réversible (le RDV reste visible, marqué annulé)."
+              : "RDV déjà passé : annulation interne uniquement, aucun mail ne sera envoyé au client. Action réversible (le RDV reste visible, marqué annulé)."}
+          </p>
           <button onClick={cancelRdv} disabled={busy === "cancel"} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-            {busy === "cancel" ? "Annulation…" : "❌ Annuler le RDV (envoie un mail au client)"}
+            {busy === "cancel" ? "Annulation…" : rdvFuture ? "❌ Annuler le RDV (envoie un mail au client)" : "❌ Annuler le RDV (interne, sans mail)"}
           </button>
         </div>
+      )}
+
+      {signOpen && (
+        <SignatureModal
+          eid={a.id}
+          clientName={`${a.firstName} ${a.lastName}`.trim()}
+          vehicle={vehicle === "—" ? "" : vehicle}
+          commercial={a.commercial || ""}
+          onClose={() => setSignOpen(false)}
+          onDone={() => { setSignOpen(false); setFlash({ kind: "ok", msg: "Mandat signé enregistré" }); load(); }}
+        />
       )}
     </>
   );

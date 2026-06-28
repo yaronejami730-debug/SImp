@@ -11,6 +11,7 @@ const TABS = [
   { key: "rdv", label: "Prise de RDV", href: "/", teleOnly: true },
   { key: "agenda", label: "Agenda", href: "/agenda" },
   { key: "crm", label: "CRM", href: "/crm" },
+  { key: "bilan", label: "Bilan", href: "/bilan" },
   { key: "prospection", label: "Prospection", href: "/prospection", teleOnly: true },
   { key: "rappels", label: "Rappels", href: "/rappels", teleOnly: true },
   { key: "statistiques", label: "Stats", href: "/statistiques" },

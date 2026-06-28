@@ -341,7 +341,12 @@ export type AppointmentItem = {
   carFinish: string;
   location: string;
   present: boolean;
+  // Tri-état de présence : "present"="1", "absent"="0" (marqué absent), "unknown"=non décidé.
+  // Logique métier : présent -> on attend un statut de signature ; absent -> rien à faire.
+  presence: "present" | "absent" | "unknown";
   signStatus: "" | "signed" | "thinking" | "unsigned";
+  signStatusAt: string | null; // date du dernier changement de statut de signature
+  note: string; // note interne (ex: raison d'une non-signature)
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
   owner: string; // email du collaborateur ayant créé le RDV
   commercial: string; // nom du commercial qui gère le RDV
@@ -362,6 +367,22 @@ export type AppointmentItem = {
   vehicleSold: boolean;
   soldAt: string | null;
   photos: string[];
+  // Mandat signé électroniquement (PDF stocké) — alimenté par "Ajouter une signature".
+  mandatSignedUrl: string;
+  mandatSignedAt: string | null;
+  // ── Facturation (module Bilan) ──
+  // Frais fixes (50 €) : facturables dès le mandat signé.
+  ffStatus: "" | "invoiced" | "paid"; // "" = à facturer
+  ffNo: string;
+  ffDate: string | null;
+  ffPaidDate: string | null;
+  ffComment: string;
+  // Commission (10 % de la négo) : facturable seulement si bon de commande signé.
+  commStatus: "" | "invoiced" | "paid"; // "" = à facturer (si BC signé)
+  commNo: string;
+  commDate: string | null;
+  commPaidDate: string | null;
+  commComment: string;
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -396,7 +417,10 @@ export async function listAppointments(
       carFinish: p.carFinish ?? "",
       location: ev.location ?? "",
       present: p.present === "1",
+      presence: p.present === "1" ? "present" : p.present === "0" ? "absent" : "unknown",
       signStatus: (p.signStatus as AppointmentItem["signStatus"]) ?? "",
+      signStatusAt: p.signStatusAt || null,
+      note: p.note ?? "",
       negotiation: p.negotiation ? Number(p.negotiation) : 0,
       owner: p.owner ?? "",
       commercial: p.commercial ?? "",
@@ -418,6 +442,18 @@ export async function listAppointments(
       vehicleSold: p.vehicleSold === "1",
       soldAt: p.soldAt || null,
       photos: (() => { try { return JSON.parse(p.photos ?? "[]"); } catch { return []; } })(),
+      mandatSignedUrl: p.mandatSignedUrl ?? "",
+      mandatSignedAt: p.mandatSignedAt || null,
+      ffStatus: (p.ffStatus as AppointmentItem["ffStatus"]) ?? "",
+      ffNo: p.ffNo ?? "",
+      ffDate: p.ffDate || null,
+      ffPaidDate: p.ffPaidDate || null,
+      ffComment: p.ffComment ?? "",
+      commStatus: (p.commStatus as AppointmentItem["commStatus"]) ?? "",
+      commNo: p.commNo ?? "",
+      commDate: p.commDate || null,
+      commPaidDate: p.commPaidDate || null,
+      commComment: p.commComment ?? "",
     };
   });
 }
@@ -514,7 +550,10 @@ export async function patchTracking(
   const cal = calendarClient();
   const priv: Record<string, string> = {};
   if (fields.present !== undefined) priv.present = fields.present ? "1" : "0";
-  if (fields.signStatus !== undefined) priv.signStatus = fields.signStatus;
+  if (fields.signStatus !== undefined) {
+    priv.signStatus = fields.signStatus;
+    priv.signStatusAt = new Date().toISOString(); // date de la décision de signature
+  }
   if (fields.negotiation !== undefined) priv.negotiation = String(fields.negotiation);
   if (fields.bcSigned !== undefined) {
     priv.bcSigned = fields.bcSigned ? "1" : "";
@@ -544,6 +583,34 @@ export async function patchTracking(
       extendedProperties: { private: priv },
       ...(colorId ? { colorId } : {}),
     },
+  });
+}
+
+/** Met à jour les champs de facturation (module Bilan) d'un RDV.
+ *  ff* = frais fixes 50 € ; comm* = commission 10 %. */
+export type InvoicingFields = {
+  ffStatus?: "" | "invoiced" | "paid";
+  ffNo?: string; ffDate?: string | null; ffPaidDate?: string | null; ffComment?: string;
+  commStatus?: "" | "invoiced" | "paid";
+  commNo?: string; commDate?: string | null; commPaidDate?: string | null; commComment?: string;
+};
+export async function patchInvoicing(eventId: string, f: InvoicingFields) {
+  const priv: Record<string, string> = {};
+  const set = (k: string, v: string | null | undefined) => { if (v !== undefined) priv[k] = v ?? ""; };
+  set("ffStatus", f.ffStatus);
+  set("ffNo", f.ffNo);
+  set("ffDate", f.ffDate);
+  set("ffPaidDate", f.ffPaidDate);
+  if (f.ffComment !== undefined) priv.ffComment = (f.ffComment ?? "").slice(0, 500);
+  set("commStatus", f.commStatus);
+  set("commNo", f.commNo);
+  set("commDate", f.commDate);
+  set("commPaidDate", f.commPaidDate);
+  if (f.commComment !== undefined) priv.commComment = (f.commComment ?? "").slice(0, 500);
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
   });
 }
 
@@ -608,6 +675,36 @@ export async function markCancelled(eventId: string) {
       summary: undefined,
       colorId: "11", // rouge (calendar color "Tomate")
       extendedProperties: { private: { cancelled: "1", history: JSON.stringify(hist.slice(-40)) } },
+    },
+  });
+}
+
+/** Mandat signé électroniquement : enregistre le PDF signé + force l'état du dossier.
+ *  - mandatSignedUrl / mandatSignedAt : le PDF signé (stocké sur Blob)
+ *  - present = 1 (le client était forcément là pour signer)
+ *  - signStatus = signed + signStatusAt
+ *  - couleur verte + entrée d'historique.
+ *  Le mandat est signé en présence du commercial déjà attribué au RDV : on ne
+ *  touche donc pas au commercial. */
+export async function markMandateSigned(eventId: string, url: string) {
+  const now = new Date().toISOString();
+  const hist = await readHistory(eventId);
+  hist.push({ t: "mandat_signed", at: now, info: url });
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: {
+      colorId: "10", // vert (signé)
+      extendedProperties: {
+        private: {
+          mandatSignedUrl: url,
+          mandatSignedAt: now,
+          present: "1",
+          signStatus: "signed",
+          signStatusAt: now,
+          history: JSON.stringify(hist.slice(-40)),
+        } as unknown as { [k: string]: string },
+      },
     },
   });
 }

@@ -103,6 +103,27 @@ export async function listMessagesForClient(opts: { email?: string; phone?: stri
   return rows;
 }
 
+export type EventMsgStat = { event_id: string; emails: number; sms: number; last_sent: string };
+
+/** Compte les messages (mails / SMS) envoyés par RDV — une seule requête groupée.
+ *  Sert au module Bilan pour savoir "combien de mails/SMS ont été envoyés / renvoyés". */
+export async function messageStatsByEvent(): Promise<EventMsgStat[]> {
+  // On ne compte QUE les messages réellement envoyés (status = 'sent').
+  // Les lignes 'skipped' (numéro/clé manquants) et 'error' (retries du cron quand
+  // l'envoi échoue) ne doivent pas gonfler le compteur — sinon un RDV affiche
+  // p. ex. 76 SMS alors qu'un seul a réellement été reçu.
+  const { rows } = await getPool().query<EventMsgStat>(
+    `select event_id,
+            count(*) filter (where channel = 'email' and status = 'sent')::int as emails,
+            count(*) filter (where channel = 'sms'   and status = 'sent')::int as sms,
+            max(sent_at) filter (where status = 'sent') as last_sent
+     from messages
+     where event_id is not null and event_id <> ''
+     group by event_id`,
+  );
+  return rows;
+}
+
 export type RelanceGroup = {
   client_key: string;
   client_name: string;
