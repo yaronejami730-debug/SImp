@@ -83,14 +83,18 @@ export default function SignatureModal({
       const mention = await pdf.embedPng(mentionData);
       const sig = await pdf.embedPng(sigData);
 
-      // Colonne gauche « Le Mandant » (libellé à y≈64). On empile la mention puis
-      // la signature juste au-dessus du libellé.
-      const drawAt = (img: { width: number; height: number }, targetH: number, yBottom: number) => {
-        const w = Math.min(220, (img.width / img.height) * targetH);
-        return { x: 50, y: yBottom, width: w, height: targetH };
-      };
-      page.drawImage(mention, drawAt(mention, 24, 106));
-      page.drawImage(sig, drawAt(sig, 32, 70));
+      // ── Placement page 2 (mandat Simplicicar, A4 595x842) ──
+      // Bas-gauche, colonne « Le Mandant ». Libellés : date « Fait à … le » ≈ y88,
+      // « Le Mandant » y64, « Signature précédée de la mention… » y53→44.
+      // La mention manuscrite + la signature vont dans la BANDE BLANCHE sous ces
+      // libellés (y < 44). Ajuste ces 2 lignes si besoin de monter/descendre.
+      const COL_X = 50;
+      const MENTION = { y: 30, h: 14 }; // « Lu et approuvé bon pour accord »
+      const SIGN = { y: 6, h: 20 };     // signature, juste en dessous
+      const box = (img: { width: number; height: number }, h: number, y: number) =>
+        ({ x: COL_X, y, width: Math.min(230, (img.width / img.height) * h), height: h });
+      page.drawImage(mention, box(mention, MENTION.h, MENTION.y));
+      page.drawImage(sig, box(sig, SIGN.h, SIGN.y));
 
       const bytes = await pdf.save();
       const signedFile = new File([bytes as BlobPart], "mandat-signe.pdf", { type: "application/pdf" });
