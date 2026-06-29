@@ -106,11 +106,11 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!ownsOrAdmin(ev, s.email, s.role)) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
-    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; phone?: string; email?: string; note?: string; commercial?: string };
-    const hasVehicle = body.carBrand !== undefined || body.carModel !== undefined || body.carFinish !== undefined;
+    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; immatriculation?: string; phone?: string; email?: string; note?: string; commercial?: string };
+    const hasVehicle = body.carBrand !== undefined || body.carModel !== undefined || body.carFinish !== undefined || body.immatriculation !== undefined;
     const hasContact = body.phone !== undefined || body.email !== undefined;
     if (hasVehicle) {
-      await patchVehicle(id, { carBrand: body.carBrand?.trim(), carModel: body.carModel?.trim(), carFinish: body.carFinish?.trim() });
+      await patchVehicle(id, { carBrand: body.carBrand?.trim(), carModel: body.carModel?.trim(), carFinish: body.carFinish?.trim(), immatriculation: body.immatriculation?.trim().toUpperCase() });
     }
     if (hasContact) {
       await patchContact(id, { phone: body.phone?.trim(), email: body.email?.trim() });

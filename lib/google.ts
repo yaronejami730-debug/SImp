@@ -454,12 +454,13 @@ export async function listAppointments(
 }
 
 /** Met à jour la marque/modèle du véhicule sur un RDV. */
-export async function patchVehicle(eventId: string, fields: { carBrand?: string; carModel?: string; carFinish?: string }) {
+export async function patchVehicle(eventId: string, fields: { carBrand?: string; carModel?: string; carFinish?: string; immatriculation?: string }) {
   const cal = calendarClient();
   const priv: Record<string, string> = {};
   if (fields.carBrand !== undefined) priv.carBrand = fields.carBrand;
   if (fields.carModel !== undefined) priv.carModel = fields.carModel;
   if (fields.carFinish !== undefined) priv.carFinish = fields.carFinish;
+  if (fields.immatriculation !== undefined) priv.immatriculation = fields.immatriculation;
   await cal.events.patch({
     calendarId: CALENDAR_ID,
     eventId,

@@ -352,6 +352,7 @@ function ClientPage({ id }: { id: string }) {
   const [draftBrand, setDraftBrand] = useState("");
   const [draftModel, setDraftModel] = useState("");
   const [draftFinish, setDraftFinish] = useState("");
+  const [draftImmat, setDraftImmat] = useState("");
   const [editContact, setEditContact] = useState(false);
   const [draftPhone, setDraftPhone] = useState("");
   const [draftEmail, setDraftEmail] = useState("");
@@ -598,11 +599,11 @@ function ClientPage({ id }: { id: string }) {
       const r = await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
         method: "PATCH",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ carBrand: draftBrand, carModel: draftModel, carFinish: draftFinish }),
+        body: JSON.stringify({ carBrand: draftBrand, carModel: draftModel, carFinish: draftFinish, immatriculation: draftImmat.trim().toUpperCase() }),
       });
       const d = await r.json();
       if (d.ok) {
-        setA({ ...a, carBrand: draftBrand, carModel: draftModel, carFinish: draftFinish });
+        setA({ ...a, carBrand: draftBrand, carModel: draftModel, carFinish: draftFinish, immatriculation: draftImmat.trim().toUpperCase() });
         setEditVehicle(false);
         setFlash({ kind: "ok", msg: "Véhicule mis à jour" });
       } else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
@@ -748,7 +749,7 @@ function ClientPage({ id }: { id: string }) {
               {vehicle === "—" ? <span style={{ color: "#9aa6b8", fontStyle: "italic" }}>Non renseigné (annonce supprimée ?)</span> : vehicle}
               {a.immatriculation && <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 6, background: "#1a273a", color: "#fff", fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>{a.immatriculation}</span>}
             </div>
-            <button onClick={() => { setDraftBrand(a.carBrand); setDraftModel(a.carModel); setDraftFinish(a.carFinish); setEditVehicle(true); }} style={{ padding: "8px 14px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={() => { setDraftBrand(a.carBrand); setDraftModel(a.carModel); setDraftFinish(a.carFinish); setDraftImmat(a.immatriculation ?? ""); setEditVehicle(true); }} style={{ padding: "8px 14px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
               ✏️ {vehicle === "—" ? "Renseigner" : "Modifier"}
             </button>
           </div>
@@ -756,6 +757,8 @@ function ClientPage({ id }: { id: string }) {
           <>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Sélectionne la marque + modèle. Choisis &laquo; Autre… &raquo; pour saisir librement.</p>
             <VehiclePicker brand={draftBrand} model={draftModel} finish={draftFinish} onChange={(b, m, f) => { setDraftBrand(b); setDraftModel(m); setDraftFinish(f ?? ""); }} />
+            <label style={{ display: "block", fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.3, margin: "12px 0 4px" }}>Plaque d&apos;immatriculation</label>
+            <input value={draftImmat} onChange={(e) => setDraftImmat(e.target.value.toUpperCase())} placeholder="AB-123-CD" maxLength={15} style={{ padding: "10px 12px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 14, width: "100%", boxSizing: "border-box", textTransform: "uppercase", letterSpacing: 1, fontWeight: 600 }} />
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button onClick={saveVehicle} disabled={busy === "vehicle"} style={{ flex: 1, padding: "10px 14px", borderRadius: 7, background: PINK, color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 {busy === "vehicle" ? "Enregistrement…" : "Enregistrer"}
