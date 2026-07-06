@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getUserByEmail, listCommercials, listTeleprospectors } from "@/lib/users";
+import { teleproRule } from "@/lib/telepro-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ export async function GET(req: Request) {
       // Rétrocompat : noms seuls.
       commerciaux: commercials.map((c) => c.name),
       allCommerciaux: commercials.map((c) => c.name),
+      // Restriction éventuelle du téléprospecteur connecté (commerciaux autorisés + agence only).
+      rule: teleproRule(s.email),
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

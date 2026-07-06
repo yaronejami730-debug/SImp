@@ -12,12 +12,13 @@ const ORANGE = "#ea580c";
 const YELLOW = "#ca8a04";
 const GRAY = "#6b7280";
 const RED = "#dc2626";
+const CYAN = "#0891b2"; // annonce en ligne — mandat en cours
 
 const FRAIS_FIXE = 50;
 const COMM_RATE = 0.1;
 const LATE_DAYS = 30; // une facture émise non payée depuis +30 j = retard
 
-type Sign = "" | "signed" | "thinking" | "unsigned";
+type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
 type InvStatus = "" | "invoiced" | "paid";
 
 type Appt = {
@@ -31,6 +32,7 @@ type Appt = {
   parkingRequested: boolean; parkingSent: boolean;
   ffStatus: InvStatus; ffNo: string; ffDate: string | null; ffPaidDate: string | null; ffComment: string;
   commStatus: InvStatus; commNo: string; commDate: string | null; commPaidDate: string | null; commComment: string;
+  mandatRemoved: boolean; mandatRemovedAt: string | null; mandatRemovedReason: string;
   history: { t: string; at: string; info?: string }[];
 };
 
@@ -40,6 +42,15 @@ const MONTHS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet"
 const eur = (n: number) => (n || 0).toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const onlyDigits = (s: string) => (s || "").replace(/\D/g, "");
 const vehicleLabel = (a: Appt) => [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
+// Clé de fusion d'un nom : sans accents, minuscules, mots triés → "Jérémy Bonamy" == "Bonamy jeremy".
+const nameKey = (s: string) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).sort().join(" ");
+// Nb de caractères accentués (pour préférer la variante la mieux orthographiée comme affichage canonique).
+const accentScore = (s: string) => ((s || "").match(/[À-ÿ]/g) || []).length;
+// Alias d'affichage (clé = nameKey de la valeur stockée en base) → nom affiché voulu.
+// Ne modifie PAS les données, juste l'affichage/fusion dans le bilan.
+const COMMERCIAL_ALIAS: Record<string, string> = {
+  // (aucun alias actif — les noms s'affichent tels qu'en base)
+};
 const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 const fmtDateTime = (iso: string | null) => iso ? new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 const daysSince = (iso: string | null) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : 0;
@@ -50,6 +61,8 @@ type CommState = "pending_bc" | "to_invoice" | "invoiced" | "paid";
 type Row = {
   a: Appt;
   mandatSigned: boolean;
+  mandatRemoved: boolean; // mandat signé puis retiré (client plus sous mandat)
+  ffBillable: boolean;    // frais fixes encore dus (mandat actif, ou déjà facturés avant retrait)
   bc: boolean;
   ffAmount: number; ffState: FFState;
   commAmount: number; commState: CommState;
@@ -76,11 +89,15 @@ function derive(a: Appt): Row {
   // L'absent N'EST PAS "sans statut" : il n'y a rien à statuer.
   const noStatus = !cancelled && !absent && past && (a.signStatus ?? "") === "";
 
-  const mandatSigned = !cancelled && a.signStatus === "signed";
+  const mandatWasSigned = !cancelled && a.signStatus === "signed";
+  const mandatRemoved = mandatWasSigned && a.mandatRemoved;
+  const mandatSigned = mandatWasSigned && !mandatRemoved; // mandat actif
+  // Frais fixes encore dus : mandat actif, OU déjà facturés/payés avant le retrait (on les garde).
+  const ffBillable = mandatWasSigned && (!mandatRemoved || a.ffStatus === "invoiced" || a.ffStatus === "paid");
   const bc = !cancelled && a.bcSigned;
-  const ffAmount = mandatSigned ? FRAIS_FIXE : 0;
+  const ffAmount = ffBillable ? FRAIS_FIXE : 0;
   const commAmount = bc ? Math.round(COMM_RATE * (a.negotiation || 0)) : 0;
-  const ffState: FFState = !mandatSigned ? "none" : (a.ffStatus === "paid" ? "paid" : a.ffStatus === "invoiced" ? "invoiced" : "to_invoice");
+  const ffState: FFState = !ffBillable ? "none" : (a.ffStatus === "paid" ? "paid" : a.ffStatus === "invoiced" ? "invoiced" : "to_invoice");
   const commState: CommState = !bc ? "pending_bc" : (a.commStatus === "paid" ? "paid" : a.commStatus === "invoiced" ? "invoiced" : "to_invoice");
 
   const ffToInvoice = ffState === "to_invoice" ? FRAIS_FIXE : 0;
@@ -97,8 +114,14 @@ function derive(a: Appt): Row {
     global = { key: "absent", label: "Client absent", color: "#78716c" };
   } else if (noStatus) {
     global = { key: "no_status", label: "⚠️ Sans statut — à statuer", color: "#9333ea" };
+  } else if (mandatRemoved) {
+    global = ffState === "paid" || ffState === "invoiced"
+      ? { key: "mandat_removed", label: "⛔ Mandat retiré (frais gardés)", color: "#b91c1c" }
+      : { key: "mandat_removed", label: "⛔ Mandat retiré", color: "#b91c1c" };
   } else if (!mandatSigned) {
-    global = { key: "open", label: a.signStatus === "thinking" ? "Réfléchit" : a.signStatus === "unsigned" ? "Non signé" : "Mandat non signé / en cours", color: GRAY };
+    global = a.signStatus === "listed"
+      ? { key: "listed", label: "📢 Annonce en ligne — mandat en cours", color: CYAN }
+      : { key: "open", label: a.signStatus === "thinking" ? "Réfléchit" : a.signStatus === "unsigned" ? "Non signé" : "Mandat non signé / en cours", color: GRAY };
   } else if (!bc) {
     global = (ffState === "invoiced" || ffState === "paid")
       ? { key: "wait_bc", label: "En attente du bon de commande", color: YELLOW }
@@ -118,7 +141,7 @@ function derive(a: Appt): Row {
   const commLate = commState === "invoiced" && daysSince(a.commDate) > LATE_DAYS;
   const late = ffLate || commLate;
 
-  return { a, mandatSigned, bc, ffAmount, ffState, commAmount, commState, ffToInvoice, commToInvoice, ffInvoiced, commInvoiced, ffPaid, commPaid, global, late, cancelled, reprogrammed, reprogrammedAt, noStatus, absent };
+  return { a, mandatSigned, mandatRemoved, ffBillable, bc, ffAmount, ffState, commAmount, commState, ffToInvoice, commToInvoice, ffInvoiced, commInvoiced, ffPaid, commPaid, global, late, cancelled, reprogrammed, reprogrammedAt, noStatus, absent };
 }
 
 const ffLabel: Record<FFState, string> = { none: "—", to_invoice: "À facturer", invoiced: "Facturée", paid: "Payée" };
@@ -134,7 +157,9 @@ function Bilan() {
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState<string>(String(now.getMonth())); // "all" ou "0".."11"
+  // Plage de mois [mFrom..mTo] dans l'année choisie (ex: Juin → Août).
+  const [mFrom, setMFrom] = useState<number>(now.getMonth());
+  const [mTo, setMTo] = useState<number>(now.getMonth());
 
   const [search, setSearch] = useState("");
   const [fCommercial, setFCommercial] = useState("");
@@ -145,8 +170,23 @@ function Bilan() {
   const [fStatus, setFStatus] = useState("");   // "", to_invoice, non_invoiced, invoiced, paid, pending_bc
   const [fRdv, setFRdv] = useState("");         // "", signed, thinking, unsigned, no_status, cancelled, reprogrammed, present, absent
   const [openId, setOpenId] = useState("");
+  const [busyPay, setBusyPay] = useState(""); // id+kind en cours de maj paiement
 
   useEffect(() => { load(); }, []);
+
+  // Marque (ou dé-marque) une ligne payée en 1 clic depuis le tableau, date du jour.
+  async function quickPay(a: Appt, kind: "ff" | "comm", paid: boolean) {
+    setBusyPay(a.id + kind);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const body: Record<string, string> = { eid: a.id };
+      if (kind === "ff") { body.ffStatus = paid ? "paid" : ""; body.ffPaidDate = paid ? today : ""; }
+      else { body.commStatus = paid ? "paid" : ""; body.commPaidDate = paid ? today : ""; }
+      await fetch("/api/invoicing", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) });
+      await load();
+    } catch { /* silencieux : rechargement suivant corrigera */ }
+    finally { setBusyPay(""); }
+  }
 
   async function load() {
     setLoading(true); setErr("");
@@ -173,7 +213,25 @@ function Bilan() {
     return [...s].sort((x, y) => y - x);
   }, [appts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const commercials = useMemo(() => [...new Set(appts.map((a) => a.commercial).filter(Boolean))].sort(), [appts]);
+  // Fusionne les doublons de commerciaux (accents / ordre du nom) → un seul affichage canonique.
+  const groupKey = (name: string) => { const nk = nameKey(name); const al = COMMERCIAL_ALIAS[nk]; return al ? nameKey(al) : nk; };
+  const commCanon = useMemo(() => {
+    const best = new Map<string, string>(); // groupKey -> nom affiché
+    for (const a of appts) {
+      const c = a.commercial?.trim();
+      if (!c) continue;
+      const nk = nameKey(c);
+      const alias = COMMERCIAL_ALIAS[nk];
+      const gk = alias ? nameKey(alias) : nk;
+      if (alias) { best.set(gk, alias); continue; } // alias : affichage forcé
+      const cur = best.get(gk);
+      // Préfère la variante la mieux orthographiée : + d'accents, puis la plus longue.
+      if (!cur || accentScore(c) > accentScore(cur) || (accentScore(c) === accentScore(cur) && c.length > cur.length)) best.set(gk, c);
+    }
+    return best;
+  }, [appts]);
+  const canonComm = (name: string) => commCanon.get(groupKey(name)) ?? COMMERCIAL_ALIAS[nameKey(name)] ?? name;
+  const commercials = useMemo(() => [...new Set(commCanon.values())].sort((x, y) => x.localeCompare(y, "fr")), [commCanon]);
   const teles = useMemo(() => [...new Set(appts.map((a) => a.teleprospector).filter(Boolean))].sort(), [appts]);
   const platforms = useMemo(() => [...new Set(appts.map((a) => a.platform).filter(Boolean))].sort(), [appts]);
 
@@ -184,22 +242,25 @@ function Bilan() {
       .filter((a) => {
         const d = new Date(a.startDateTime as string);
         if (d.getFullYear() !== year) return false;
-        if (month !== "all" && d.getMonth() !== Number(month)) return false;
+        const lo = Math.min(mFrom, mTo), hi = Math.max(mFrom, mTo);
+        const mo = d.getMonth();
+        if (mo < lo || mo > hi) return false;
         return true;
       })
       .map(derive)
       .sort((x, y) => (x.a.startDateTime! < y.a.startDateTime! ? 1 : -1));
-  }, [appts, year, month]);
+  }, [appts, year, mFrom, mTo]);
 
   // Filtres + recherche cumulables.
   const rows: Row[] = useMemo(() => {
     let list = periodRows;
-    if (fCommercial) list = list.filter((r) => r.a.commercial === fCommercial);
+    if (fCommercial) list = list.filter((r) => groupKey(r.a.commercial) === groupKey(fCommercial));
     if (fTele) list = list.filter((r) => r.a.teleprospector === fTele);
     if (fPlatform) list = list.filter((r) => r.a.platform === fPlatform);
     if (fMandat) list = list.filter((r) => (fMandat === "yes" ? r.mandatSigned : !r.mandatSigned));
     if (fBc) list = list.filter((r) => (fBc === "yes" ? r.bc : !r.bc));
     if (fRdv === "signed") list = list.filter((r) => r.mandatSigned);
+    else if (fRdv === "listed") list = list.filter((r) => !r.cancelled && r.a.signStatus === "listed");
     else if (fRdv === "thinking") list = list.filter((r) => !r.cancelled && r.a.signStatus === "thinking");
     else if (fRdv === "unsigned") list = list.filter((r) => !r.cancelled && r.a.signStatus === "unsigned");
     else if (fRdv === "no_status") list = list.filter((r) => r.noStatus);
@@ -257,7 +318,8 @@ function Bilan() {
     return { ...t, totalRemaining: t.ffRemaining + t.commRemaining };
   }, [rows]);
 
-  const periodLabel = month === "all" ? `Année ${year}` : `${MONTHS[Number(month)]} ${year}`;
+  const _lo = Math.min(mFrom, mTo), _hi = Math.max(mFrom, mTo);
+  const periodLabel = _lo === 0 && _hi === 11 ? `Année ${year}` : _lo === _hi ? `${MONTHS[_lo]} ${year}` : `${MONTHS[_lo]} – ${MONTHS[_hi]} ${year}`;
 
   function clearFilters() {
     setSearch(""); setFCommercial(""); setFTele(""); setFPlatform("");
@@ -277,9 +339,9 @@ function Bilan() {
     const parking = a.parkingRequested ? "Parking sécurisé demandé" : a.parkingSent ? "Instructions envoyées" : "—";
     return [
       a.lastName, a.firstName, a.phone, vehicleLabel(a), a.immatriculation, fmtDate(a.startDateTime), fmtDate(a.createdAt),
-      a.commercial, a.teleprospector, a.platform, r.mandatSigned ? "Oui" : "Non", r.mandatSigned ? fmtDate(a.signStatusAt) : "",
+      canonComm(a.commercial), a.teleprospector, a.platform, r.mandatRemoved ? "Retiré" : r.mandatSigned ? "Oui" : "Non", r.mandatSigned || r.mandatRemoved ? fmtDate(a.signStatusAt) : "",
       r.bc ? "Oui" : "Non", r.bc ? fmtDate(a.bcSignedAt) : "", a.negotiation ? String(a.negotiation) : "0",
-      r.mandatSigned ? String(FRAIS_FIXE) : "0", ffLabel[r.ffState], a.ffNo, fmtDate(a.ffDate), fmtDate(a.ffPaidDate),
+      r.ffBillable ? String(FRAIS_FIXE) : "0", ffLabel[r.ffState], a.ffNo, fmtDate(a.ffDate), fmtDate(a.ffPaidDate),
       r.bc ? String(r.commAmount) : "0", commLabel[r.commState], a.commNo, fmtDate(a.commDate), fmtDate(a.commPaidDate),
       r.global.label, ms ? String(ms.emails) : "0", ms ? String(ms.sms) : "0", parking, a.note,
     ];
@@ -315,10 +377,10 @@ function Bilan() {
         <table class="kv-tbl"><tbody>
           <tr><td>Véhicule</td><td>${esc(vehicleLabel(a) || "—")} ${a.immatriculation ? `(${esc(a.immatriculation)})` : ""}</td></tr>
           <tr><td>Téléphone</td><td>${esc(a.phone || "—")}</td></tr>
-          <tr><td>Commercial (a signé)</td><td><b>${esc(a.commercial || "—")}</b></td></tr>
+          <tr><td>Commercial (a signé)</td><td><b>${esc(canonComm(a.commercial) || "—")}</b></td></tr>
           <tr><td>Téléprospecteur</td><td>${esc(a.teleprospector || "—")}</td></tr>
           <tr><td>Date RDV</td><td>${esc(fmtDateTime(a.startDateTime))}</td></tr>
-          <tr><td>Mandat</td><td>${r.mandatSigned ? `✅ Signé${a.signStatusAt ? ` le ${esc(fmtDate(a.signStatusAt))}` : ""}` : a.signStatus === "thinking" ? "🤔 Réfléchit" : a.signStatus === "unsigned" ? "❌ Non signé" : "— En cours"}</td></tr>
+          <tr><td>Mandat</td><td>${r.mandatSigned ? `✅ Signé${a.signStatusAt ? ` le ${esc(fmtDate(a.signStatusAt))}` : ""}` : a.signStatus === "listed" ? "📢 Annonce en ligne — mandat en cours" : a.signStatus === "thinking" ? "🤔 Réfléchit" : a.signStatus === "unsigned" ? "❌ Non signé" : "— En cours"}</td></tr>
           <tr><td>Bon de commande</td><td>${r.bc ? `✅ Signé${a.bcSignedAt ? ` le ${esc(fmtDate(a.bcSignedAt))}` : ""}` : "❌ Non signé (commission non facturable)"}</td></tr>
           <tr><td>Négociation</td><td>${esc(eur(a.negotiation))}</td></tr>
           <tr><td>Frais fixes (50 €)</td><td>${esc(ffLabel[r.ffState])}${a.ffNo ? ` · n° ${esc(a.ffNo)}` : ""}${a.ffDate ? ` · ${esc(fmtDate(a.ffDate))}` : ""}${a.ffPaidDate ? ` · payé ${esc(fmtDate(a.ffPaidDate))}` : ""}${a.ffComment ? ` · ${esc(a.ffComment)}` : ""}</td></tr>
@@ -376,6 +438,7 @@ function Bilan() {
     const mandatCell = (r: Row) => {
       const a = r.a;
       if (r.mandatSigned) return `<span style="color:${GREEN};font-weight:700">✅ Signé</span>${a.signStatusAt ? `<div class="muted">le ${esc(fmtDate(a.signStatusAt))}</div>` : ""}`;
+      if (a.signStatus === "listed") return `<span style="color:${CYAN};font-weight:700">📢 Annonce en ligne</span>`;
       if (a.signStatus === "thinking") return `<span style="color:${YELLOW};font-weight:700">🤔 Réfléchit</span>`;
       if (a.signStatus === "unsigned") return `<span style="color:${RED};font-weight:700">❌ Non signé</span>`;
       return `<span class="muted">— En cours</span>`;
@@ -386,7 +449,7 @@ function Bilan() {
         <td><b>${esc(a.lastName.toUpperCase())} ${esc(a.firstName)}</b><div class="muted">${esc(a.phone || "—")}</div></td>
         <td>${a.immatriculation ? `<b>${esc(a.immatriculation)}</b>` : "—"}<div class="muted">${esc(vehicleLabel(a) || "")}</div></td>
         <td>${esc(fmtDate(a.startDateTime))}</td>
-        <td>${esc(a.commercial || "—")}</td>
+        <td>${esc(canonComm(a.commercial) || "—")}</td>
         <td>${mandatCell(r)}</td>
         <td class="r">${r.mandatSigned ? esc(eur(FRAIS_FIXE)) : "—"}</td>
         <td class="r">${r.bc ? esc(eur(r.commAmount)) : "—"}</td>
@@ -454,6 +517,26 @@ function Bilan() {
   const pill = (color: string, label: string) => (
     <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: 5, background: color, color: "#fff", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{label}</span>
   );
+  // Bouton paiement rapide (dans le tableau, sans ouvrir la modale).
+  const payBtn = (kind: "ff" | "comm", r: Row) => {
+    const state = kind === "ff" ? r.ffState : r.commState;
+    const busy = busyPay === r.a.id + kind;
+    const paid = state === "paid";
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        title={paid ? "Annuler le paiement" : "Marquer payé (date du jour)"}
+        onClick={(e) => { e.stopPropagation(); quickPay(r.a, kind, !paid); }}
+        style={{
+          marginTop: 3, padding: "2px 7px", borderRadius: 5, fontSize: 10, fontWeight: 700, cursor: busy ? "default" : "pointer",
+          border: `1px solid ${paid ? GREEN_DARK : "#cbd5e1"}`, background: paid ? "#f0fdf4" : "#fff", color: paid ? GREEN_DARK : "#475569",
+        }}
+      >
+        {busy ? "…" : paid ? "↩︎ Payé" : "✓ Payé"}
+      </button>
+    );
+  };
   const sel = (val: string, set: (v: string) => void, opts: { v: string; l: string }[], width = "auto") => (
     <select value={val} onChange={(e) => set(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff", minWidth: width }}>
       {opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
@@ -472,7 +555,11 @@ function Bilan() {
             <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>{periodLabel} · {totals.n} dossier{totals.n > 1 ? "s" : ""}</p>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {sel(month, setMonth, [{ v: "all", l: "Toute l'année" }, ...MONTHS.map((m, i) => ({ v: String(i), l: m }))])}
+            <span style={{ fontSize: 12, color: "#6b7280" }}>De</span>
+            {sel(String(mFrom), (v) => setMFrom(Number(v)), MONTHS.map((m, i) => ({ v: String(i), l: m })))}
+            <span style={{ fontSize: 12, color: "#6b7280" }}>à</span>
+            {sel(String(mTo), (v) => setMTo(Number(v)), MONTHS.map((m, i) => ({ v: String(i), l: m })))}
+            <button onClick={() => { setMFrom(0); setMTo(11); }} title="Toute l'année" style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: (_lo === 0 && _hi === 11) ? NAVY : "#fff", color: (_lo === 0 && _hi === 11) ? "#fff" : NAVY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Année</button>
             {sel(String(year), (v) => setYear(Number(v)), years.map((y) => ({ v: String(y), l: String(y) })))}
             <a href="/crm" style={{ fontSize: 12, color: NAVY, textDecoration: "none", border: "1px solid #e5e7eb", padding: "8px 10px", borderRadius: 8 }}>← CRM</a>
           </div>
@@ -512,6 +599,7 @@ function Bilan() {
           {sel(fRdv, setFRdv, [
             { v: "", l: "Statut RDV : tous" },
             { v: "signed", l: "✅ Signés" },
+            { v: "listed", l: "📢 Annonce en ligne" },
             { v: "thinking", l: "🤔 Réfléchit" },
             { v: "unsigned", l: "❌ Non signés" },
             { v: "no_status", l: "⚠️ Sans statut" },
@@ -568,12 +656,12 @@ function Bilan() {
                   </td>
                   <td style={td}>{vehicleLabel(a) || "—"}<div style={{ color: "#9aa6b8", fontSize: 11 }}>{a.immatriculation || "—"}</div></td>
                   <td style={td}>{fmtDate(a.startDateTime)}</td>
-                  <td style={td}>{a.commercial || "—"}</td>
+                  <td style={td}>{canonComm(a.commercial) || "—"}</td>
                   <td style={td}>{a.teleprospector || "—"}</td>
-                  <td style={td}>{r.mandatSigned ? pill(GREEN, "✅") : a.signStatus === "thinking" ? pill(YELLOW, "🤔") : a.signStatus === "unsigned" ? pill(RED, "❌") : pill(GRAY, "—")}</td>
+                  <td style={td}>{r.mandatRemoved ? <span title={`Mandat retiré${a.mandatRemovedAt ? ` le ${fmtDate(a.mandatRemovedAt)}` : ""}${a.mandatRemovedReason ? ` — ${a.mandatRemovedReason}` : ""}`}>{pill("#b91c1c", "⛔ Retiré")}</span> : r.mandatSigned ? pill(GREEN, "✅") : a.signStatus === "listed" ? pill(CYAN, "📢") : a.signStatus === "thinking" ? pill(YELLOW, "🤔") : a.signStatus === "unsigned" ? pill(RED, "❌") : pill(GRAY, "—")}</td>
                   <td style={td}>{r.bc ? pill("#2563eb", "✅") : pill(GRAY, "—")}</td>
-                  <td style={td}>{r.mandatSigned ? <>{eur(FRAIS_FIXE)} {pill(ffColor[r.ffState], ffLabel[r.ffState])}{a.ffNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.ffNo}</div>}</> : "—"}</td>
-                  <td style={td}>{r.bc ? <>{eur(r.commAmount)} {pill(commColor[r.commState], commLabel[r.commState])}{a.commNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.commNo}</div>}</> : pill(YELLOW, "Attente BC")}</td>
+                  <td style={td}>{r.ffBillable ? <>{eur(FRAIS_FIXE)} {pill(ffColor[r.ffState], ffLabel[r.ffState])}{a.ffNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.ffNo}</div>}<div>{payBtn("ff", r)}</div></> : "—"}</td>
+                  <td style={td}>{r.bc ? <>{eur(r.commAmount)} {pill(commColor[r.commState], commLabel[r.commState])}{a.commNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.commNo}</div>}<div>{payBtn("comm", r)}</div></> : pill(YELLOW, "Attente BC")}</td>
                   <td style={td}>{pill(r.global.color, r.global.label)}{r.late && <div style={{ marginTop: 3 }}>{pill(RED, "RETARD")}</div>}</td>
                   <td style={td}>📧 {ms?.emails ?? 0} · 📱 {ms?.sms ?? 0}</td>
                 </tr>
@@ -623,7 +711,24 @@ function EditModal({ row, msg, onClose, onSaved }: { row: Row; msg?: MsgStat; on
   const [commPaidDate, setCommPaidDate] = useState(a.commPaidDate ? a.commPaidDate.slice(0, 10) : "");
   const [commComment, setCommComment] = useState(a.commComment);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+
+  // Suppression DÉFINITIVE d'un dossier (nettoyage test/erreur). Irréversible, pas de mail.
+  async function del() {
+    if (!confirm(`Supprimer DÉFINITIVEMENT le dossier de ${a.firstName} ${a.lastName} (${vehicleLabel(a) || "véhicule —"}) ?\n\n⚠️ Irréversible : le RDV est effacé de l'agenda Google. Aucun mail n'est envoyé.`)) return;
+    setDeleting(true); setError("");
+    try {
+      const res = await fetch("/api/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ eid: a.id }),
+      });
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error ?? "Erreur");
+      onSaved();
+    } catch (e) { setError(e instanceof Error ? e.message : "Erreur"); setDeleting(false); }
+  }
 
   async function save() {
     setSaving(true); setError("");
@@ -669,7 +774,7 @@ function EditModal({ row, msg, onClose, onSaved }: { row: Row; msg?: MsgStat; on
         {/* Récap signatures / suivi */}
         <div style={{ background: "#f8fafc", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13, lineHeight: 1.7 }}>
           <div><b>Commercial :</b> {a.commercial || "—"} · <b>Téléprospecteur :</b> {a.teleprospector || "—"}</div>
-          <div><b>Mandat :</b> {row.mandatSigned ? `✅ signé${a.signStatusAt ? ` le ${fmtDate(a.signStatusAt)}` : ""}` : a.signStatus === "thinking" ? "🤔 réfléchit" : a.signStatus === "unsigned" ? "❌ non signé" : "— en cours"}</div>
+          <div><b>Mandat :</b> {row.mandatSigned ? `✅ signé${a.signStatusAt ? ` le ${fmtDate(a.signStatusAt)}` : ""}` : a.signStatus === "listed" ? "📢 annonce en ligne — mandat en cours" : a.signStatus === "thinking" ? "🤔 réfléchit" : a.signStatus === "unsigned" ? "❌ non signé" : "— en cours"}</div>
           <div><b>Bon de commande :</b> {row.bc ? `✅ signé${a.bcSignedAt ? ` le ${fmtDate(a.bcSignedAt)}` : ""} → commission facturable` : "❌ non signé → commission en attente"}</div>
           <div><b>Négociation :</b> {eur(a.negotiation)} · <b>Commission 10% :</b> {row.bc ? eur(row.commAmount) : "—"}</div>
           <div><b>Véhicule / parking :</b> {a.parkingRequested ? "🅿️ parking sécurisé demandé" : a.parkingSent ? "instructions envoyées" : "—"}</div>
@@ -703,7 +808,9 @@ function EditModal({ row, msg, onClose, onSaved }: { row: Row; msg?: MsgStat; on
         </div>
 
         {error && <p style={{ color: RED, fontSize: 13 }}>❌ {error}</p>}
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button onClick={del} disabled={deleting || saving} title="Supprimer définitivement ce dossier de l'agenda (test/erreur)" style={{ padding: "10px 14px", borderRadius: 9, border: `1.5px solid ${RED}`, background: "#fff", color: RED, fontWeight: 600, cursor: deleting ? "default" : "pointer", opacity: deleting ? 0.6 : 1 }}>{deleting ? "Suppression…" : "🗑️ Supprimer"}</button>
+          <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{ padding: "10px 16px", borderRadius: 9, border: "1.5px solid #e5e7eb", background: "#fff", color: NAVY, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
           <button onClick={save} disabled={saving} style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: PINK, color: "#fff", fontWeight: 700, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Enregistrement…" : "💾 Enregistrer"}</button>
         </div>

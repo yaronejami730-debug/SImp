@@ -19,6 +19,7 @@ export const appointmentSchema = z.object({
   type: z.enum(["agence", "deplacement"]).describe("Type de RDV : en agence ou en déplacement").default("agence"),
   immatriculation: z.string().describe("Plaque d'immatriculation du véhicule").default(""),
   vehiclePhotoUrl: z.string().describe("URL de la photo du véhicule").default(""),
+  photos: z.array(z.string()).describe("URLs des photos du véhicule").default([]),
   teleprospector: z.string().describe("Nom du téléprospecteur ayant généré le RDV").default(""),
   teleprospectorEmail: z.string().describe("E-mail du téléprospecteur").default(""),
   commercial: z.string().describe("Nom du commercial qui gère le RDV").default(""),
@@ -52,6 +53,7 @@ export type AppointmentInput = {
   address?: string; // adresse du client (RDV en déplacement)
   immatriculation?: string;
   vehiclePhotoUrl?: string;
+  photos?: string[]; // plusieurs photos du véhicule
   teleprospector?: string; // nom du téléprospecteur (qui a généré le RDV)
   teleprospectorEmail?: string;
   commercial?: string; // nom du commercial (ex: Raphaël Dahan)
@@ -135,7 +137,8 @@ export function buildAppointment(input: AppointmentInput): Appointment {
       : (input.location?.trim() || DEFAULT_LOCATION),
     type: input.type ?? "agence",
     immatriculation: input.immatriculation?.trim() || "",
-    vehiclePhotoUrl: input.vehiclePhotoUrl?.trim() || "",
+    vehiclePhotoUrl: input.vehiclePhotoUrl?.trim() || (input.photos?.[0] ?? ""),
+    photos: (input.photos ?? []).filter(Boolean).slice(0, 6),
     teleprospector: input.teleprospector?.trim() || "",
     teleprospectorEmail: input.teleprospectorEmail?.trim() || "",
     commercial: input.commercial?.trim() || "",

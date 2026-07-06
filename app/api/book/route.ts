@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyBooking } from "@/lib/auth";
 import { buildAppointment } from "@/lib/parse";
-import { createEvent, isSlotFree } from "@/lib/google";
+import { createEvent, isSlotFree, commercialConflict, halfDayModalityBlocked } from "@/lib/google";
 import { SLOT_MIN } from "@/lib/slots";
 import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
@@ -62,7 +62,15 @@ export async function POST(req: Request) {
       time,
     });
 
-    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN, undefined, p.callCenterId ?? 1))) {
+    // Créneaux par commercial : bloque seulement si CE commercial est déjà pris à ce moment.
+    const isDep = appt.type === "deplacement";
+    if (appt.commercial) {
+      const conflict = await commercialConflict(appt.commercial, appt.startDateTime, isDep);
+      if (conflict) return NextResponse.json({ error: "Ce créneau vient d'être pris. Choisissez-en un autre." }, { status: 409 });
+      if (await halfDayModalityBlocked(appt.commercial, appt.startDateTime, isDep)) {
+        return NextResponse.json({ error: "Ce créneau n'est plus disponible. Choisissez-en un autre." }, { status: 409 });
+      }
+    } else if (!(await isSlotFree(appt.startDateTime, SLOT_MIN, undefined, p.callCenterId ?? 1))) {
       return NextResponse.json({ error: "Ce créneau vient d'être pris. Choisissez-en un autre." }, { status: 409 });
     }
 

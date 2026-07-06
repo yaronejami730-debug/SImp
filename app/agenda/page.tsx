@@ -10,7 +10,7 @@ const PINK = "#DB407A";
 const BASE_COMMISSION = 50;
 const NEGO_RATE = 0.1;
 
-type Sign = "" | "signed" | "thinking" | "unsigned";
+type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
 type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
@@ -135,6 +135,7 @@ function Agenda() {
     if (list.length === 0) return "transparent";
     if (list.some((a) => a.cancelled)) return "#dc2626"; // rouge
     if (list.some((a) => a.signStatus === "signed" || a.bcSigned || a.vehicleSold)) return "#16a34a"; // vert
+    if (list.some((a) => a.signStatus === "listed")) return "#0891b2"; // cyan (annonce en ligne)
     if (list.some((a) => a.signStatus === "thinking")) return "#f59e0b"; // orange
     if (list.some((a) => a.signStatus === "unsigned")) return "#6b7280"; // gris
     return "#2563eb"; // bleu (RDV pris sans statut)
@@ -142,6 +143,7 @@ function Agenda() {
   const statusColor = (a: Appt): string => {
     if (a.cancelled) return "#dc2626";
     if (a.signStatus === "signed" || a.bcSigned || a.vehicleSold) return "#16a34a";
+    if (a.signStatus === "listed") return "#0891b2";
     if (a.signStatus === "thinking") return "#f59e0b";
     if (a.signStatus === "unsigned") return "#6b7280";
     return "#2563eb";
@@ -247,8 +249,9 @@ function Agenda() {
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
         <input type="checkbox" checked={a.present} onChange={(e) => { setLocal(a.id, { present: e.target.checked }); save(a.id, { present: e.target.checked }); }} /> Client présent
       </label>
-      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         {signBtn(a, "signed", "✅ Signé", "#16a34a")}
+        {signBtn(a, "listed", "📢 Annonce en ligne", "#0891b2")}
         {signBtn(a, "thinking", "🤔 Réfléchit", "#ca8a04")}
         {signBtn(a, "unsigned", "❌ Pas signé", "#dc2626")}
       </div>

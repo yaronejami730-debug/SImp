@@ -2,6 +2,7 @@
 export type CommissionScheme = { key: string; label: string; base: number; pct: number };
 
 export const COMMISSION_SCHEMES: CommissionScheme[] = [
+  { key: "30", label: "30 € / RDV signé", base: 30, pct: 0 },
   { key: "50", label: "50 € / RDV signé", base: 50, pct: 0 },
   { key: "100", label: "100 € / RDV signé", base: 100, pct: 0 },
   { key: "50+10", label: "50 € + 10 % de la négo", base: 50, pct: 10 },

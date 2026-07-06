@@ -89,6 +89,9 @@ export async function GET(req: Request, { params }: Params) {
         bcSignedAt: p.bcSignedAt || null,
         vehicleSold: p.vehicleSold === "1",
         soldAt: p.soldAt || null,
+        mandatRemoved: p.mandatRemoved === "1",
+        mandatRemovedAt: p.mandatRemovedAt || null,
+        mandatRemovedReason: p.mandatRemovedReason ?? "",
       },
     });
   } catch (e) {

@@ -13,7 +13,7 @@ const PINK = "#DB407A";
 const BASE_COMMISSION = 50;
 const NEGO_RATE = 0.1;
 
-type Sign = "" | "signed" | "thinking" | "unsigned";
+type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
 type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   civility: string; email: string; phone: string; platform: string; listingUrl: string;
@@ -27,6 +27,7 @@ type Appt = {
   reminder24Sent: boolean; reminder2Sent: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
+  mandatRemoved?: boolean; mandatRemovedAt?: string | null; mandatRemovedReason?: string;
 };
 
 const histLabel = (t: string) =>
@@ -40,6 +41,8 @@ const histLabel = (t: string) =>
     parking_sent: "Mail parking envoyé au client",
     cancelled: "RDV annulé",
     note: "💬 Note",
+    mandat_removed: "⛔ Mandat retiré",
+    mandat_restored: "↩︎ Mandat rétabli",
   } as Record<string, string>)[t] ?? t;
 
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -479,6 +482,32 @@ function ClientPage({ id }: { id: string }) {
       headers: authHeaders({ "content-type": "application/json" }),
       body: JSON.stringify({ eid: a.id, ...patch }),
     }).catch(() => {});
+  }
+
+  // Retire un mandat signé (client ne peut plus être sous mandat) ou le rétablit.
+  // La trace est gardée : signStatus reste "signed", + entrée d'historique.
+  async function toggleMandate() {
+    if (!a) return;
+    let payload: { action: "remove" | "restore"; reason?: string };
+    if (a.mandatRemoved) {
+      if (!confirm(`Rétablir le mandat de ${a.firstName} ${a.lastName} ?`)) return;
+      payload = { action: "restore" };
+    } else {
+      const reason = prompt(`Retirer le mandat de ${a.firstName} ${a.lastName} ?\n\nRaison (obligatoire — gardée dans l'historique) :`);
+      if (reason === null) return;
+      if (!reason.trim()) { setFlash({ kind: "err", msg: "Une raison est requise pour retirer le mandat." }); return; }
+      payload = { action: "remove", reason: reason.trim() };
+    }
+    setBusy("mandate");
+    try {
+      const r = await fetch("/api/mandate", {
+        method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ eid: a.id, ...payload }),
+      });
+      const d = await r.json();
+      if (d.ok) { setFlash({ kind: "ok", msg: payload.action === "remove" ? "Mandat retiré — trace gardée dans l'historique." : "Mandat rétabli." }); load(); }
+      else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
   }
 
   async function toggleParking() {
@@ -1041,11 +1070,17 @@ function ClientPage({ id }: { id: string }) {
             );
           })()}
         </div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
           {signBtn("signed", "✅ A signé", "#16a34a")}
+          {signBtn("listed", "📢 Annonce en ligne", "#0891b2")}
           {signBtn("thinking", "🤔 Réfléchit", "#ca8a04")}
           {signBtn("unsigned", "❌ Pas signé", "#dc2626")}
         </div>
+        {a.signStatus === "listed" && (
+          <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 8, background: "#ecfeff", border: "1.5px solid #a5f3fc", fontSize: 13, color: "#0e7490" }}>
+            📢 Annonce mise en ligne — mandat en cours de signature. On attend le retour du client.
+          </div>
+        )}
         {a.signStatus === "signed" && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -1083,6 +1118,24 @@ function ClientPage({ id }: { id: string }) {
                 {a.vehicleSold && a.soldAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#166534", marginTop: 2 }}>Vendu le {new Date(a.soldAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
               </div>
             </label>
+
+            {/* Retrait du mandat (traçabilité gardée) */}
+            {a.mandatRemoved ? (
+              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "#fef2f2", border: "1.5px solid #fecaca" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c" }}>⛔ Mandat retiré</div>
+                <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>
+                  {a.mandatRemovedAt && <>Le {new Date(a.mandatRemovedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</>}
+                  {a.mandatRemovedReason && <> — {a.mandatRemovedReason}</>}
+                </div>
+                <button onClick={toggleMandate} disabled={busy === "mandate"} style={{ marginTop: 8, padding: "7px 12px", borderRadius: 7, background: "#fff", color: "#b91c1c", border: "1.5px solid #b91c1c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                  {busy === "mandate" ? "…" : "↩︎ Rétablir le mandat"}
+                </button>
+              </div>
+            ) : (
+              <button onClick={toggleMandate} disabled={busy === "mandate"} title="Le client ne peut plus être sous mandat. La trace (signé → retiré + raison) est gardée dans l'historique." style={{ marginTop: 10, padding: "9px 14px", borderRadius: 8, background: "#fff", color: "#b91c1c", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer", width: "100%" }}>
+                {busy === "mandate" ? "…" : "⛔ Retirer le mandat"}
+              </button>
+            )}
           </>
         )}
       </div>

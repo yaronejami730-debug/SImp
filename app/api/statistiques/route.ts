@@ -1,197 +1,111 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listAppointments } from "@/lib/google";
-import { listReminders } from "@/lib/reminders";
-import { searchLeads } from "@/lib/leads";
 import { getCommissionSchemes } from "@/lib/users";
-import { realisateurCommission, apporteurCommission } from "@/lib/commission";
+import { commissionOf } from "@/lib/commission";
+import { toParisISO } from "@/lib/parse";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-type Bucket = { matin: number; midi: number; aprem: number; soir: number };
-
-function bucketHour(hourParis: number): keyof Bucket {
-  if (hourParis < 12) return "matin";
-  if (hourParis < 14) return "midi";
-  if (hourParis < 18) return "aprem";
-  return "soir";
-}
-
-function hourParis(iso: string): number {
-  const parts = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).formatToParts(new Date(iso));
-  return Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-}
-
-// ── Période ──────────────────────────────────────────────
-type Granularity = "day" | "week" | "month";
-type Period = "7d" | "30d" | "3m" | "12m";
 const DAY = 24 * 3600 * 1000;
+const isDate = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
 
-function periodConfig(period: Period, now: Date): { from: Date; gran: Granularity } {
-  switch (period) {
-    case "7d": return { from: new Date(now.getTime() - 7 * DAY), gran: "day" };
-    case "30d": return { from: new Date(now.getTime() - 30 * DAY), gran: "day" };
-    case "3m": return { from: new Date(now.getTime() - 91 * DAY), gran: "week" };
-    default: return { from: new Date(now.getFullYear(), now.getMonth() - 11, 1), gran: "month" };
-  }
-}
-
-const MONTH_LABELS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
-const dayLabel = (d: Date) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit" }).format(d);
-
-/** Buckets temporels [start,end) couvrant [from, now]. */
-function buildBuckets(gran: Granularity, from: Date, now: Date): { key: string; label: string; start: number; end: number }[] {
-  const out: { key: string; label: string; start: number; end: number }[] = [];
-  if (gran === "month") {
-    let y = from.getFullYear(), m = from.getMonth();
-    while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth())) {
-      const start = new Date(y, m, 1).getTime();
-      const end = new Date(y, m + 1, 1).getTime();
-      out.push({ key: `${y}-${String(m + 1).padStart(2, "0")}`, label: MONTH_LABELS[m], start, end });
-      m++; if (m > 11) { m = 0; y++; }
-    }
-    return out;
-  }
-  const unit = (gran === "week" ? 7 : 1) * DAY;
-  for (let t = from.getTime(); t < now.getTime(); t += unit) {
-    out.push({ key: String(t), label: dayLabel(new Date(t)), start: t, end: t + unit });
-  }
-  return out;
-}
-
-function bucketIndex(buckets: { start: number; end: number }[], t: number): number {
-  for (let i = 0; i < buckets.length; i++) if (t >= buckets[i].start && t < buckets[i].end) return i;
-  return -1;
-}
-
-/** GET -> stats sur la période choisie : conversion, horaires, NRP, évolution. */
+/** GET ?from=YYYY-MM-DD&to=YYYY-MM-DD
+ *  Stats de l'utilisateur connecté sur la plage : taux de signature + SA commission
+ *  (selon le barème de son compte), sur ses RDV attribués (commercial) ou générés (TP). */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
     const url = new URL(req.url);
-    const periodParam = (url.searchParams.get("period") ?? "12m") as Period;
-    const period: Period = ["7d", "30d", "3m", "12m"].includes(periodParam) ? periodParam : "12m";
-
     const now = new Date();
-    const { from, gran } = periodConfig(period, now);
-    const fromMs = from.getTime(), nowMs = now.getTime();
+    const fromParam = url.searchParams.get("from");
+    const toParam = url.searchParams.get("to");
+    // Défaut : mois en cours -> aujourd'hui.
+    const fromStr = isDate(fromParam) ? fromParam : new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now.getFullYear(), now.getMonth(), 1));
+    const toStr = isDate(toParam) ? toParam : new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+    const fromMs = new Date(toParisISO(fromStr, "00:00")).getTime();
+    const toMs = new Date(toParisISO(toStr, "23:59")).getTime();
     const inRange = (iso?: string | null) => {
       if (!iso) return false;
       const t = new Date(iso).getTime();
-      return t >= fromMs && t <= nowMs;
+      return t >= fromMs && t <= toMs;
     };
 
-    // Fetch large window, on filtre ensuite par période.
-    const yearAgo = new Date(nowMs - 365 * DAY);
-    const yearAhead = new Date(nowMs + 365 * DAY);
-    const [allAppts, allReminders, allLeads] = await Promise.all([
-      listAppointments(yearAgo, yearAhead),
-      listReminders(s.callCenterId, s.role === "admin" ? undefined : s.email),
-      searchLeads(s.callCenterId),
-    ]);
+    // Fenêtre large puis filtre plage.
+    const allAppts = await listAppointments(new Date(fromMs - 7 * DAY), new Date(toMs + 7 * DAY));
 
-    // Visibilité par rôle (sans entités) : super-admin = tout ; sinon ses RDV créés + affectés.
-    const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+    // "À moi" = RDV que je gère (commercial affecté) OU que j'ai créé (téléprospecteur).
     const myEmailLc = s.email.toLowerCase();
     const myNameTok = tokset(s.name);
-    const mineApptFn = (a: { owner?: string; commercial?: string; commercialEmail?: string }) =>
+    const isMine = (a: { owner?: string; commercial?: string; commercialEmail?: string }) =>
       a.owner === s.email ||
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmailLc) ||
       (!a.commercialEmail && !!myNameTok && tokset(a.commercial ?? "") === myNameTok);
-    const ownerAppts = s.role === "admin" ? allAppts : allAppts.filter(mineApptFn);
-    const appts = ownerAppts.filter((a) => inRange(a.startDateTime));
-    const reminders = allReminders.filter((r) => inRange(r.remind_at));
-    const leads = allLeads.filter((l) => inRange(l.created_at));
 
-    // --- Funnel conversion ---
-    const total = appts.length;
-    const cancelled = appts.filter((a) => a.cancelled).length;
+    const appts = allAppts.filter(isMine).filter((a) => inRange(a.startDateTime));
     const active = appts.filter((a) => !a.cancelled);
-    const present = active.filter((a) => a.present).length;
-    const signed = active.filter((a) => a.signStatus === "signed").length;
-    const thinking = active.filter((a) => a.signStatus === "thinking").length;
-    const unsigned = active.filter((a) => a.signStatus === "unsigned").length;
-    const noShow = active.length - present;
+    const total = active.length;
+    // "Signé" = mandat signé ET non retiré (cohérent avec le bilan : un mandat retiré ne compte plus).
+    const isSigned = (a: { signStatus?: string; mandatRemoved?: boolean }) => a.signStatus === "signed" && !a.mandatRemoved;
+    const signed = active.filter(isSigned).length;
+    const rateSignature = total > 0 ? Math.round((signed / total) * 100) : 0;
 
-    const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+    // Commission PERSO selon le barème du compte, décomposée :
+    //  - fixe    = base € × nombre de RDV signés
+    //  - variable = pct % de la somme des négociations des RDV signés
+    const schemes = await getCommissionSchemes();
+    const mySc = schemes.get(myEmailLc) ?? { base: 0, pct: 0 };
+    const signedAppts = active.filter(isSigned);
+    const negoTotal = signedAppts.reduce((sum, a) => sum + (a.negotiation || 0), 0);
+    const commissionFixe = Math.round(mySc.base * signed);
+    const commissionVariable = Math.round((mySc.pct / 100) * negoTotal);
+    const commission = commissionFixe + commissionVariable;
 
-    // --- Horaires préférés ---
-    const apptBuckets: Bucket = { matin: 0, midi: 0, aprem: 0, soir: 0 };
-    for (const a of active) if (a.startDateTime) apptBuckets[bucketHour(hourParis(a.startDateTime))]++;
-    const remBuckets: Bucket = { matin: 0, midi: 0, aprem: 0, soir: 0 };
-    for (const r of reminders) if (r.remind_at) remBuckets[bucketHour(hourParis(r.remind_at))]++;
-
-    // --- Prospection NRP ---
-    const leadsTotal = leads.length;
-    const leadsConverted = reminders.filter((r) => r.lead_id != null).length;
-    const leadsNRP = Math.max(leadsTotal - leadsConverted, 0);
-
-    // --- Répartition des relances NRP (ne répond pas) ---
-    const nrpReminders = reminders.filter((r) => (r.nrp_count ?? 0) > 0);
-    const nrpDistribution = [1, 2, 3].map((n) => ({
-      niveau: n,
-      // niveau 3 = "3 et +"
-      count: nrpReminders.filter((r) => (n < 3 ? r.nrp_count === n : r.nrp_count >= 3)).length,
-    }));
-    const nrpTotalContacts = nrpReminders.length;
-    const nrpTotalAppels = nrpReminders.reduce((s, r) => s + r.nrp_count, 0);
-
-    // --- Commission : apporteur (créateur) vs réalisateur (commercial affecté) ---
-    const schemes = await getCommissionSchemes(); // tous les comptes, clé = e-mail
-    const myEmail = myEmailLc;
-    const myName = myNameTok;
-    const mySc = schemes.get(myEmail) ?? { base: 50, pct: 10 };
-    const isAssignee = (a: { commercialEmail?: string; commercial?: string }) =>
-      (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
-      (!a.commercialEmail && !!myName && tokset(a.commercial ?? "") === myName);
-    const isCreator = (a: { owner?: string }) => (a.owner ?? "") === s.email;
-
-    // Commission PERSO de l'utilisateur sur un RDV signé selon son rôle (réalisateur prioritaire).
-    const commission = (a: { negotiation?: number; owner?: string; commercial?: string; commercialEmail?: string }) => {
-      const nego = a.negotiation || 0;
-      if (isAssignee(a)) return realisateurCommission(mySc.base, mySc.pct, nego);
-      if (isCreator(a)) return apporteurCommission(mySc.base, mySc.pct, nego);
-      return 0;
-    };
-    const signedActive = active.filter((a) => a.signStatus === "signed");
-    const commissionRealisateur = signedActive.filter(isAssignee).reduce((sum, a) => sum + realisateurCommission(mySc.base, mySc.pct, a.negotiation || 0), 0);
-    const commissionApporteur = signedActive.filter((a) => isCreator(a) && !isAssignee(a)).reduce((sum, a) => sum + apporteurCommission(mySc.base, mySc.pct, a.negotiation || 0), 0);
-    const commissionTotal = commissionRealisateur + commissionApporteur;
-
-    // --- Évolution (granularité adaptée à la période) ---
-    const buckets = buildBuckets(gran, from, now);
-    const evo = buckets.map((b) => ({ key: b.key, label: b.label, rdv: 0, signed: 0, commission: 0 }));
+    // --- Signés par commercial (avec qui j'ai signé) ---
+    const accent = (s: string) => (s.match(/[À-ÿ]/g) || []).length;
+    const byCommMap = new Map<string, { name: string; signed: number; total: number }>();
     for (const a of active) {
-      if (!a.startDateTime) continue;
-      const i = bucketIndex(buckets, new Date(a.startDateTime).getTime());
-      if (i < 0) continue;
-      evo[i].rdv++;
-      if (a.signStatus === "signed") { evo[i].signed++; evo[i].commission += commission(a); }
+      const name = (a.commercial ?? "").trim();
+      if (!name) continue;
+      const k = tokset(name);
+      const cur = byCommMap.get(k) ?? { name, signed: 0, total: 0 };
+      cur.total++;
+      if (isSigned(a)) cur.signed++;
+      if (accent(name) > accent(cur.name)) cur.name = name; // garder la variante la mieux orthographiée
+      byCommMap.set(k, cur);
     }
-    const evolution = evo.map((e) => ({ ...e, commission: Math.round(e.commission) }));
+    const byCommercial = [...byCommMap.values()].sort((a, b) => b.signed - a.signed || b.total - a.total);
+
+    // --- Clients signés (qui j'ai signé) : prénom nom + véhicule + commercial ---
+    const signedList = signedAppts
+      .slice()
+      .sort((a, b) => (a.startDateTime && b.startDateTime ? (a.startDateTime < b.startDateTime ? 1 : -1) : 0))
+      .map((a) => ({
+        firstName: a.firstName ?? "",
+        lastName: a.lastName ?? "",
+        car: [a.carBrand, a.carModel].filter(Boolean).join(" "),
+        commercial: a.commercial ?? "",
+        date: a.startDateTime ?? null,
+      }));
 
     return NextResponse.json({
       ok: true,
-      period,
-      gran,
-      funnel: {
-        total, cancelled, present, noShow, signed, thinking, unsigned,
-        ratePresence: rate(present, active.length),
-        rateSignature: rate(signed, present),
-        rateGlobal: rate(signed, total),
-        rateAnnulation: rate(cancelled, total),
-      },
-      evolution,
-      heuresRdv: apptBuckets,
-      heuresRappels: remBuckets,
-      prospection: { total: leadsTotal, convertis: leadsConverted, nrp: leadsNRP, rateConversion: rate(leadsConverted, leadsTotal) },
-      nrp: { distribution: nrpDistribution, totalContacts: nrpTotalContacts, totalAppels: nrpTotalAppels },
-      commissionTotal,
-      commissionApporteur,
-      commissionRealisateur,
+      from: fromStr,
+      to: toStr,
+      total,
+      signed,
+      rateSignature,
+      commission,
+      commissionFixe,
+      commissionVariable,
+      negoTotal,
+      scheme: { base: mySc.base, pct: mySc.pct },
+      byCommercial,
+      signedList,
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

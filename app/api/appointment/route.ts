@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { buildAppointment, type AppointmentInput } from "@/lib/parse";
-import { createEvent, isSlotFree, createGoogleContact, commercialConflict } from "@/lib/google";
+import { createEvent, createGoogleContact, commercialConflict, halfDayModalityBlocked } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, mobileConfirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
-import { SLOT_MIN } from "@/lib/slots";
 import { getAuth } from "@/lib/auth";
+import { teleproRule, commercialAllowed } from "@/lib/telepro-rules";
 import { cancelFollowup } from "@/lib/followups";
 import { commercialPhoneByName } from "@/lib/users";
 import { DEFAULT_LOCATION } from "@/lib/parse";
@@ -43,19 +43,35 @@ export async function POST(req: Request) {
     // 1. Champs du formulaire -> rendez-vous structuré (sans IA)
     const appt = buildAppointment(body as AppointmentInput);
 
-    // 1b. Anti-chevauchement : refuser si le créneau est déjà occupé.
-    if (!(await isSlotFree(appt.startDateTime, SLOT_MIN, undefined, auth.callCenterId))) {
-      return NextResponse.json(
-        { error: "Ce créneau vient d'être pris. Choisissez-en un autre." },
-        { status: 409 },
-      );
+    // 1a. Restriction du téléprospecteur (commerciaux autorisés + agence only).
+    const rule = teleproRule(body.teleprospectorEmail);
+    if (rule) {
+      if (rule.agenceOnly && appt.type === "deplacement") {
+        return NextResponse.json({ error: "Ce téléprospecteur ne peut prendre que des RDV en agence." }, { status: 403 });
+      }
+      if (appt.commercial && !commercialAllowed(rule, appt.commercial)) {
+        return NextResponse.json({ error: `Ce téléprospecteur ne peut assigner qu'à : ${rule.commercials.join(", ")}.` }, { status: 403 });
+      }
     }
-    // 1c. Alerte (NON bloquante) : le commercial a déjà un RDV à ce moment.
+
+    // 1b. Créneaux PAR COMMERCIAL : deux commerciaux peuvent avoir le même horaire.
+    //     On bloque seulement si CE commercial est déjà pris à ce moment (+ marge trajet),
+    //     ou si sa demi-journée est déjà dédiée à l'autre modalité (physique vs déplacement).
+    const isDeplacementReq = appt.type === "deplacement";
     let commercialWarning: string | undefined;
     if (appt.commercial) {
-      const conflict = await commercialConflict(appt.commercial, appt.startDateTime, false);
+      const conflict = await commercialConflict(appt.commercial, appt.startDateTime, isDeplacementReq);
       if (conflict) {
-        commercialWarning = `⚠️ ${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Pense au temps de RDV + trajet.`;
+        return NextResponse.json(
+          { error: `${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Choisis un autre créneau.` },
+          { status: 409 },
+        );
+      }
+      if (await halfDayModalityBlocked(appt.commercial, appt.startDateTime, isDeplacementReq)) {
+        return NextResponse.json(
+          { error: `${appt.commercial} a déjà des RDV ${isDeplacementReq ? "physiques" : "en déplacement"} sur cette demi-journée : les ${isDeplacementReq ? "déplacements" : "RDV en agence"} ne sont possibles que sur l'autre demi-journée.` },
+          { status: 409 },
+        );
       }
     }
 

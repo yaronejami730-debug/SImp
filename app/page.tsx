@@ -24,7 +24,7 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", type: "agence", immatriculation: "", address: "", vehiclePhotoUrl: "", teleprospector: "", teleprospectorEmail: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
+const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", type: "agence", immatriculation: "", address: "", vehiclePhotoUrl: "", photos: [] as string[], teleprospector: "", teleprospectorEmail: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
 const SOURCES = ["LeBonCoin", "LaCentrale", "Autre"];
 
 const inputStyle: React.CSSProperties = {
@@ -40,6 +40,7 @@ function Home() {
   const [form, setForm] = useState(EMPTY);
   const [commerciaux, setCommerciaux] = useState<string[]>([...COMMERCIAUX]);
   const [teleprospecteurs, setTeleprospecteurs] = useState<{ name: string; email: string }[]>([]);
+  const [rule, setRule] = useState<{ commercials: string[]; agenceOnly?: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
 
@@ -51,17 +52,26 @@ function Home() {
     }
   }, []);
 
-  async function uploadVehiclePhoto(file?: File) {
-    if (!file) return;
+  async function uploadVehiclePhotos(files?: FileList | null) {
+    if (!files || !files.length) return;
     setPhotoBusy(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const r = await fetch("/api/upload", { method: "POST", headers: authHeaders(), body: fd });
-      const d = await r.json();
-      if (d.ok) setForm((f) => ({ ...f, vehiclePhotoUrl: d.url }));
-      else alert(d.error ?? "Erreur upload photo");
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await fetch("/api/upload", { method: "POST", headers: authHeaders(), body: fd });
+        const d = await r.json();
+        if (d.ok) urls.push(d.url); else alert(d.error ?? "Erreur upload photo");
+      }
+      if (urls.length) setForm((f) => ({ ...f, photos: [...f.photos, ...urls].slice(0, 6), vehiclePhotoUrl: f.vehiclePhotoUrl || urls[0] }));
     } finally { setPhotoBusy(false); }
+  }
+  function removePhoto(url: string) {
+    setForm((f) => {
+      const photos = f.photos.filter((p) => p !== url);
+      return { ...f, photos, vehiclePhotoUrl: f.vehiclePhotoUrl === url ? (photos[0] ?? "") : f.vehiclePhotoUrl };
+    });
   }
 
   // Listes commerciaux + téléprospecteurs (comptes). Défaut téléprospecteur = moi.
@@ -71,11 +81,20 @@ function Home() {
         const r = await fetch("/api/me", { headers: authHeaders() });
         const d = await r.json();
         if (!d.ok) return;
-        const coms: string[] = (d.commercials?.map((c: { name: string }) => c.name)) ?? d.commerciaux ?? [];
+        let coms: string[] = (d.commercials?.map((c: { name: string }) => c.name)) ?? d.commerciaux ?? [];
+        // Restriction téléprospecteur : ne garder que ses commerciaux autorisés + forcer agence.
+        const tr = d.rule as { commercials: string[]; agenceOnly?: boolean } | null;
+        setRule(tr ?? null);
+        if (tr?.commercials?.length) {
+          const tok = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
+          const allowed = new Set(tr.commercials.map(tok));
+          const filtered = coms.filter((c) => allowed.has(tok(c)));
+          if (filtered.length) coms = filtered;
+        }
         if (coms.length) {
           setCommerciaux(coms);
           const def = coms[0];
-          setForm((f) => ({ ...f, commercial: f.commercial || def }));
+          setForm((f) => ({ ...f, commercial: def, ...(tr?.agenceOnly ? { type: "agence" } : {}) }));
           setLinkCommercial(def); setHesCommercial(def);
         }
         setTeleprospecteurs(d.teleprospectors ?? []);
@@ -281,22 +300,31 @@ function Home() {
           <label style={labelStyle}>Véhicule</label>
           <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-          <div><label style={labelStyle}>Immatriculation</label><input style={inputStyle} value={form.immatriculation} onChange={(e) => set("immatriculation", e.target.value.toUpperCase())} placeholder="AB-123-CD" /></div>
-          <div>
-            <label style={labelStyle}>Photo du véhicule</label>
-            <input type="file" accept="image/*" onChange={(e) => uploadVehiclePhoto(e.target.files?.[0])} style={{ fontSize: 13 }} />
-            {photoBusy && <span style={{ fontSize: 12, color: "#9aa6b8" }}> envoi…</span>}
-            {form.vehiclePhotoUrl && <a href={form.vehiclePhotoUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: PINK, display: "block", marginTop: 4 }}>📷 voir la photo</a>}
-          </div>
-        </div>
         <div>
-          <label style={labelStyle}>Type de RDV</label>
-          <select style={inputStyle} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value, date: "", time: "" }))}>
-            <option value="agence">🏢 En agence</option>
-            <option value="deplacement">🚗 En déplacement</option>
-          </select>
+          <label style={labelStyle}>Photos du véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(plusieurs possibles, max 6)</span></label>
+          <input type="file" accept="image/*" multiple onChange={(e) => uploadVehiclePhotos(e.target.files)} style={{ fontSize: 13 }} />
+          {photoBusy && <span style={{ fontSize: 12, color: "#9aa6b8" }}> envoi…</span>}
+          {form.photos.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+              {form.photos.map((u) => (
+                <div key={u} style={{ position: "relative" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt="" width={64} height={64} style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                  <button type="button" onClick={() => removePhoto(u)} title="Retirer" style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: "#dc2626", color: "#fff", fontSize: 11, cursor: "pointer", lineHeight: 1 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+        {!rule?.agenceOnly && (
+          <div>
+            <label style={labelStyle}>Type de RDV</label>
+            <select style={inputStyle} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value, date: "", time: "" }))}>
+              <option value="agence">🏢 En agence</option>
+              <option value="deplacement">🚗 En déplacement</option>
+            </select>
+          </div>
+        )}
         {form.type === "deplacement" && (
           <div>
             <label style={labelStyle}>Adresse du client (déplacement)</label>
@@ -319,7 +347,7 @@ function Home() {
         </div>
         <div>
           <label style={labelStyle}>Créneau du rendez-vous {form.type === "deplacement" ? "(déplacement)" : "(agence)"}</label>
-          <SlotPicker type={form.type} value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} />
+          <SlotPicker type={form.type} commercial={form.commercial} value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} />
         </div>
       </div>
 
@@ -395,7 +423,7 @@ function Home() {
               </div>
             </div>
             <div><label style={labelStyle}>Créneau imposé <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(date + heure)</span></label>
-              <SlotPicker value={{ date: linkDate, time: linkTime }} onChange={(v) => { setLinkDate(v.date); setLinkTime(v.time); }} />
+              <SlotPicker commercial={linkCommercial} value={{ date: linkDate, time: linkTime }} onChange={(v) => { setLinkDate(v.date); setLinkTime(v.time); }} />
             </div>
             <button onClick={sendLink} disabled={linkBusy || !linkReady} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkReady ? "#cbd5e1" : NAVY, color: "#fff" }}>
               {linkBusy ? "Envoi…" : "Envoyer le lien (confirmation)"}

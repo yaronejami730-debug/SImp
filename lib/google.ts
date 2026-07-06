@@ -37,6 +37,36 @@ export async function commercialConflict(
   return null;
 }
 
+// Demi-journée locale Paris : matin < 13h, après-midi >= 13h (la pause 13-14 n'a pas de créneau).
+const parisDayKey = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+const parisHour = (d: Date) => Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", hour: "2-digit", hour12: false }).format(d));
+export const halfDay = (d: Date): "am" | "pm" => (parisHour(d) < 13 ? "am" : "pm");
+
+/** Règle demi-journée : une demi-journée (matin/aprem) est dédiée à UNE seule modalité
+ *  par commercial. S'il a déjà un RDV de l'AUTRE type (physique vs déplacement) sur la
+ *  même demi-journée, on bloque. Renvoie true si bloqué. */
+export async function halfDayModalityBlocked(
+  commercial: string, startISO: string, isDeplacement: boolean, ignoreEventId?: string,
+): Promise<boolean> {
+  const tset = ctok(commercial ?? "");
+  if (!tset) return false;
+  const start = new Date(startISO);
+  const dayKey = parisDayKey(start);
+  const half = halfDay(start);
+  const items = await listEvents(new Date(start.getTime() - 12 * 3600e3), new Date(start.getTime() + 12 * 3600e3));
+  for (const ev of items) {
+    if (ignoreEventId && ev.id === ignoreEventId) continue;
+    const pr = ev.extendedProperties?.private ?? {};
+    if (pr.cancelled === "1") continue;
+    if (ctok(pr.commercial ?? "") !== tset) continue;
+    const es = ev.start?.dateTime ? new Date(ev.start.dateTime) : null;
+    if (!es) continue;
+    if (parisDayKey(es) !== dayKey || halfDay(es) !== half) continue;
+    if ((pr.deplacement === "1") !== isDeplacement) return true; // modalité opposée, même demi-journée
+  }
+  return false;
+}
+
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID ?? "primary";
 const BUSINESS = process.env.BUSINESS_NAME ?? "Simplisicar";
 
@@ -191,6 +221,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           deplacement: isDeplacement ? "1" : "",
           immatriculation: a.immatriculation ?? "",
           vehiclePhotoUrl: a.vehiclePhotoUrl ?? "",
+          photos: JSON.stringify(((a as { photos?: string[] }).photos ?? []).slice(0, 6)),
           address: isDeplacement ? a.location : "",
           carBrand: a.carBrand ?? "",
           carModel: a.carModel ?? "",
@@ -344,7 +375,7 @@ export type AppointmentItem = {
   // Tri-état de présence : "present"="1", "absent"="0" (marqué absent), "unknown"=non décidé.
   // Logique métier : présent -> on attend un statut de signature ; absent -> rien à faire.
   presence: "present" | "absent" | "unknown";
-  signStatus: "" | "signed" | "thinking" | "unsigned";
+  signStatus: "" | "signed" | "listed" | "thinking" | "unsigned";
   signStatusAt: string | null; // date du dernier changement de statut de signature
   note: string; // note interne (ex: raison d'une non-signature)
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
@@ -380,6 +411,12 @@ export type AppointmentItem = {
   commDate: string | null;
   commPaidDate: string | null;
   commComment: string;
+  // ── Mandat retiré ──
+  // Un mandat signé peut être retiré (client ne peut plus être sous mandat).
+  // On garde la trace : signStatus reste "signed", mais mandatRemoved coupe la facturation.
+  mandatRemoved: boolean;
+  mandatRemovedAt: string | null;
+  mandatRemovedReason: string;
 };
 
 /** Liste les RDV (events) entre deux dates, format simplifié pour le dashboard. */
@@ -449,6 +486,9 @@ export async function listAppointments(
       commDate: p.commDate || null,
       commPaidDate: p.commPaidDate || null,
       commComment: p.commComment ?? "",
+      mandatRemoved: p.mandatRemoved === "1",
+      mandatRemovedAt: p.mandatRemovedAt || null,
+      mandatRemovedReason: p.mandatRemovedReason ?? "",
     };
   });
 }
@@ -533,6 +573,7 @@ export function colorIdForStatus(opts: {
 }): string {
   if (opts.cancelled) return "11"; // rouge
   if (opts.vehicleSold || opts.bcSigned || opts.signStatus === "signed") return "10"; // vert
+  if (opts.signStatus === "listed") return "7"; // paon/cyan (annonce en ligne, mandat en cours)
   if (opts.signStatus === "thinking") return "6"; // orange
   if (opts.signStatus === "unsigned") return "8"; // gris
   return "9"; // bleu (pris, sans statut)
@@ -603,6 +644,30 @@ export async function patchInvoicing(eventId: string, f: InvoicingFields) {
   set("commDate", f.commDate);
   set("commPaidDate", f.commPaidDate);
   if (f.commComment !== undefined) priv.commComment = (f.commComment ?? "").slice(0, 500);
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
+  });
+}
+
+/** Retire (ou rétablit) un mandat signé. On NE touche PAS à signStatus : on garde la
+ *  trace qu'il a été signé. mandatRemoved coupe la facturation des frais fixes (sauf
+ *  s'ils sont déjà facturés/payés — géré côté Bilan). Une entrée d'historique conserve
+ *  la traçabilité (date + raison). */
+export async function setMandateRemoved(eventId: string, removed: boolean, reason?: string) {
+  const hist = await readHistory(eventId);
+  hist.push({
+    t: removed ? "mandat_removed" : "mandat_restored",
+    at: new Date().toISOString(),
+    ...(removed && reason ? { info: reason } : {}),
+  });
+  const priv: Record<string, string> = {
+    mandatRemoved: removed ? "1" : "",
+    mandatRemovedAt: removed ? new Date().toISOString() : "",
+    mandatRemovedReason: removed ? (reason ?? "").slice(0, 300) : "",
+    history: JSON.stringify(hist.slice(-40)),
+  };
   await calendarClient().events.patch({
     calendarId: CALENDAR_ID,
     eventId,

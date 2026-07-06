@@ -41,12 +41,14 @@ export default function SlotPicker({
   allowCustom = true,
   endpoint = "/api/availability",
   type,
+  commercial,
 }: {
   value: { date: string; time: string };
   onChange: (v: { date: string; time: string }) => void;
   allowCustom?: boolean;
   endpoint?: string;
   type?: string; // agence | deplacement -> créneaux différents
+  commercial?: string; // dispo par commercial (chacun son créneau)
 }) {
   const [count, setCount] = useState(12);
   const days = upcomingWeekdays(count);
@@ -57,7 +59,7 @@ export default function SlotPicker({
     if (cache[date] && !cache[date].loading) return;
     setCache((c) => ({ ...c, [date]: { loading: true, slots: [] } }));
     try {
-      const url = `${endpoint}${endpoint.includes("?") ? "&" : "?"}date=${date}${type ? `&type=${type}` : ""}`;
+      const url = `${endpoint}${endpoint.includes("?") ? "&" : "?"}date=${date}${type ? `&type=${type}` : ""}${commercial ? `&commercial=${encodeURIComponent(commercial)}` : ""}`;
       const r = await fetch(url, { headers: authHeaders() });
       const d = await r.json();
       setCache((c) => ({ ...c, [date]: { loading: false, slots: d.slots ?? [], closed: d.closed } }));
@@ -66,16 +68,16 @@ export default function SlotPicker({
     }
   }
 
-  // Le type change (agence/déplacement) -> on vide le cache et on recharge les créneaux.
+  // Le type OU le commercial change -> on vide le cache et on recharge les créneaux.
   useEffect(() => {
     setCache({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type]);
+  }, [type, commercial]);
 
   useEffect(() => {
     if (open) loadDay(open);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type]);
+  }, [open, type, commercial]);
 
   return (
     <div style={{ border: "1.5px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
