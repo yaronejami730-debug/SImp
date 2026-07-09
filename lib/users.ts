@@ -2,7 +2,7 @@ import { getPool } from "./db";
 import { hashPassword } from "./auth";
 
 export type User = {
-  id: number; email: string; name: string; role: "admin" | "collab";
+  id: number; email: string; name: string; role: "admin" | "responsable" | "collab";
   call_center_id: number; commission_base: number; commission_pct: number;
   is_commercial: boolean; is_teleprospector: boolean; phone: string; active: boolean; created_at: string;
 };
@@ -69,7 +69,7 @@ export async function commercialEmailByName(name?: string): Promise<string> {
 }
 
 export type CreateUserInput = {
-  email: string; password: string; name: string; role?: "admin" | "collab";
+  email: string; password: string; name: string; role?: "admin" | "responsable" | "collab";
   callCenterId?: number; commissionBase?: number; commissionPct?: number;
   isCommercial?: boolean; isTeleprospector?: boolean; phone?: string;
 };

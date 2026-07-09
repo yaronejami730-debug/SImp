@@ -25,8 +25,10 @@ export async function GET(req: Request) {
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
       (!a.commercialEmail && !!myName && tokset(a.commercial) === myName);
-    // Super-admin : tout. Sinon : ses RDV créés (téléprospecteur) + affectés (commercial).
-    const visible = s.role === "admin" ? items : items.filter((a) => isCreator(a) || isAssignee(a));
+    // Super-admin : tout. Responsable : les RDV de SON call center. Sinon : ses RDV créés + affectés.
+    const visible = s.role === "admin" ? items
+      : s.role === "responsable" ? items.filter((a) => a.callCenterId === s.callCenterId)
+      : items.filter((a) => isCreator(a) || isAssignee(a));
     const annotated = visible.map((a) => {
       const created = isCreator(a);
       const assigned = isAssignee(a);

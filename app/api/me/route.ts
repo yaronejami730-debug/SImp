@@ -1,30 +1,36 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getUserByEmail, listCommercials, listTeleprospectors } from "@/lib/users";
-import { teleproRule } from "@/lib/telepro-rules";
+import { getUserByEmail, listCommercials, listTeleprospectors, listUsers } from "@/lib/users";
+import { callCenterRule, commercialsForCallCenter } from "@/lib/callcenters";
 
 export const dynamic = "force-dynamic";
 
-/** GET -> infos de l'utilisateur courant + listes commerciaux / téléprospecteurs (pour les formulaires). */
+/** GET -> infos user courant + listes commerciaux/téléprospecteurs (pour les formulaires),
+ *  scopées à son call center + restriction éventuelle (commerciaux autorisés, agence only). */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
     const me = await getUserByEmail(s.email).catch(() => undefined);
-    const [commercials, teleprospectors] = await Promise.all([listCommercials(), listTeleprospectors()]);
+    const rule = await callCenterRule(s.callCenterId); // null si CC racine
+
+    // Commerciaux : restreints au call center si règle, sinon tous.
+    const commercials = rule ? await commercialsForCallCenter(s.callCenterId) : await listCommercials();
+    // Téléprospecteurs : super-admin = tous ; sinon ceux du call center.
+    const teleprospectors = s.role === "admin"
+      ? await listTeleprospectors()
+      : (await listUsers(s.callCenterId)).filter((u) => u.is_teleprospector && u.active).map((u) => ({ email: u.email, name: u.name, phone: u.phone }));
+
     return NextResponse.json({
       ok: true,
-      email: s.email, name: s.name, role: s.role,
+      email: s.email, name: s.name, role: s.role, callCenterId: s.callCenterId,
       isCommercial: !!me?.is_commercial,
       isTeleprospector: !!me?.is_teleprospector,
-      // Listes (nom + email + tél) pour les menus déroulants du formulaire RDV.
-      commercials,          // [{ email, name, phone }]
-      teleprospectors,      // [{ email, name, phone }]
-      // Rétrocompat : noms seuls.
+      commercials,
+      teleprospectors,
       commerciaux: commercials.map((c) => c.name),
       allCommerciaux: commercials.map((c) => c.name),
-      // Restriction éventuelle du téléprospecteur connecté (commerciaux autorisés + agence only).
-      rule: teleproRule(s.email),
+      rule, // { commercials:[], agenceOnly } ou null
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

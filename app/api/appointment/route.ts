@@ -6,8 +6,10 @@ import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, mobileConfirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { getAuth } from "@/lib/auth";
-import { teleproRule, commercialAllowed } from "@/lib/telepro-rules";
+import { callCenterRule } from "@/lib/callcenters";
 import { cancelFollowup } from "@/lib/followups";
+
+const nameTok = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
 import { commercialPhoneByName } from "@/lib/users";
 import { DEFAULT_LOCATION } from "@/lib/parse";
 
@@ -43,14 +45,14 @@ export async function POST(req: Request) {
     // 1. Champs du formulaire -> rendez-vous structuré (sans IA)
     const appt = buildAppointment(body as AppointmentInput);
 
-    // 1a. Restriction du téléprospecteur (commerciaux autorisés + agence only).
-    const rule = teleproRule(body.teleprospectorEmail);
+    // 1a. Restriction du call center du créateur (commerciaux autorisés + agence only).
+    const rule = await callCenterRule(auth.callCenterId);
     if (rule) {
       if (rule.agenceOnly && appt.type === "deplacement") {
-        return NextResponse.json({ error: "Ce téléprospecteur ne peut prendre que des RDV en agence." }, { status: 403 });
+        return NextResponse.json({ error: "Ce call center ne peut prendre que des RDV en agence." }, { status: 403 });
       }
-      if (appt.commercial && !commercialAllowed(rule, appt.commercial)) {
-        return NextResponse.json({ error: `Ce téléprospecteur ne peut assigner qu'à : ${rule.commercials.join(", ")}.` }, { status: 403 });
+      if (appt.commercial && rule.commercials.length > 0 && !rule.commercials.some((c) => nameTok(c) === nameTok(appt.commercial ?? ""))) {
+        return NextResponse.json({ error: `Ce call center ne peut assigner qu'à : ${rule.commercials.join(", ")}.` }, { status: 403 });
       }
     }
 
