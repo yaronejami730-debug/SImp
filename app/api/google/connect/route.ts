@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const SECRET = process.env.AUTH_SECRET ?? "dev-secret-change-me";
 /** state signé (email + exp) pour retrouver l'utilisateur au callback (qui n'a pas d'auth header). */
-export function signState(email: string): string {
+function signState(email: string): string {
   const body = Buffer.from(JSON.stringify({ email, exp: Date.now() + 10 * 60 * 1000 })).toString("base64url");
   const sig = createHmac("sha256", SECRET).update(body).digest("base64url");
   return `${body}.${sig}`;
