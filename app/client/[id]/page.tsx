@@ -23,7 +23,7 @@ type Appt = {
   present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
   commissionBase?: number; commissionPct?: number; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
-  parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
+  parkingRequested: boolean; parkingSent: boolean; cancelled: boolean; confirmed?: boolean;
   reminder24Sent: boolean; reminder2Sent: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
@@ -43,6 +43,8 @@ const histLabel = (t: string) =>
     note: "💬 Note",
     mandat_removed: "⛔ Mandat retiré",
     mandat_restored: "↩︎ Mandat rétabli",
+    confirmed: "✅ RDV confirmé (SMS commercial débloqué)",
+    unconfirmed: "RDV dé-confirmé",
   } as Record<string, string>)[t] ?? t;
 
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -507,6 +509,20 @@ function ClientPage({ id }: { id: string }) {
       const d = await r.json();
       if (d.ok) { setFlash({ kind: "ok", msg: payload.action === "remove" ? "Mandat retiré — trace gardée dans l'historique." : "Mandat rétabli." }); load(); }
       else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
+    } finally { setBusy(""); }
+  }
+
+  // Confirme le RDV -> débloque le SMS envoyé au commercial 10 min avant.
+  async function toggleConfirm() {
+    if (!a) return;
+    const next = !a.confirmed;
+    setA({ ...a, confirmed: next });
+    setBusy("confirm");
+    try {
+      const r = await fetch("/api/confirm", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: a.id, confirmed: next }) });
+      const d = await r.json();
+      if (d.ok) { setFlash({ kind: "ok", msg: next ? "RDV confirmé — le SMS au commercial sera envoyé 10 min avant." : "RDV dé-confirmé — pas de SMS au commercial." }); load(); }
+      else { setA({ ...a, confirmed: !next }); setFlash({ kind: "err", msg: d.error ?? "Erreur" }); }
     } finally { setBusy(""); }
   }
 
@@ -1046,6 +1062,13 @@ function ClientPage({ id }: { id: string }) {
       <div style={card}>
         <h2 style={sectionTitle}>📊 Statut & commission</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
+
+        {/* Confirmation du RDV -> débloque le SMS au commercial 10 min avant */}
+        {!a.cancelled && (
+          <button onClick={toggleConfirm} disabled={busy === "confirm"} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, marginBottom: 14, fontSize: 14, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${a.confirmed ? "#15803d" : "#e5e7eb"}`, background: a.confirmed ? "#16a34a" : "#fff", color: a.confirmed ? "#fff" : NAVY }}>
+            {busy === "confirm" ? "…" : a.confirmed ? "✅ RDV confirmé — SMS commercial activé (cliquer pour annuler)" : "📞 Confirmer le RDV (débloque le SMS au commercial)"}
+          </button>
+        )}
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {(() => {
             const isNoShow = a.history.some((h) => h.t === "noshow");

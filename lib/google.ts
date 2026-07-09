@@ -393,6 +393,7 @@ export type AppointmentItem = {
   parkingRequested: boolean;
   parkingSent: boolean;
   cancelled: boolean;
+  confirmed: boolean; // RDV confirmé par le call center -> débloque le SMS commercial 10 min avant
   bcSigned: boolean;
   bcSignedAt: string | null;
   vehicleSold: boolean;
@@ -471,6 +472,7 @@ export async function listAppointments(
       parkingRequested: p.parkingRequested === "1",
       parkingSent: p.parkingSent === "1",
       cancelled: p.cancelled === "1",
+      confirmed: p.confirmed === "1",
       bcSigned: p.bcSigned === "1",
       bcSignedAt: p.bcSignedAt || null,
       vehicleSold: p.vehicleSold === "1",
@@ -712,6 +714,18 @@ async function readHistory(eventId: string): Promise<HistEntry[]> {
   } catch {
     return [];
   }
+}
+
+/** Confirme (ou dé-confirme) un RDV. Tant que non confirmé, le SMS commercial 10 min avant
+ *  n'est PAS envoyé. Ajoute une entrée d'historique. */
+export async function markConfirmed(eventId: string, confirmed: boolean) {
+  const hist = await readHistory(eventId);
+  hist.push({ t: confirmed ? "confirmed" : "unconfirmed", at: new Date().toISOString() });
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: { confirmed: confirmed ? "1" : "", history: JSON.stringify(hist.slice(-40)) } } },
+  });
 }
 
 /** Ajoute une entrée à l'historique (timeline) de l'événement. */

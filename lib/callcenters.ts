@@ -51,6 +51,33 @@ export async function createCallCenter(input: {
   return { ...cc.rows[0], agence_only: !!cc.rows[0].agence_only };
 }
 
+/** Crée une agence = call center racine (parent_id null, sans responsable). */
+export async function createAgence(name: string): Promise<CallCenter> {
+  const { rows } = await getPool().query<CallCenter>(
+    `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email)
+     values ($1, '', null, false, '') returning id, name, agence_only, responsable_email, parent_id`,
+    [name.trim()],
+  );
+  return { ...rows[0], agence_only: !!rows[0].agence_only };
+}
+
+/** Rattache un call center à une agence (parent). */
+export async function setCallCenterParent(ccId: number, parentId: number) {
+  await getPool().query(`update call_centers set parent_id = $2 where id = $1`, [ccId, parentId]);
+}
+
+/** Supprime un call center / une agence. Bloqué si des call centers ou des comptes en dépendent. */
+export async function deleteCallCenter(id: number) {
+  if (id === 1) throw new Error("Agence principale protégée.");
+  const pool = getPool();
+  const kids = await pool.query<{ c: string }>(`select count(*)::int as c from call_centers where parent_id = $1`, [id]);
+  if (Number(kids.rows[0].c) > 0) throw new Error("Cette agence a des call centers rattachés. Détache-les d'abord.");
+  const usr = await pool.query<{ c: string }>(`select count(*)::int as c from users where call_center_id = $1`, [id]);
+  if (Number(usr.rows[0].c) > 0) throw new Error("Des comptes dépendent de cette agence. Déplace/supprime-les d'abord.");
+  await pool.query(`delete from call_center_commercials where call_center_id = $1`, [id]);
+  await pool.query(`delete from call_centers where id = $1`, [id]);
+}
+
 export async function assignCommercial(ccId: number, email: string) {
   await getPool().query(
     `insert into call_center_commercials (call_center_id, commercial_email) values ($1, $2) on conflict do nothing`,

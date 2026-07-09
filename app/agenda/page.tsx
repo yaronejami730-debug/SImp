@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
+import GoogleCalendarCard from "@/components/GoogleCalendarCard";
 import { authHeaders, getUser } from "@/lib/client";
 
 const NAVY = "#1a273a";
@@ -367,6 +368,7 @@ function Agenda() {
 
   return (
     <>
+      <GoogleCalendarCard />
       <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher dans tout l'agenda (nom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 10 }} />
 
       {/* Filtres par relation au RDV */}

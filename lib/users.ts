@@ -5,6 +5,7 @@ export type User = {
   id: number; email: string; name: string; role: "admin" | "responsable" | "collab";
   call_center_id: number; commission_base: number; commission_pct: number;
   is_commercial: boolean; is_teleprospector: boolean; phone: string; active: boolean; created_at: string;
+  agence_name?: string; call_center_name?: string;
 };
 
 const USER_COLS = `id, email, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active`;
@@ -19,11 +20,14 @@ export async function getUserByEmail(email: string) {
 
 /** Liste les users (tous, ou d'un call center si fourni — cloisonnement legacy). */
 export async function listUsers(callCenterId?: number): Promise<User[]> {
+  // agence_name = racine de la hiérarchie du call center (parent, sinon lui-même).
+  const cols = `u.id, u.email, u.name, u.role, u.call_center_id, u.commission_base, u.commission_pct, u.is_commercial, u.is_teleprospector, u.phone, u.active, u.created_at, cc.name as call_center_name, coalesce(p.name, cc.name) as agence_name`;
+  const from = `from users u left join call_centers cc on cc.id = u.call_center_id left join call_centers p on p.id = cc.parent_id`;
   if (callCenterId != null) {
-    const { rows } = await getPool().query(`select ${USER_COLS}, created_at from users where call_center_id = $1 order by role, name`, [callCenterId]);
+    const { rows } = await getPool().query(`select ${cols} ${from} where u.call_center_id = $1 order by u.role, u.name`, [callCenterId]);
     return rows as User[];
   }
-  const { rows } = await getPool().query(`select ${USER_COLS}, created_at from users order by role, name`);
+  const { rows } = await getPool().query(`select ${cols} ${from} order by u.role, u.name`);
   return rows as User[];
 }
 

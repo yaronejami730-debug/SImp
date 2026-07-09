@@ -83,6 +83,7 @@ export async function GET(req: Request, { params }: Params) {
         parkingRequested: p.parkingRequested === "1",
         parkingSent: p.parkingSent === "1",
         cancelled: p.cancelled === "1",
+        confirmed: p.confirmed === "1",
         reminder24Sent: p.reminder24Sent === "1",
         reminder2Sent: p.reminder2Sent === "1",
         bcSigned: p.bcSigned === "1",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { listCallCenters, createCallCenter, assignCommercial, unassignCommercial, listAssignments } from "@/lib/callcenters";
+import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments } from "@/lib/callcenters";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -21,11 +21,17 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST { name, agenceOnly, responsable:{name,email,password,phone} } -> crée un call center + son responsable. */
+/** POST -> crée une AGENCE { agence:true, name } OU un call center { name, agenceOnly, responsable }. */
 export async function POST(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { name?: string; agenceOnly?: boolean; responsable?: { name?: string; email?: string; password?: string; phone?: string } };
+    const b = (await req.json()) as { agence?: boolean; name?: string; agenceOnly?: boolean; responsable?: { name?: string; email?: string; password?: string; phone?: string } };
+    // Création d'une agence (call center racine).
+    if (b.agence) {
+      if (!b.name?.trim()) return NextResponse.json({ error: "Nom de l'agence requis." }, { status: 400 });
+      const ag = await createAgence(b.name);
+      return NextResponse.json({ ok: true, callCenter: ag });
+    }
     if (!b.name?.trim() || !b.responsable?.name?.trim() || !b.responsable?.email?.trim() || !b.responsable?.password?.trim()) {
       return NextResponse.json({ error: "Nom du call center + nom/email/mot de passe du responsable requis." }, { status: 400 });
     }
@@ -40,18 +46,38 @@ export async function POST(req: Request) {
   }
 }
 
-/** PATCH { callCenterId, email, action:"assign"|"unassign" } -> (dé)rattache un commercial à un call center. */
+/** PATCH -> assigne/désassigne un commercial, OU rattache un call center à une agence.
+ *  { callCenterId, email, action:"assign"|"unassign" }  ou  { callCenterId, parentId, action:"setAgence" } */
 export async function PATCH(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { callCenterId?: number; email?: string; action?: "assign" | "unassign" };
-    if (!b.callCenterId || !b.email?.trim() || (b.action !== "assign" && b.action !== "unassign")) {
-      return NextResponse.json({ error: "callCenterId, email et action requis." }, { status: 400 });
+    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" };
+    if (!b.callCenterId) return NextResponse.json({ error: "callCenterId requis." }, { status: 400 });
+    if (b.action === "setAgence") {
+      if (!b.parentId) return NextResponse.json({ error: "parentId (agence) requis." }, { status: 400 });
+      await setCallCenterParent(b.callCenterId, b.parentId);
+      return NextResponse.json({ ok: true });
+    }
+    if (!b.email?.trim() || (b.action !== "assign" && b.action !== "unassign")) {
+      return NextResponse.json({ error: "email et action requis." }, { status: 400 });
     }
     if (b.action === "assign") await assignCommercial(b.callCenterId, b.email);
     else await unassignCommercial(b.callCenterId, b.email);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
+  }
+}
+
+/** DELETE ?id= -> supprime une agence / un call center (si rien n'en dépend). */
+export async function DELETE(req: Request) {
+  if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
+  const id = Number(new URL(req.url).searchParams.get("id"));
+  if (!id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
+  try {
+    await deleteCallCenter(id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 400 });
   }
 }

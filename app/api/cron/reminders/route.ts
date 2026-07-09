@@ -171,6 +171,7 @@ export async function GET(req: Request) {
     const priv = ev.extendedProperties?.private ?? {};
     if (priv.mobile === "1") continue;
     if (priv.commercialSms10Sent === "1") continue;
+    if (priv.confirmed !== "1") continue; // RDV non confirmé par le call center -> pas de SMS commercial
     const commercial = priv.commercial || "";
     if (!commercial) continue; // seulement si un commercial est assigné
     // Bonamy : déjà invité sur l'event Google -> pas de SMS, mais on marque pour ne pas re-vérifier.

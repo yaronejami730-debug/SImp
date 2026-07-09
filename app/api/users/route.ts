@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   try {
     const b = (await req.json()) as {
       type?: "commercial" | "telepro";
-      email?: string; password?: string; name?: string; phone?: string; schemeKey?: string;
+      email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number;
     };
     if (!b.email?.trim() || !b.password?.trim() || !b.name?.trim()) {
       return NextResponse.json({ error: "Nom, email et mot de passe requis." }, { status: 400 });
@@ -43,7 +43,8 @@ export async function POST(req: Request) {
     }
     const sch = schemeByKey(b.schemeKey);
     const isCommercial = b.type === "commercial";
-    const callCenterId = s.role === "admin" ? 1 : s.callCenterId;
+    // Admin peut cibler un call center précis (panneau call center) ; sinon son propre CC.
+    const callCenterId = s.role === "admin" ? (b.callCenterId && b.callCenterId > 0 ? b.callCenterId : 1) : s.callCenterId;
     const user = await createUser({
       email: b.email, password: b.password, name: b.name, role: "collab",
       callCenterId, commissionBase: sch.base, commissionPct: sch.pct, phone: b.phone,
