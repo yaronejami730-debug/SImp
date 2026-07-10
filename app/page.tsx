@@ -21,6 +21,7 @@ type Result = {
   smsSent?: boolean;
   smsError?: string;
   warning?: string;
+  canForce?: boolean; // 409 créneau : proposer "Créer quand même"
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
@@ -224,14 +225,14 @@ function Home() {
     return () => clearTimeout(t);
   }, [form.phone, form.listingUrl]);
 
-  async function submit() {
+  async function submit(force = false) {
     setLoading(true);
     setResult(null);
     try {
       const res = await fetch("/api/appointment", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify(form),
+        body: JSON.stringify(force ? { ...form, force: true } : form),
       });
       const data = await res.json();
       setResult(data);
@@ -364,7 +365,7 @@ function Home() {
         </div>
       )}
 
-      <button onClick={submit} disabled={loading || !ready} style={{ marginTop: 22, width: "100%", padding: "14px 20px", fontSize: 16, fontWeight: 600, borderRadius: 8, border: "none", cursor: loading || !ready ? "not-allowed" : "pointer", background: loading || !ready ? "#cbd5e1" : PINK, color: "#fff", fontFamily: "inherit" }}>
+      <button onClick={() => submit()} disabled={loading || !ready} style={{ marginTop: 22, width: "100%", padding: "14px 20px", fontSize: 16, fontWeight: 600, borderRadius: 8, border: "none", cursor: loading || !ready ? "not-allowed" : "pointer", background: loading || !ready ? "#cbd5e1" : PINK, color: "#fff", fontFamily: "inherit" }}>
         {loading ? "Création en cours…" : "Créer le rendez-vous"}
       </button>
 
@@ -385,7 +386,14 @@ function Home() {
         </div>
       )}
       {result && !result.ok && (
-        <div style={{ marginTop: 22, padding: 18, borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>❌ {result.error}</div>
+        <div style={{ marginTop: 22, padding: 18, borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }}>
+          ❌ {result.error}
+          {result.canForce && (
+            <button onClick={() => submit(true)} disabled={loading} style={{ display: "block", marginTop: 12, padding: "11px 16px", borderRadius: 8, border: "1.5px solid #b45309", background: "#fffbeb", color: "#b45309", fontSize: 14, fontWeight: 700, cursor: "pointer", width: "100%" }}>
+              {loading ? "…" : "⚠️ Créer quand même le rendez-vous"}
+            </button>
+          )}
+        </div>
       )}
 
       <div style={{ marginTop: 26, borderTop: "1px solid #ececec", paddingTop: 18 }}>

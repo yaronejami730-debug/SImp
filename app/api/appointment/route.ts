@@ -20,7 +20,8 @@ export async function POST(req: Request) {
     const auth = getAuth(req);
     if (!auth) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
-    const body = (await req.json()) as Partial<AppointmentInput>;
+    const body = (await req.json()) as Partial<AppointmentInput> & { force?: boolean };
+    const force = body.force === true; // "Créer quand même" : ignore conflits/demi-journée (avertit au lieu de bloquer)
     const required: (keyof AppointmentInput)[] = [
       "firstName",
       "lastName",
@@ -64,16 +65,14 @@ export async function POST(req: Request) {
     if (appt.commercial) {
       const conflict = await commercialConflict(appt.commercial, appt.startDateTime, isDeplacementReq);
       if (conflict) {
-        return NextResponse.json(
-          { error: `${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}. Choisis un autre créneau.` },
-          { status: 409 },
-        );
+        const msg = `${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}.`;
+        if (!force) return NextResponse.json({ error: `${msg} Choisis un autre créneau.`, canForce: true }, { status: 409 });
+        commercialWarning = `⚠️ Créé malgré un conflit : ${msg}`;
       }
-      if (await halfDayModalityBlocked(appt.commercial, appt.startDateTime, isDeplacementReq)) {
-        return NextResponse.json(
-          { error: `${appt.commercial} a déjà des RDV ${isDeplacementReq ? "physiques" : "en déplacement"} sur cette demi-journée : les ${isDeplacementReq ? "déplacements" : "RDV en agence"} ne sont possibles que sur l'autre demi-journée.` },
-          { status: 409 },
-        );
+      if (!commercialWarning && await halfDayModalityBlocked(appt.commercial, appt.startDateTime, isDeplacementReq)) {
+        const msg = `${appt.commercial} a déjà des RDV ${isDeplacementReq ? "physiques" : "en déplacement"} sur cette demi-journée.`;
+        if (!force) return NextResponse.json({ error: `${msg} Les ${isDeplacementReq ? "déplacements" : "RDV en agence"} ne sont possibles que sur l'autre demi-journée.`, canForce: true }, { status: 409 });
+        commercialWarning = `⚠️ Créé malgré la règle demi-journée : ${msg}`;
       }
     }
 
