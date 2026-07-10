@@ -545,6 +545,25 @@ export async function patchNote(eventId: string, note: string) {
 }
 
 /** Met à jour les coordonnées du client (téléphone, email) sur un RDV. */
+/** Modifie le nom/prénom du client + met à jour le titre de l'événement. */
+export async function patchClientName(eventId: string, fields: { firstName?: string; lastName?: string; civility?: string }) {
+  const ev = await getEvent(eventId);
+  const p = ev.extendedProperties?.private ?? {};
+  const firstName = fields.firstName?.trim() ?? p.clientFirstName ?? "";
+  const lastName = fields.lastName?.trim() ?? p.clientLastName ?? "";
+  const civility = fields.civility?.trim() ?? p.clientCivility ?? "";
+  const vehicle = [p.carBrand, p.carModel, p.carFinish].filter(Boolean).join(" ");
+  const isDep = p.deplacement === "1";
+  await calendarClient().events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: {
+      summary: `${isDep ? "🚗 Déplacement" : "RDV"} ${firstName} ${lastName}${vehicle ? ` — ${vehicle}` : ""} — ${BUSINESS}`,
+      extendedProperties: { private: { clientFirstName: firstName, clientLastName: lastName, clientCivility: civility } },
+    },
+  });
+}
+
 export async function patchContact(eventId: string, fields: { phone?: string; email?: string }) {
   const cal = calendarClient();
   const priv: Record<string, string> = {};

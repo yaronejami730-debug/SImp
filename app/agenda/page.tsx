@@ -16,11 +16,11 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
-  present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string; teleprospector: string; immatriculation: string;
+  present: boolean; presence?: "present" | "absent" | "unknown"; note?: string; signStatus: Sign; negotiation: number; owner: string; commercial: string; teleprospector: string; immatriculation: string;
   relation?: "created" | "assigned" | "both" | "none";
   type?: "agence" | "deplacement" | "physique" | "visio" | "telephone";
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
-  parkingRequested: boolean; parkingSent: boolean; cancelled: boolean;
+  parkingRequested: boolean; parkingSent: boolean; cancelled: boolean; confirmed?: boolean;
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
 };
@@ -70,6 +70,31 @@ function Agenda() {
   }
   async function save(id: string, patch: { present?: boolean; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean }) {
     await fetch("/api/status", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: id, ...patch }) }).catch(() => {});
+  }
+  // Client pas présent : enregistre l'absence + la raison (note visible sur la fiche/bilan).
+  const [absentFor, setAbsentFor] = useState<string>(""); // id de la carte où on choisit la raison
+  const ABSENT_REASONS = ["Véhicule déjà vendu", "Ne veut plus venir", "N'a pas le temps", "Ne répond plus", "Autre"];
+  async function saveAbsent(a: Appt, reason: string) {
+    let r = reason;
+    if (reason === "Autre") {
+      const custom = prompt("Raison de l'absence :");
+      if (custom === null) return;
+      r = custom.trim() || "Autre";
+    }
+    setAbsentFor("");
+    setLocal(a.id, { present: false, presence: "absent", note: `Absent : ${r}` });
+    await save(a.id, { present: false });
+    await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+      method: "PATCH", headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ note: `Absent : ${r}` }),
+    }).catch(() => {});
+  }
+
+  // Confirme le RDV -> débloque le SMS envoyé au commercial 30 min avant.
+  async function saveConfirm(a: Appt) {
+    const next = !a.confirmed;
+    setLocal(a.id, { confirmed: next });
+    await fetch("/api/confirm", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ eid: a.id, confirmed: next }) }).catch(() => {});
   }
   async function toggleParking(a: Appt) {
     const next = !a.parkingRequested;
@@ -247,9 +272,41 @@ function Agenda() {
       </div>
 
       <div style={sectionLabel}>Statut du RDV</div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer" }}>
-        <input type="checkbox" checked={a.present} onChange={(e) => { setLocal(a.id, { present: e.target.checked }); save(a.id, { present: e.target.checked }); }} /> Client présent
-      </label>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button
+          onClick={() => { setAbsentFor(""); setLocal(a.id, { present: true, presence: "present" }); save(a.id, { present: true }); }}
+          style={{ flex: 1, padding: "8px 6px", fontSize: 13, fontWeight: 700, borderRadius: 7, cursor: "pointer", border: `1.5px solid ${a.presence === "present" || a.present ? "#16a34a" : "#e5e7eb"}`, background: a.presence === "present" || a.present ? "#16a34a" : "#fff", color: a.presence === "present" || a.present ? "#fff" : "#6b7280" }}>
+          🙋 Client présent
+        </button>
+        <button
+          onClick={() => setAbsentFor(absentFor === a.id ? "" : a.id)}
+          style={{ flex: 1, padding: "8px 6px", fontSize: 13, fontWeight: 700, borderRadius: 7, cursor: "pointer", border: `1.5px solid ${a.presence === "absent" ? "#dc2626" : "#e5e7eb"}`, background: a.presence === "absent" ? "#dc2626" : "#fff", color: a.presence === "absent" ? "#fff" : "#6b7280" }}>
+          🚫 Pas présent
+        </button>
+      </div>
+      {absentFor === a.id && (
+        <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: "#fef2f2", border: "1px solid #fecaca" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#b91c1c", marginBottom: 6 }}>Pourquoi le client n&apos;est pas venu ?</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {ABSENT_REASONS.map((r) => (
+              <button key={r} onClick={() => saveAbsent(a, r)} style={{ padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1.5px solid #fecaca", background: "#fff", color: "#b91c1c" }}>{r}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {a.presence === "absent" && a.note && absentFor !== a.id && (
+        <div style={{ marginTop: 6, fontSize: 12, color: "#b91c1c" }}>{a.note}</div>
+      )}
+      {(() => {
+        const msUntil = a.startDateTime ? new Date(a.startDateTime).getTime() - Date.now() : -1;
+        const inWindow = msUntil > 0 && msUntil <= 24 * 3600 * 1000;
+        const enabled = inWindow || a.confirmed;
+        return (
+          <button onClick={() => enabled && saveConfirm(a)} disabled={!enabled} title={enabled ? "" : "S'active 24h avant le rendez-vous"} style={{ width: "100%", marginTop: 8, padding: "9px 10px", borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: enabled ? "pointer" : "not-allowed", border: `1.5px solid ${a.confirmed ? "#15803d" : "#e5e7eb"}`, background: a.confirmed ? "#16a34a" : enabled ? "#fff" : "#f3f4f6", color: a.confirmed ? "#fff" : enabled ? NAVY : "#9aa6b8" }}>
+            {a.confirmed ? "✅ RDV confirmé — SMS commercial 30 min avant" : enabled ? "📞 Confirmer le RDV" : "📞 Confirmer (s'active 24h avant)"}
+          </button>
+        );
+      })()}
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         {signBtn(a, "signed", "✅ Signé", "#16a34a")}
         {signBtn(a, "listed", "📢 Annonce en ligne", "#0891b2")}

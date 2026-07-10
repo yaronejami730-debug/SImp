@@ -52,17 +52,14 @@ export async function addReminder(opts: {
 }
 
 /** Liste les rappels d'une entité (call center). owner = filtre collaborateur. */
-export async function listReminders(callCenterId: number, owner?: string): Promise<Reminder[]> {
-  if (owner) {
-    const { rows } = await getPool().query<Reminder>(
-      `select * from reminders where call_center_id = $1 and owner = $2 order by remind_at asc`,
-      [callCenterId, owner],
-    );
-    return rows;
-  }
+/** Rappels par visibilité : callCenterId null = TOUS (super-admin) ; owner = uniquement les siens (télépro). */
+export async function listReminders(callCenterId?: number | null, owner?: string): Promise<Reminder[]> {
+  const where: string[] = []; const params: unknown[] = [];
+  if (callCenterId != null) { params.push(callCenterId); where.push(`call_center_id = $${params.length}`); }
+  if (owner) { params.push(owner); where.push(`owner = $${params.length}`); }
   const { rows } = await getPool().query<Reminder>(
-    `select * from reminders where call_center_id = $1 order by remind_at asc`,
-    [callCenterId],
+    `select * from reminders ${where.length ? `where ${where.join(" and ")}` : ""} order by remind_at asc`,
+    params,
   );
   return rows;
 }

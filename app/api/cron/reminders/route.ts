@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 const H24 = 24 * 60 * 60 * 1000;
 const H2 = 2 * 60 * 60 * 1000;
 const MIN15 = 15 * 60 * 1000;
-const MIN10 = 12 * 60 * 1000; // fenêtre "10 min avant" (marge pour la cadence du cron)
+const MIN30 = 32 * 60 * 1000; // fenêtre "30 min avant" pour le SMS commercial (marge pour la cadence du cron)
 
 /**
  * Rappels dynamiques. À lancer souvent (~toutes les 15 min).
@@ -167,7 +167,7 @@ export async function GET(req: Request) {
     const startIso = ev.start?.dateTime;
     if (!startIso || !ev.id) continue;
     const msUntil = new Date(startIso).getTime() - now.getTime();
-    if (msUntil <= 0 || msUntil > MIN10) continue;
+    if (msUntil <= 0 || msUntil > MIN30) continue;
     const priv = ev.extendedProperties?.private ?? {};
     if (priv.mobile === "1") continue;
     if (priv.commercialSms10Sent === "1") continue;
@@ -181,7 +181,7 @@ export async function GET(req: Request) {
     const clientName = `${priv.clientFirstName ?? ""} ${priv.clientLastName ?? ""}`.trim();
     const vehicle = [priv.carBrand, priv.carModel, priv.carFinish].filter(Boolean).join(" ");
     const civ = priv.clientCivility ? `${priv.clientCivility} ` : "";
-    const text = `${commercial}, tu as un rendez-vous avec ${civ}${clientName}${vehicle ? ` pour ${vehicle}` : ""} dans 10 minutes. Numero du client: ${priv.clientPhone || "-"}.`;
+    const text = `${commercial}, rendez-vous CONFIRME dans 30 minutes avec ${civ}${clientName}${vehicle ? ` pour ${vehicle}` : ""}. Numero du client: ${priv.clientPhone || "-"}.`;
     try {
       await sendSMS({ to: commTel, text, log: { templateKey: "sms_commercial_10min", clientName, owner: priv.owner, eventId: ev.id, toEmail: priv.clientEmail } });
       commercialSmsSent++;

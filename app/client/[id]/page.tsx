@@ -361,6 +361,8 @@ function ClientPage({ id }: { id: string }) {
   const [editContact, setEditContact] = useState(false);
   const [draftPhone, setDraftPhone] = useState("");
   const [draftEmail, setDraftEmail] = useState("");
+  const [draftFirstName, setDraftFirstName] = useState("");
+  const [draftLastName, setDraftLastName] = useState("");
   const [customMailOpen, setCustomMailOpen] = useState(false);
   const [customSubject, setCustomSubject] = useState("");
   const [customBody, setCustomBody] = useState("");
@@ -616,13 +618,13 @@ function ClientPage({ id }: { id: string }) {
       const r = await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
         method: "PATCH",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ phone: draftPhone, email: draftEmail }),
+        body: JSON.stringify({ phone: draftPhone, email: draftEmail, firstName: draftFirstName, lastName: draftLastName }),
       });
       const d = await r.json();
       if (d.ok) {
-        setA({ ...a, phone: draftPhone, email: draftEmail });
+        setA({ ...a, phone: draftPhone, email: draftEmail, firstName: draftFirstName, lastName: draftLastName });
         setEditContact(false);
-        setFlash({ kind: "ok", msg: "Contact mis à jour" });
+        setFlash({ kind: "ok", msg: "Client mis à jour" });
       } else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
     } finally { setBusy(""); }
   }
@@ -758,15 +760,25 @@ function ClientPage({ id }: { id: string }) {
               <div><div style={{ color: "#9aa6b8", fontSize: 11, textTransform: "uppercase" }}>Date du RDV</div><div style={{ fontWeight: 600, color: PINK }}>{a.startDateTime ? fmtLong(a.startDateTime) : "—"}</div></div>
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => { setDraftPhone(a.phone); setDraftEmail(a.email); setEditContact(true); }} style={{ padding: "7px 12px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                ✏️ Modifier téléphone / e-mail
+              <button onClick={() => { setDraftPhone(a.phone); setDraftEmail(a.email); setDraftFirstName(a.firstName); setDraftLastName(a.lastName); setEditContact(true); }} style={{ padding: "7px 12px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                ✏️ Modifier le client (nom, tél, e-mail)
               </button>
               {a.listingUrl && <a href={/^https?:\/\//i.test(a.listingUrl) ? a.listingUrl : `https://${a.listingUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: PINK, fontSize: 13, fontWeight: 600, textDecoration: "underline" }}>🔗 Voir l&apos;annonce</a>}
             </div>
           </>
         ) : (
           <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Corrige le téléphone ou l&apos;e-mail si erreur de saisie. Les futurs rappels utiliseront les nouvelles coordonnées.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Corrige le nom, le téléphone ou l&apos;e-mail si erreur de saisie. Les futurs rappels utiliseront les nouvelles coordonnées.</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Prénom</label>
+                <input value={draftFirstName} onChange={(e) => setDraftFirstName(e.target.value)} placeholder="Jean" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Nom</label>
+                <input value={draftLastName} onChange={(e) => setDraftLastName(e.target.value)} placeholder="Dupont" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+              </div>
+            </div>
             <div>
               <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Téléphone</label>
               <input value={draftPhone} onChange={(e) => setDraftPhone(e.target.value)} type="tel" placeholder="06 12 34 56 78" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
@@ -1063,12 +1075,21 @@ function ClientPage({ id }: { id: string }) {
         <h2 style={sectionTitle}>📊 Statut & commission</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
 
-        {/* Confirmation du RDV -> débloque le SMS au commercial 10 min avant */}
-        {!a.cancelled && (
-          <button onClick={toggleConfirm} disabled={busy === "confirm"} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, marginBottom: 14, fontSize: 14, fontWeight: 700, cursor: "pointer", border: `1.5px solid ${a.confirmed ? "#15803d" : "#e5e7eb"}`, background: a.confirmed ? "#16a34a" : "#fff", color: a.confirmed ? "#fff" : NAVY }}>
-            {busy === "confirm" ? "…" : a.confirmed ? "✅ RDV confirmé — SMS commercial activé (cliquer pour annuler)" : "📞 Confirmer le RDV (débloque le SMS au commercial)"}
-          </button>
-        )}
+        {/* Confirmation du RDV -> débloque le SMS au commercial 30 min avant.
+            Bouton actif uniquement dans les 24h précédant le RDV. */}
+        {!a.cancelled && (() => {
+          const msUntil = a.startDateTime ? new Date(a.startDateTime).getTime() - Date.now() : -1;
+          const inWindow = msUntil > 0 && msUntil <= 24 * 3600 * 1000;
+          const enabled = inWindow || a.confirmed; // toujours possible d'annuler une confirmation
+          return (
+            <button onClick={toggleConfirm} disabled={busy === "confirm" || !enabled} title={enabled ? "" : "S'active 24h avant le rendez-vous"} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, marginBottom: 14, fontSize: 14, fontWeight: 700, cursor: enabled ? "pointer" : "not-allowed", border: `1.5px solid ${a.confirmed ? "#15803d" : "#e5e7eb"}`, background: a.confirmed ? "#16a34a" : enabled ? "#fff" : "#f3f4f6", color: a.confirmed ? "#fff" : enabled ? NAVY : "#9aa6b8" }}>
+              {busy === "confirm" ? "…"
+                : a.confirmed ? "✅ RDV confirmé — SMS envoyé au commercial 30 min avant (cliquer pour annuler)"
+                : enabled ? "📞 Confirmer le RDV → SMS au commercial 30 min avant"
+                : "📞 Confirmer le RDV (s'active 24h avant le rendez-vous)"}
+            </button>
+          );
+        })()}
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {(() => {
             const isNoShow = a.history.some((h) => h.t === "noshow");

@@ -14,8 +14,11 @@ export async function listCallCenters(): Promise<CallCenterDetail[]> {
        left join call_centers p on p.id = c.parent_id
       order by c.id`,
   );
+  // pg renvoie les bigint en string -> on normalise en number pour le front.
   return rows.map((r) => ({
     ...r,
+    id: Number(r.id),
+    parent_id: r.parent_id == null ? null : Number(r.parent_id),
     agence_only: !!r.agence_only,
     commercials_count: Number(r.commercials_count),
     telepros_count: Number(r.telepros_count),
@@ -27,7 +30,7 @@ export async function getCallCenter(id: number): Promise<CallCenter | undefined>
     `select id, name, agence_only, responsable_email, parent_id from call_centers where id = $1`,
     [id],
   );
-  return rows[0] ? { ...rows[0], agence_only: !!rows[0].agence_only } : undefined;
+  return rows[0] ? { ...rows[0], id: Number(rows[0].id), parent_id: rows[0].parent_id == null ? null : Number(rows[0].parent_id), agence_only: !!rows[0].agence_only } : undefined;
 }
 
 /** Crée un call center + son responsable (role='responsable', rattaché au nouveau CC, parent = 1 racine). */
@@ -42,13 +45,13 @@ export async function createCallCenter(input: {
      returning id, name, agence_only, responsable_email, parent_id`,
     [input.name.trim(), !!input.agenceOnly, input.responsable.email.trim().toLowerCase()],
   );
-  const ccId = cc.rows[0].id;
+  const ccId = Number(cc.rows[0].id);
   // Le responsable peut créer des RDV (téléprospecteur) et gère son équipe (role responsable).
   await createUser({
     email: input.responsable.email, password: input.responsable.password, name: input.responsable.name,
     role: "responsable", callCenterId: ccId, isTeleprospector: true, isCommercial: false, phone: input.responsable.phone,
   });
-  return { ...cc.rows[0], agence_only: !!cc.rows[0].agence_only };
+  return { ...cc.rows[0], id: ccId, agence_only: !!cc.rows[0].agence_only };
 }
 
 /** Crée une agence = call center racine (parent_id null, sans responsable). */
@@ -58,7 +61,7 @@ export async function createAgence(name: string): Promise<CallCenter> {
      values ($1, '', null, false, '') returning id, name, agence_only, responsable_email, parent_id`,
     [name.trim()],
   );
-  return { ...rows[0], agence_only: !!rows[0].agence_only };
+  return { ...rows[0], id: Number(rows[0].id), agence_only: !!rows[0].agence_only };
 }
 
 /** Rattache un call center à une agence (parent). */

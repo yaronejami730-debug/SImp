@@ -7,13 +7,15 @@ import { getAuth } from "@/lib/auth";
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-/** GET -> liste des rappels (admin = tous, collab = les siens). */
+/** GET -> rappels par rôle : super-admin = TOUS ; responsable = tout son call center ; télépro = les siens. */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
     const reminders = s.role === "admin"
+      ? await listReminders(null)
+      : s.role === "responsable"
       ? await listReminders(s.callCenterId)
       : await listReminders(s.callCenterId, s.email);
     return NextResponse.json({ ok: true, reminders });

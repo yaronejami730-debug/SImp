@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getEvent, markReminderSent, patchVehicle, patchContact, patchNote, patchCommercial, appendHistory } from "@/lib/google";
+import { getEvent, markReminderSent, patchVehicle, patchContact, patchClientName, patchNote, patchCommercial, appendHistory } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, reminderEmail, customEmail, noShowFollowupEmail, mobileConfirmationEmail, mobileReminderEmail } from "@/lib/email-templates";
@@ -110,9 +110,12 @@ export async function PATCH(req: Request, { params }: Params) {
     if (!ownsOrAdmin(ev, s.email, s.role)) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
-    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; immatriculation?: string; phone?: string; email?: string; note?: string; commercial?: string };
+    const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; immatriculation?: string; phone?: string; email?: string; note?: string; commercial?: string; firstName?: string; lastName?: string; civility?: string };
     const hasVehicle = body.carBrand !== undefined || body.carModel !== undefined || body.carFinish !== undefined || body.immatriculation !== undefined;
     const hasContact = body.phone !== undefined || body.email !== undefined;
+    if (body.firstName !== undefined || body.lastName !== undefined || body.civility !== undefined) {
+      await patchClientName(id, { firstName: body.firstName, lastName: body.lastName, civility: body.civility });
+    }
     if (hasVehicle) {
       await patchVehicle(id, { carBrand: body.carBrand?.trim(), carModel: body.carModel?.trim(), carFinish: body.carFinish?.trim(), immatriculation: body.immatriculation?.trim().toUpperCase() });
     }
