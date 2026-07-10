@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "@/lib/client";
 
-const PINK = "#DB407A";
-const NAVY = "#1a273a";
+const PINK = "var(--brand-primary)";
+const NAVY = "var(--brand-dark)";
 
 type Slot = { time: string; taken: boolean };
 type DayCache = { loading: boolean; closed?: boolean; slots: Slot[] };

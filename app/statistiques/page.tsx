@@ -5,12 +5,12 @@ import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 
 // ── Palette sobre ──
-const NAVY = "#1a273a";
+const NAVY = "var(--brand-dark)";
 const MUTED = "#64748b";
 const FAINT = "#94a3b8";
 const LINE = "#e8ebef";
 const SURFACE = "#f8fafc";
-const PINK = "#DB407A";
+const PINK = "var(--brand-primary)";
 const GREEN = "#16a34a";
 const RED = "#dc2626";
 
@@ -24,6 +24,8 @@ type Stats = {
   commission: number;
   commissionFixe: number;
   commissionVariable: number;
+  margeCC?: number;
+  margeCCCount?: number;
   negoTotal: number;
   scheme: { base: number; pct: number };
   byCommercial: { name: string; signed: number; total: number }[];
@@ -188,6 +190,12 @@ function StatsView({ data, from, to, onRange, busy }: {
                 <span style={{ fontSize: 13, color: MUTED }}>{data.scheme.pct}% de la négo{data.negoTotal > 0 ? ` (${eur(data.negoTotal)})` : ""}</span>
                 <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.commissionVariable)}</strong>
               </div>
+              {(data.margeCC ?? 0) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
+                  <span style={{ fontSize: 13, color: MUTED }}>Marge call centers · {data.margeCCCount} signé{(data.margeCCCount ?? 0) > 1 ? "s" : ""}</span>
+                  <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.margeCC ?? 0)}</strong>
+                </div>
+              )}
             </div>
           </div>
         </section>

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import SlotPicker from "@/components/SlotPicker";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const LOGO = "/logo.png";
 
 export default function Reschedule() {

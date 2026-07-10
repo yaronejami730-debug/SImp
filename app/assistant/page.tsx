@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const BG = "#eceef1";
 const FONT = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif";
 

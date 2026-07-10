@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getToken } from "@/lib/client";
+import { getToken, applyTheme } from "@/lib/client";
 import Login from "./Login";
 import Nav from "./Nav";
 
-/** Enveloppe les pages internes : exige la connexion, affiche la barre de nav. */
+/** Enveloppe les pages internes : exige la connexion, affiche la barre de nav.
+ *  Applique le thème de la franchise (white-label) au montage. */
 export default function Shell({ active, children, wide }: { active: string; children: React.ReactNode; wide?: boolean }) {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
+    applyTheme(); // couleurs de la franchise de l'utilisateur connecté
     setAuthed(!!getToken());
     setReady(true);
   }, []);

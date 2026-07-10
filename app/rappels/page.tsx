@@ -5,8 +5,8 @@ import Shell from "@/components/Shell";
 import { authHeaders, getUser } from "@/lib/client";
 import { extractUrl } from "@/lib/parse";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const ACCENT = "#24B9D7";
 
 type Reminder = {

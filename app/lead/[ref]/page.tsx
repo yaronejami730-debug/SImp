@@ -5,8 +5,8 @@ import { useParams } from "next/navigation";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const ACCENT = "#24B9D7";
 
 type Lead = {

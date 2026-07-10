@@ -5,8 +5,8 @@ import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 import { BRAND_LIST, CAR_CATALOG } from "@/lib/car-catalog";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const TEAL = "#24B9D7";
 
 const FUELS = ["Essence", "Diesel", "Hybride", "Hybride rechargeable", "Électrique", "GPL"];

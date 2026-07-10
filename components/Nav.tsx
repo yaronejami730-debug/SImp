@@ -1,9 +1,9 @@
 "use client";
 
-import { getUser, clearAuth } from "@/lib/client";
+import { getUser, getTheme, clearAuth } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const LOGO = "/logo.png";
 
 // teleOnly = réservé aux téléprospecteurs (et admin) : créer des RDV / gérer les prospects.
@@ -20,6 +20,14 @@ const TABS = [
 
 export default function Nav({ active }: { active: string; callCenterId?: number }) {
   const user = getUser();
+  const theme = getTheme(); // logo + nom de la franchise (white-label)
+  const logoSrc = theme?.logo || LOGO;
+  const brandName = theme?.name || "Simplicicar";
+  // Bandeau clair (défaut) ou foncé : pour les logos à écriture blanche.
+  const headerDark = !!theme?.headerDark;
+  const headerBg = headerDark ? "var(--brand-dark)" : "#fff";
+  const headerInk = headerDark ? "#fff" : NAVY;
+  const headerSub = headerDark ? "rgba(255,255,255,0.75)" : "#6b7280";
   // Téléprospecteur (ou admin) = peut créer des RDV / gérer les prospects.
   // Commercial pur = voit seulement Agenda / CRM / Stats (ses RDV affectés).
   const canCreate = user?.role === "admin" || !!user?.isTeleprospector;
@@ -32,16 +40,20 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto 16px" }}>
-      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ background: headerBg, border: `1px solid ${headerDark ? "transparent" : "#e5e7eb"}`, borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={LOGO} alt="Simplicicar" width={150} style={{ width: 150, maxWidth: "42%", height: "auto" }} />
+        <img src={logoSrc} alt={brandName} width={150} style={{ width: 150, maxWidth: "42%", height: "auto", maxHeight: 48, objectFit: "contain" }} />
+        {/* Nom de l'agence, centré */}
+        <div style={{ flex: 1, textAlign: "center", minWidth: 120 }}>
+          <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 15, fontWeight: 700, color: headerInk, letterSpacing: 0.4, textTransform: "uppercase" }}>{brandName}</span>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           {user && (
-            <span style={{ color: "#6b7280", fontSize: 12 }}>
+            <span style={{ color: headerSub, fontSize: 12 }}>
               {user.name}{user.role === "admin" ? " (admin)" : ""}
             </span>
           )}
-          <button onClick={logout} style={{ color: NAVY, fontSize: 12, background: "#fff", border: "1px solid #e5e7eb", padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
+          <button onClick={logout} style={{ color: headerInk, fontSize: 12, background: headerDark ? "rgba(255,255,255,0.12)" : "#fff", border: `1px solid ${headerDark ? "rgba(255,255,255,0.3)" : "#e5e7eb"}`, padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>
             Déconnexion
           </button>
         </div>

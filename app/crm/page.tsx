@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders, getUser } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 
 type Sign = "" | "signed" | "thinking" | "unsigned";
 type Appt = {

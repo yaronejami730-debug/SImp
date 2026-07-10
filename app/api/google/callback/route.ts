@@ -23,12 +23,13 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state") ?? "";
-  const back = `${url.origin}/agenda`;
+  const base = process.env.GOOGLE_REDIRECT_BASE ?? "https://www.simplicicar.store";
+  const back = `${base}/agenda`;
   const email = verifyState(state);
   if (!code || !email) return NextResponse.redirect(`${back}?google=error`);
 
   try {
-    const redirectUri = `${url.origin}/api/google/callback`;
+    const redirectUri = `${base}/api/google/callback`;
     const oauth2 = new google.auth.OAuth2(process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET, redirectUri);
     const { tokens } = await oauth2.getToken(code);
     oauth2.setCredentials(tokens);

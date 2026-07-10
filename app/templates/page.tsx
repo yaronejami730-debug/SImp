@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const GREEN = "#16a34a";
 const MUTED = "#6b7280";
 const LINE = "#e5e7eb";

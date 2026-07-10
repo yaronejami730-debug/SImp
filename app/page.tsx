@@ -8,8 +8,8 @@ import { authHeaders, getUser } from "@/lib/client";
 import { extractUrl } from "@/lib/parse";
 import { COMMERCIAUX, DEFAULT_COMMERCIAL } from "@/lib/commerciaux";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 
 type Result = {
   ok: boolean;
@@ -92,9 +92,11 @@ function Home() {
           const filtered = coms.filter((c) => allowed.has(tok(c)));
           if (filtered.length) coms = filtered;
         }
-        if (coms.length) {
+        // IMPORTANT : si l'utilisateur est restreint (règle call center), on applique la liste
+        // MÊME VIDE — jamais de fallback vers la liste globale (pas de fuite entre franchises).
+        if (coms.length || tr) {
           setCommerciaux(coms);
-          const def = coms[0];
+          const def = coms[0] ?? "";
           setForm((f) => ({ ...f, commercial: def, ...(tr?.agenceOnly ? { type: "agence" } : {}) }));
           setLinkCommercial(def); setHesCommercial(def);
         }

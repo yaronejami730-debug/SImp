@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { BRAND_LIST, CAR_CATALOG } from "@/lib/car-catalog";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const ACCENT = "#24B9D7";
 const FONT_HEAD = "'Cabin','Manrope',Arial,sans-serif";
 const FONT_BODY = "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif";

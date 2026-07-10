@@ -13,3 +13,9 @@ body {
   font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
 }
+
+/* White-label : couleurs de marque par agence (surchargées au login). */
+:root {
+  --brand-primary: #DB407A; /* rose Simplicicar par défaut */
+  --brand-dark: #1a273a;    /* bleu nuit Simplicicar par défaut */
+}

@@ -11,3 +11,12 @@ create table if not exists google_connections (
   last_sync_at  timestamptz,
   sync_state    text not null default 'connected'  -- connected | error | revoked
 );
+
+-- Mapping RDV CRM <-> copie dans l'agenda perso de l'utilisateur (sync bouton).
+create table if not exists google_event_map (
+  user_email   text not null,
+  crm_event_id text not null,
+  g_event_id   text not null,
+  updated_at   timestamptz not null default now(),
+  primary key (user_email, crm_event_id)
+);

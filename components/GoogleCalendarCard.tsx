@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { authHeaders } from "@/lib/client";
 
-const NAVY = "#1a273a";
+const NAVY = "var(--brand-dark)";
 const GREEN = "#16a34a";
 
 type Conn = { gmail: string; connected_at: string; last_sync_at: string | null; sync_state: string } | null;
@@ -48,6 +48,25 @@ export default function GoogleCalendarCard() {
       else { setFlash(d.error ?? "Erreur"); setBusy(false); }
     } catch { setBusy(false); }
   }
+  async function syncNow() {
+    setBusy(true); setFlash("Synchronisation en cours…");
+    try {
+      const r = await fetch("/api/google/sync", { method: "POST", headers: authHeaders() });
+      const d = await r.json();
+      if (d.ok) {
+        const parts = [
+          d.pushed ? `${d.pushed} ajouté(s)` : "",
+          d.updated ? `${d.updated} mis à jour` : "",
+          d.pulledBack ? `${d.pulledBack} horaire(s) rapatrié(s) depuis Google` : "",
+          d.removed ? `${d.removed} annulé(s) retiré(s)` : "",
+        ].filter(Boolean);
+        setFlash(`✅ Synchronisé : ${parts.length ? parts.join(" · ") : "déjà à jour"}${d.errors?.length ? ` · ⚠️ ${d.errors.length} erreur(s)` : ""}`);
+        load();
+      } else setFlash(`❌ ${d.error ?? "Erreur"}`);
+    } catch { setFlash("❌ Erreur réseau"); }
+    finally { setBusy(false); }
+  }
+
   async function disconnect() {
     if (!confirm("Déconnecter ton Google Agenda ?")) return;
     setBusy(true);
@@ -72,7 +91,7 @@ export default function GoogleCalendarCard() {
               <div><span style={{ color: GREEN, fontWeight: 700 }}>🟢 Connecté</span></div>
               <div>Compte : <strong>{conn!.gmail}</strong></div>
               <div>Dernière synchro : {ago(conn!.last_sync_at)}</div>
-              <div>Mode : Synchronisation CRM → Google</div>
+              <div>Mode : Bidirectionnelle (bouton Synchroniser)</div>
             </div>
           ) : (
             <div style={{ fontSize: 13, color: "#64748b", marginTop: 6 }}>⚪ Non connecté — connecte ton agenda pour recevoir tes RDV automatiquement.</div>
@@ -80,7 +99,10 @@ export default function GoogleCalendarCard() {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {connected ? (
-            <button onClick={disconnect} disabled={busy} style={{ ...btn, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca" }}>Déconnecter</button>
+            <>
+              <button onClick={syncNow} disabled={busy} style={{ ...btn, background: NAVY, color: "#fff" }}>{busy ? "…" : "🔄 Synchroniser maintenant"}</button>
+              <button onClick={disconnect} disabled={busy} style={{ ...btn, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca" }}>Déconnecter</button>
+            </>
           ) : (
             <button onClick={connect} disabled={busy} style={{ ...btn, background: NAVY, color: "#fff" }}>{busy ? "…" : "Se connecter avec Google"}</button>
           )}

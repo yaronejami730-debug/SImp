@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listAppointments } from "@/lib/google";
 import { getCommissionSchemes } from "@/lib/users";
-import { commissionOf } from "@/lib/commission";
+import { listCallCenters } from "@/lib/callcenters";
 import { toParisISO } from "@/lib/parse";
 
 export const maxDuration = 60;
@@ -38,15 +38,21 @@ export async function GET(req: Request) {
     // Fenêtre large puis filtre plage.
     const allAppts = await listAppointments(new Date(fromMs - 7 * DAY), new Date(toMs + 7 * DAY));
 
-    // "À moi" = RDV que je gère (commercial affecté) OU que j'ai créé (téléprospecteur).
+    // Visibilité par rôle :
+    //  - admin       : TOUT (sa rémunération = ses RDV cc1 + marge sur les call centers)
+    //  - responsable : tous les RDV de SON call center (payé sur chaque signé de son équipe)
+    //  - télépro     : ses RDV (créés ou affectés)
     const myEmailLc = s.email.toLowerCase();
     const myNameTok = tokset(s.name);
     const isMine = (a: { owner?: string; commercial?: string; commercialEmail?: string }) =>
       a.owner === s.email ||
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmailLc) ||
       (!a.commercialEmail && !!myNameTok && tokset(a.commercial ?? "") === myNameTok);
+    const visible = s.role === "admin" ? allAppts
+      : s.role === "responsable" ? allAppts.filter((a) => a.callCenterId === s.callCenterId)
+      : allAppts.filter(isMine);
 
-    const appts = allAppts.filter(isMine).filter((a) => inRange(a.startDateTime));
+    const appts = visible.filter((a) => inRange(a.startDateTime));
     const active = appts.filter((a) => !a.cancelled);
     const total = active.length;
     // "Signé" = mandat signé ET non retiré (cohérent avec le bilan : un mandat retiré ne compte plus).
@@ -54,16 +60,39 @@ export async function GET(req: Request) {
     const signed = active.filter(isSigned).length;
     const rateSignature = total > 0 ? Math.round((signed / total) * 100) : 0;
 
-    // Commission PERSO selon le barème du compte, décomposée :
-    //  - fixe    = base € × nombre de RDV signés
-    //  - variable = pct % de la somme des négociations des RDV signés
+    // ── Rémunération découpée ──
+    // Télépro / responsable : SON barème × signés visibles.
+    // Admin : son barème sur les RDV de sa propre entité (cc1) + MARGE sur les call centers
+    //         (frais fixes 50 € - le barème du responsable du call center, ex 50-30 = 20 €/signé).
+    const FRAIS_FIXE = 50;
     const schemes = await getCommissionSchemes();
     const mySc = schemes.get(myEmailLc) ?? { base: 0, pct: 0 };
     const signedAppts = active.filter(isSigned);
-    const negoTotal = signedAppts.reduce((sum, a) => sum + (a.negotiation || 0), 0);
-    const commissionFixe = Math.round(mySc.base * signed);
+    // Barème du responsable de chaque call center (coût du call center par signé).
+    const ccs = await listCallCenters();
+    const respSchemeByCc = new Map<number, { base: number; pct: number }>();
+    for (const c of ccs) {
+      if (c.responsable_email) respSchemeByCc.set(c.id, schemes.get(c.responsable_email.toLowerCase()) ?? { base: 0, pct: 0 });
+    }
+
+    let ownSigned: typeof signedAppts = signedAppts;
+    let margeCC = 0, margeCCCount = 0;
+    if (s.role === "admin") {
+      ownSigned = signedAppts.filter((a) => (a.callCenterId ?? 1) === 1);
+      for (const a of signedAppts) {
+        const cc = a.callCenterId ?? 1;
+        if (cc === 1) continue;
+        const rs = respSchemeByCc.get(cc) ?? { base: 0, pct: 0 };
+        const cost = rs.base + (rs.pct / 100) * (a.negotiation || 0);
+        margeCC += Math.max(FRAIS_FIXE - cost, 0);
+        margeCCCount++;
+      }
+      margeCC = Math.round(margeCC);
+    }
+    const negoTotal = ownSigned.reduce((sum, a) => sum + (a.negotiation || 0), 0);
+    const commissionFixe = Math.round(mySc.base * ownSigned.length);
     const commissionVariable = Math.round((mySc.pct / 100) * negoTotal);
-    const commission = commissionFixe + commissionVariable;
+    const commission = commissionFixe + commissionVariable + margeCC;
 
     // --- Signés par commercial (avec qui j'ai signé) ---
     const accent = (s: string) => (s.match(/[À-ÿ]/g) || []).length;
@@ -102,6 +131,8 @@ export async function GET(req: Request) {
       commission,
       commissionFixe,
       commissionVariable,
+      margeCC,
+      margeCCCount,
       negoTotal,
       scheme: { base: mySc.base, pct: mySc.pct },
       byCommercial,

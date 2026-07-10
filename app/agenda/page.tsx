@@ -5,8 +5,8 @@ import Shell from "@/components/Shell";
 import GoogleCalendarCard from "@/components/GoogleCalendarCard";
 import { authHeaders, getUser } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 
 const BASE_COMMISSION = 50;
 const NEGO_RATE = 0.1;

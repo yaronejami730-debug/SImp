@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getUserByEmail, listCommercials, listTeleprospectors, listUsers } from "@/lib/users";
-import { callCenterRule, commercialsForCallCenter } from "@/lib/callcenters";
+import { callCenterRule, commercialsForCallCenterInherited } from "@/lib/callcenters";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,8 @@ export async function GET(req: Request) {
     const me = await getUserByEmail(s.email).catch(() => undefined);
     const rule = await callCenterRule(s.callCenterId); // null si CC racine
 
-    // Commerciaux : restreints au call center si règle, sinon tous.
-    const commercials = rule ? await commercialsForCallCenter(s.callCenterId) : await listCommercials();
+    // Commerciaux : restreints au call center (avec héritage agence/franchise) si règle, sinon tous.
+    const commercials = rule ? await commercialsForCallCenterInherited(s.callCenterId) : await listCommercials();
     // Téléprospecteurs : super-admin = tous ; sinon ceux du call center.
     const teleprospectors = s.role === "admin"
       ? await listTeleprospectors()

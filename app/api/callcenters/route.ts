@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments } from "@/lib/callcenters";
+import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments } from "@/lib/callcenters";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -51,11 +51,20 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" };
+    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string };
     if (!b.callCenterId) return NextResponse.json({ error: "callCenterId requis." }, { status: 400 });
     if (b.action === "setAgence") {
       if (!b.parentId) return NextResponse.json({ error: "parentId (agence) requis." }, { status: 400 });
       await setCallCenterParent(b.callCenterId, b.parentId);
+      return NextResponse.json({ ok: true });
+    }
+    if (b.action === "rename") {
+      if (!b.name?.trim()) return NextResponse.json({ error: "Nom requis." }, { status: 400 });
+      await renameCallCenter(b.callCenterId, b.name);
+      return NextResponse.json({ ok: true });
+    }
+    if (b.action === "setTheme") {
+      await setBrandTheme(b.callCenterId, { primary: b.primary, dark: b.dark, logo: b.logo, headerDark: b.headerDark });
       return NextResponse.json({ ok: true });
     }
     if (!b.email?.trim() || (b.action !== "assign" && b.action !== "unassign")) {

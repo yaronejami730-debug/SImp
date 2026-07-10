@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const GREEN = "#16a34a";
 const GREEN_DARK = "#15803d";
 const ORANGE = "#ea580c";
@@ -394,7 +394,7 @@ function Bilan() {
     };
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Bilan ${esc(periodLabel)}</title>
       <style>
-        *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1a273a;margin:24px;font-size:12px}
+        :root{--brand-primary:#DB407A;--brand-dark:#1a273a} *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1a273a;margin:24px;font-size:12px}
         h1{font-size:20px;margin:0 0 2px} .sub{color:#6b7280;margin:0 0 16px;font-size:12px}
         .kpis{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
         .kpi{border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;min-width:120px}
@@ -459,7 +459,7 @@ function Bilan() {
     }).join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Bilan ${esc(periodLabel)}</title>
       <style>
-        *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1a273a;margin:24px;font-size:12px}
+        :root{--brand-primary:#DB407A;--brand-dark:#1a273a} *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1a273a;margin:24px;font-size:12px}
         h1{font-size:22px;margin:0 0 2px} .sub{color:#6b7280;margin:0 0 18px;font-size:12px}
         .kpis{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
         .kpi{border:1px solid #e5e7eb;border-radius:10px;padding:10px 16px;min-width:140px}

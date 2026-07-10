@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { setAuth } from "@/lib/client";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const LOGO = "/logo.png";
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
@@ -24,7 +24,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       });
       const d = await res.json();
       if (d.ok) {
-        setAuth(d.token, { email: d.email, name: d.name, role: d.role, callCenterId: d.callCenterId, isCommercial: d.isCommercial, isTeleprospector: d.isTeleprospector });
+        setAuth(d.token, { email: d.email, name: d.name, role: d.role, callCenterId: d.callCenterId, isCommercial: d.isCommercial, isTeleprospector: d.isTeleprospector }, d.theme ?? null);
         onLogin();
       } else setErr(d.error ?? "Erreur");
     } catch (e) {

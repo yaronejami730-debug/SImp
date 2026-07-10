@@ -8,8 +8,8 @@ import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templa
 import { SMS_TEMPLATES, SMS_TEMPLATE_CATEGORIES } from "@/lib/sms-templates-list";
 import { COMMERCIAUX } from "@/lib/commerciaux";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 const BASE_COMMISSION = 50;
 const NEGO_RATE = 0.1;
 

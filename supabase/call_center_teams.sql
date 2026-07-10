@@ -20,3 +20,11 @@ create index if not exists ccc_cc_idx on call_center_commercials (call_center_id
 -- Note rôle : le responsable d'un call center N'EST PAS super-admin.
 -- Prévoir role='responsable' (admin de SON call_center_id uniquement), distinct de 'admin' (racine).
 -- La visibilité des RDV (Google Calendar) doit filtrer sur extendedProperties.private.cc = son call_center_id.
+
+-- White-label par agence : couleurs + logo propres à chaque agence (racine).
+alter table call_centers add column if not exists brand_primary text not null default '';
+alter table call_centers add column if not exists brand_dark    text not null default '';
+alter table call_centers add column if not exists logo_url      text not null default '';
+
+-- Fond du bandeau (header) : clair (défaut) ou foncé, pour la lisibilité des logos clairs.
+alter table call_centers add column if not exists header_dark boolean not null default false;

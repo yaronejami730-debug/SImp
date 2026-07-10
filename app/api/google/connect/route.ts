@@ -20,8 +20,9 @@ const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar"];
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
-  const origin = new URL(req.url).origin;
-  const redirectUri = `${origin}/api/google/callback`;
+  // URI FIXE (enregistrée dans Google Console) : ne dépend pas du domaine d'où l'on clique.
+  const base = process.env.GOOGLE_REDIRECT_BASE ?? "https://www.simplicicar.store";
+  const redirectUri = `${base}/api/google/callback`;
   const oauth2 = new google.auth.OAuth2(process.env.GOOGLE_OAUTH_CLIENT_ID, process.env.GOOGLE_OAUTH_CLIENT_SECRET, redirectUri);
   const url = oauth2.generateAuthUrl({
     access_type: "offline",

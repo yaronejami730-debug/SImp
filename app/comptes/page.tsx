@@ -5,8 +5,8 @@ import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 import { COMMISSION_SCHEMES } from "@/lib/commission";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+const NAVY = "var(--brand-dark)";
+const PINK = "var(--brand-primary)";
 
 type User = {
   id: number; email: string; name: string; role: "admin" | "responsable" | "collab";
@@ -14,7 +14,7 @@ type User = {
   commission_base?: number; commission_pct?: number;
   call_center_id?: number; agence_name?: string; call_center_name?: string;
 };
-type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number };
+type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
 type Assignment = { call_center_id: number; commercial_email: string };
 
 const inp: React.CSSProperties = { width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" };
@@ -38,6 +38,7 @@ function Comptes() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [schemeKey, setSchemeKey] = useState("50+10");
+  const [attachCC, setAttachCC] = useState<number>(1); // rattachement du nouveau compte (agence / call center)
   // Call center
   const [ccName, setCcName] = useState("");
   const [ccAgence, setCcAgence] = useState(true);
@@ -70,7 +71,7 @@ function Comptes() {
     if (!name.trim() || !email.trim() || !password.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" ? "commercial" : "telepro", name, email, password, phone, schemeKey }) });
+      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" ? "commercial" : "telepro", name, email, password, phone, schemeKey, callCenterId: attachCC }) });
       const d = await res.json();
       if (d.ok) { setName(""); setEmail(""); setPassword(""); setPhone(""); load(); }
       else alert(d.error ?? "Erreur");
@@ -103,6 +104,41 @@ function Comptes() {
     const res = await fetch(`/api/callcenters?id=${id}`, { method: "DELETE", headers: authHeaders() });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  async function saveTheme(ccId: number, primary: string, dark: string) {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setTheme", primary, dark }) });
+    const d = await res.json();
+    if (d.ok) { alert("Couleurs enregistrées. Elles s'appliquent à la prochaine connexion des utilisateurs de cette franchise."); load(); }
+    else alert(d.error ?? "Erreur");
+  }
+  async function renameCC(ccId: number, current: string) {
+    const name = prompt("Nouveau nom (affiché au milieu du bandeau) :", current);
+    if (!name?.trim() || name.trim() === current) return;
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "rename", name: name.trim() }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  async function setHeaderDark(ccId: number, headerDark: boolean) {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setTheme", headerDark }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  // Upload du logo (PNG) de la franchise -> affiché en haut à gauche pour tous ses comptes.
+  async function uploadLogo(ccId: number, file?: File | null) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder", "logos");
+      const up = await fetch("/api/upload", { method: "POST", headers: authHeaders(), body: fd });
+      const u = await up.json();
+      if (!u.ok) { alert(u.error ?? "Erreur upload logo"); return; }
+      const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setTheme", logo: u.url }) });
+      const d = await res.json();
+      if (d.ok) { alert("Logo enregistré. Il s'affiche à la prochaine connexion des utilisateurs de cette franchise."); load(); }
+      else alert(d.error ?? "Erreur");
+    } finally { setBusy(false); }
   }
   async function setAgence(ccId: number, parentId: number) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, parentId, action: "setAgence" }) });
@@ -148,6 +184,18 @@ function Comptes() {
     return COMMISSION_SCHEMES.find((s) => s.base === base && s.pct === pct)?.key ?? "";
   };
   const isAssigned = (email: string, ccId: number) => assignments.some((a) => a.commercial_email === email.toLowerCase() && a.call_center_id === ccId);
+  // Racine (agence/franchise) d'un call center via la hiérarchie.
+  const rootOf = (ccId?: number): number | undefined => {
+    let cur = callCenters.find((c) => c.id === ccId);
+    for (let i = 0; cur && i < 6; i++) {
+      if (cur.parent_id == null) return cur.id;
+      cur = callCenters.find((c) => c.id === cur!.parent_id);
+    }
+    return cur?.id;
+  };
+  // Commerciaux appartenant à une agence : compte rattaché à l'agence (ou à un enfant) OU lié explicitement à l'agence.
+  const commercialsOfAgence = (agenceId: number) =>
+    users.filter((u) => u.is_commercial && (rootOf(Number(u.call_center_id)) === agenceId || isAssigned(u.email, agenceId)));
   const agences = callCenters.filter((c) => c.parent_id == null); // racines = agences
   const subCallCenters = callCenters.filter((c) => c.parent_id != null); // rattachés à une agence
 
@@ -206,6 +254,19 @@ function Comptes() {
             <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail (login)" />
             <input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" />
             {type === "commercial" && <input style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Téléphone (injecté dans les mails/SMS clients)" />}
+            {isAdmin && (
+              <div>
+                <label style={{ display: "block", fontSize: 12.5, color: "#6b7280", marginBottom: 5 }}>🏢 Rattachement (agence ou call center)</label>
+                <select style={inp} value={attachCC} onChange={(e) => setAttachCC(Number(e.target.value))}>
+                  {callCenters.filter((c) => c.parent_id == null).map((a) => (
+                    <optgroup key={a.id} label={`🏢 ${a.name}`}>
+                      <option value={a.id}>{a.name} (agence)</option>
+                      {callCenters.filter((c) => c.parent_id === a.id).map((c) => <option key={c.id} value={c.id}>↳ {c.name}</option>)}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label style={{ display: "block", fontSize: 12.5, color: "#6b7280", marginBottom: 5 }}>Commission (par RDV signé)</label>
               <select style={inp} value={schemeKey} onChange={(e) => setSchemeKey(e.target.value)}>
@@ -235,14 +296,92 @@ function Comptes() {
                       <span style={{ fontWeight: 700, color: NAVY }}>🏢 {a.name}</span>
                       <span style={{ fontSize: 12, color: "#6b7280" }}>{coms.length} commerciaux · {ccs.length} call center{ccs.length > 1 ? "s" : ""} {open ? "▲" : "▼"}</span>
                     </button>
+                    <button onClick={() => renameCC(a.id, a.name)} title="Renommer l'agence (nom affiché dans le bandeau)" style={{ border: "none", background: "transparent", color: "#6b7280", padding: "0 8px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️</button>
                     <button onClick={() => delCallCenter(a.id, `l'agence ${a.name}`)} title="Supprimer l'agence" style={{ border: "none", background: "transparent", color: "#dc2626", padding: "0 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Supprimer</button>
                   </div>
                   {open && (
-                    <div style={{ padding: 14, borderTop: "1px solid #eef1f4" }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>Commerciaux de l&apos;agence</div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {coms.length === 0 && <span style={{ fontSize: 12, color: "#9aa6b8" }}>Aucun commercial.</span>}
-                        {coms.map((u) => <span key={u.id} style={{ fontSize: 13, color: NAVY, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 999, padding: "4px 10px" }}>{u.name}</span>)}
+                    <div style={{ padding: 14, borderTop: "1px solid #eef1f4", display: "grid", gap: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>Commerciaux de l&apos;agence <span style={{ fontWeight: 400, color: "#9aa6b8" }}>(lie ici les commerciaux qui travaillent pour cette franchise)</span></div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {users.filter((u) => u.is_commercial).map((u) => {
+                            const inAgence = rootOf(Number(u.call_center_id)) === a.id;
+                            const on = inAgence || isAssigned(u.email, a.id);
+                            return (
+                              <button key={u.id} type="button" disabled={inAgence} title={inAgence ? "Compte rattaché à cette agence" : ""} onClick={() => toggleAssign(u, a.id, isAssigned(u.email, a.id))} style={{ padding: "7px 12px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: inAgence ? "default" : "pointer", border: `1.5px solid ${on ? "#15803d" : "#cbd5e1"}`, background: on ? "#15803d" : "#fff", color: on ? "#fff" : NAVY, opacity: inAgence ? 0.75 : 1 }}>
+                                {on ? `✓ ${u.name}${inAgence ? "" : " (retirer)"}` : `+ Lier ${u.name}`}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {/* White-label : couleurs de la franchise (héritées par toutes ses agences/call centers) */}
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>🎨 Couleurs de la marque (interface CRM)</div>
+                        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#6b7280" }}>
+                            Accent <input type="color" defaultValue={a.brand_primary || "#DB407A"} id={`th-p-${a.id}`} style={{ width: 44, height: 30, border: "1px solid #e5e7eb", borderRadius: 6, padding: 1, cursor: "pointer" }} />
+                          </label>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#6b7280" }}>
+                            Foncé (titres/nav) <input type="color" defaultValue={a.brand_dark || "#1a273a"} id={`th-d-${a.id}`} style={{ width: 44, height: 30, border: "1px solid #e5e7eb", borderRadius: 6, padding: 1, cursor: "pointer" }} />
+                          </label>
+                          <button onClick={() => {
+                            const p = (document.getElementById(`th-p-${a.id}`) as HTMLInputElement)?.value;
+                            const dk = (document.getElementById(`th-d-${a.id}`) as HTMLInputElement)?.value;
+                            if (p && dk) saveTheme(a.id, p, dk);
+                          }} style={{ padding: "7px 12px", borderRadius: 8, border: "none", background: PINK, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Enregistrer les couleurs</button>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: 4 }}>Ex : Simplicicar rose/bleu nuit, VendezVotreVoiture bleu… Appliqué à tous les comptes de la franchise à leur connexion.</div>
+                      </div>
+                      {/* Logo de la franchise (affiché en haut à gauche du CRM) */}
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>🖼️ Logo (haut à gauche du CRM)</div>
+                        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                          {a.logo_url ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={a.logo_url} alt={a.name} style={{ height: 36, maxWidth: 140, objectFit: "contain", border: "1px solid #e5e7eb", borderRadius: 6, padding: 3, background: "#fff" }} />
+                          ) : (
+                            <span style={{ fontSize: 12, color: "#9aa6b8" }}>Aucun logo — défaut Simplicicar</span>
+                          )}
+                          <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={(e) => uploadLogo(a.id, e.target.files?.[0])} style={{ fontSize: 12 }} />
+                          {busy && <span style={{ fontSize: 12, color: "#9aa6b8" }}>envoi…</span>}
+                        </div>
+                        {/* Comptes : commerciaux en haut, puis chaque call center avec ses télépros */}
+                        <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>🛠️ Commerciaux</div>
+                            <div style={{ display: "grid", gap: 8 }}>
+                              {users.filter((u) => u.is_commercial && rootOf(Number(u.call_center_id)) === a.id).map(renderUser)}
+                              {users.filter((u) => u.is_commercial && rootOf(Number(u.call_center_id)) === a.id).length === 0 && <span style={{ fontSize: 12, color: "#9aa6b8" }}>Aucun commercial.</span>}
+                            </div>
+                          </div>
+                          {/* Télépros rattachés directement à l'agence */}
+                          {users.some((u) => !u.is_commercial && Number(u.call_center_id) === a.id) && (
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>📞 Téléprospecteurs de l&apos;agence</div>
+                              <div style={{ display: "grid", gap: 8 }}>
+                                {users.filter((u) => !u.is_commercial && Number(u.call_center_id) === a.id).map(renderUser)}
+                              </div>
+                            </div>
+                          )}
+                          {/* Chaque call center de l'agence + ses télépros */}
+                          {callCenters.filter((c) => c.parent_id === a.id).map((c) => (
+                            <div key={c.id}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 6 }}>📞 Call center — {c.name}</div>
+                              <div style={{ display: "grid", gap: 8 }}>
+                                {users.filter((u) => Number(u.call_center_id) === c.id).map(renderUser)}
+                                {users.filter((u) => Number(u.call_center_id) === c.id).length === 0 && <span style={{ fontSize: 12, color: "#9aa6b8" }}>Aucun compte.</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Fond du bandeau : clair ou foncé (logos à écriture blanche) */}
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 10 }}>
+                          <span style={{ fontSize: 12.5, color: "#6b7280" }}>Fond du bandeau :</span>
+                          <button onClick={() => setHeaderDark(a.id, false)} style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${!a.header_dark ? NAVY : "#e5e7eb"}`, background: !a.header_dark ? "#fff" : "#fff", color: !a.header_dark ? NAVY : "#9aa6b8", boxShadow: !a.header_dark ? "inset 0 0 0 1px currentColor" : "none" }}>☀️ Clair</button>
+                          <button onClick={() => setHeaderDark(a.id, true)} style={{ padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${a.header_dark ? NAVY : "#e5e7eb"}`, background: a.header_dark ? NAVY : "#fff", color: a.header_dark ? "#fff" : "#9aa6b8" }}>🌙 Foncé</button>
+                          <span style={{ fontSize: 11.5, color: "#9aa6b8" }}>foncé = pour les logos à écriture blanche</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -261,23 +400,28 @@ function Comptes() {
             {subCallCenters.map((c) => {
               const open = openCC === c.id;
               const teleprosOfCC = users.filter((u) => Number(u.call_center_id) === c.id && u.is_teleprospector);
-              const commercials = users.filter((u) => u.is_commercial);
+              // Seuls les commerciaux de SON agence (franchise parente) sont liables à ce call center.
+              const agenceRoot = rootOf(c.id);
+              const commercials = agenceRoot != null ? commercialsOfAgence(agenceRoot) : users.filter((u) => u.is_commercial);
               return (
                 <div key={c.id} style={{ border: `1px solid ${open ? PINK : "#eef1f4"}`, borderRadius: 10, overflow: "hidden" }}>
-                  {/* En-tête cliquable */}
-                  <button onClick={() => { setOpenCC(open ? null : c.id); setCcTele({ name: "", email: "", password: "", phone: "" }); }}
-                    style={{ width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", background: open ? "#fff5f9" : "#f8fafc", border: "none", padding: "12px 14px", cursor: "pointer" }}>
-                    <div>
-                      <span style={{ fontWeight: 700, color: NAVY }}>{c.name}</span>
-                      {c.agence_only && <span style={{ fontSize: 11, color: "#0891b2", background: "#ecfeff", padding: "1px 7px", borderRadius: 999, marginLeft: 8 }}>agence only</span>}
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Agence : <strong style={{ color: NAVY }}>{c.parent_name ?? c.name}</strong></div>
-                    </div>
-                    <div style={{ display: "flex", gap: 14, fontSize: 13, alignItems: "center" }}>
-                      <div style={{ textAlign: "center" }}><div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: "#15803d" }}>{c.commercials_count}</div><div style={{ fontSize: 11, color: "#6b7280" }}>commerciaux</div></div>
-                      <div style={{ textAlign: "center" }}><div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: "#0369a1" }}>{c.telepros_count}</div><div style={{ fontSize: 11, color: "#6b7280" }}>télépros</div></div>
-                      <span style={{ color: "#9aa6b8", fontSize: 13 }}>{open ? "▲" : "▼"}</span>
-                    </div>
-                  </button>
+                  {/* En-tête cliquable + suppression */}
+                  <div style={{ display: "flex", alignItems: "stretch", background: open ? "#fff5f9" : "#f8fafc" }}>
+                    <button onClick={() => { setOpenCC(open ? null : c.id); setCcTele({ name: "", email: "", password: "", phone: "" }); }}
+                      style={{ flex: 1, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", background: "transparent", border: "none", padding: "12px 14px", cursor: "pointer" }}>
+                      <div>
+                        <span style={{ fontWeight: 700, color: NAVY }}>{c.name}</span>
+                        {c.agence_only && <span style={{ fontSize: 11, color: "#0891b2", background: "#ecfeff", padding: "1px 7px", borderRadius: 999, marginLeft: 8 }}>agence only</span>}
+                        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Agence : <strong style={{ color: NAVY }}>{c.parent_name ?? c.name}</strong></div>
+                      </div>
+                      <div style={{ display: "flex", gap: 14, fontSize: 13, alignItems: "center" }}>
+                        <div style={{ textAlign: "center" }}><div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: "#15803d" }}>{c.commercials_count}</div><div style={{ fontSize: 11, color: "#6b7280" }}>commerciaux</div></div>
+                        <div style={{ textAlign: "center" }}><div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, fontWeight: 700, color: "#0369a1" }}>{c.telepros_count}</div><div style={{ fontSize: 11, color: "#6b7280" }}>télépros</div></div>
+                        <span style={{ color: "#9aa6b8", fontSize: 13 }}>{open ? "▲" : "▼"}</span>
+                      </div>
+                    </button>
+                    <button onClick={() => delCallCenter(c.id, `le call center ${c.name} ?\n\nSes comptes seront DÉSACTIVÉS (plus d'accès), mais RDV, bilan et facturation sont conservés`)} title="Supprimer le call center (accès coupé, données conservées)" style={{ border: "none", background: "transparent", color: "#dc2626", padding: "0 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Supprimer</button>
+                  </div>
 
                   {/* Détail */}
                   {open && (
@@ -340,44 +484,53 @@ function Comptes() {
 
       {err && <p style={{ color: "#dc2626" }}>❌ {err}</p>}
 
-      <div style={{ display: "grid", gap: 10 }}>
-        {users.map((u) => (
-          <div key={u.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {roleBadges(u)}</div>
-                <div style={{ fontSize: 13, color: "#6b7280" }}>{u.email}{u.phone ? ` · ${u.phone}` : ""}</div>
-                {u.agence_name && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>🏢 Agence : <strong style={{ color: NAVY }}>{u.agence_name}</strong></div>}
-                <div style={{ fontSize: 12.5, color: "#15803d", marginTop: 2 }}>{schemeLabel(u)}</div>
-              </div>
-              {u.role !== "admin" && (
-                <button onClick={() => del(u)} style={{ padding: "8px 10px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Supprimer</button>
-              )}
-            </div>
-
-            {isAdmin && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-                <button onClick={() => patch(u.id, { isCommercial: !u.is_commercial })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${u.is_commercial ? "#15803d" : "#e5e7eb"}`, background: u.is_commercial ? "#f0fdf4" : "#fff", color: u.is_commercial ? "#15803d" : "#6b7280" }}>{u.is_commercial ? "✓ commercial" : "commercial"}</button>
-                <button onClick={() => patch(u.id, { isTeleprospector: !u.is_teleprospector })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${u.is_teleprospector ? "#0369a1" : "#e5e7eb"}`, background: u.is_teleprospector ? "#f0f9ff" : "#fff", color: u.is_teleprospector ? "#0369a1" : "#6b7280" }}>{u.is_teleprospector ? "✓ téléprospecteur" : "téléprospecteur"}</button>
-                <button onClick={() => patch(u.id, { active: u.active === false })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1.5px solid #e5e7eb", background: "#fff", color: u.active === false ? "#15803d" : "#9aa6b8" }}>{u.active === false ? "Réactiver" : "Désactiver"}</button>
-              </div>
-            )}
-
-            {/* Rémunération : éditable par l'admin et par le responsable (pour ses télépros) */}
-            {(isAdmin || role === "responsable") && u.role === "collab" && (
-              <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: NAVY }}>💰 Rémunération :</span>
-                <select value={currentSchemeKey(u)} onChange={(e) => patch(u.id, { schemeKey: e.target.value })} style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff" }}>
-                  {currentSchemeKey(u) === "" && <option value="">{schemeLabel(u)} (personnalisé)</option>}
-                  {COMMISSION_SCHEMES.map((sc) => <option key={sc.key} value={sc.key}>{sc.label}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Comptes : l'admin les voit DANS leurs agences (section Agences ci-dessus).
+          La liste plate ne reste que pour le responsable (qui ne voit que son call center). */}
+      {!isAdmin && (
+        <div style={{ display: "grid", gap: 10 }}>
+          {users.map(renderUser)}
+        </div>
+      )}
     </>
   );
+
+  // Carte d'un compte (badges, rémunération, actions).
+  function renderUser(u: User) {
+    return (
+      <div key={u.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {roleBadges(u)}</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>{u.email}{u.phone ? ` · ${u.phone}` : ""}</div>
+            {u.call_center_name && u.call_center_name !== u.agence_name && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📞 {u.call_center_name}</div>}
+            <div style={{ fontSize: 12.5, color: "#15803d", marginTop: 2 }}>{schemeLabel(u)}</div>
+          </div>
+          {u.role !== "admin" && (
+            <button onClick={() => del(u)} style={{ padding: "8px 10px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Supprimer</button>
+          )}
+        </div>
+
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+            <button onClick={() => patch(u.id, { isCommercial: !u.is_commercial })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${u.is_commercial ? "#15803d" : "#e5e7eb"}`, background: u.is_commercial ? "#f0fdf4" : "#fff", color: u.is_commercial ? "#15803d" : "#6b7280" }}>{u.is_commercial ? "✓ commercial" : "commercial"}</button>
+            <button onClick={() => patch(u.id, { isTeleprospector: !u.is_teleprospector })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${u.is_teleprospector ? "#0369a1" : "#e5e7eb"}`, background: u.is_teleprospector ? "#f0f9ff" : "#fff", color: u.is_teleprospector ? "#0369a1" : "#6b7280" }}>{u.is_teleprospector ? "✓ téléprospecteur" : "téléprospecteur"}</button>
+            <button onClick={() => patch(u.id, { active: u.active === false })} style={{ padding: "6px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1.5px solid #e5e7eb", background: "#fff", color: u.active === false ? "#15803d" : "#9aa6b8" }}>{u.active === false ? "Réactiver" : "Désactiver"}</button>
+          </div>
+        )}
+
+        {/* Rémunération : éditable par l'admin et par le responsable (pour ses télépros) */}
+        {(isAdmin || role === "responsable") && u.role === "collab" && (
+          <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: NAVY }}>💰 Rémunération :</span>
+            <select value={currentSchemeKey(u)} onChange={(e) => patch(u.id, { schemeKey: e.target.value })} style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff" }}>
+              {currentSchemeKey(u) === "" && <option value="">{schemeLabel(u)} (personnalisé)</option>}
+              {COMMISSION_SCHEMES.map((sc) => <option key={sc.key} value={sc.key}>{sc.label}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+    );
+  }
 }
 
 export default function Page() {

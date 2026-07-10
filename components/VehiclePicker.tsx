@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { BRAND_LIST, CAR_CATALOG } from "@/lib/car-catalog";
 
-const PINK = "#DB407A";
+const PINK = "var(--brand-primary)";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: 12, fontSize: 15, borderRadius: 8,
