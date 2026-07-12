@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listAppointments } from "@/lib/google";
 import { getCommissionSchemes } from "@/lib/users";
-import { listCallCenters } from "@/lib/callcenters";
+import { listAccords, linesFor, totalFor } from "@/lib/remuneration";
 import { toParisISO } from "@/lib/parse";
 
 export const maxDuration = 60;
@@ -60,38 +60,27 @@ export async function GET(req: Request) {
     const signed = active.filter(isSigned).length;
     const rateSignature = total > 0 ? Math.round((signed / total) * 100) : 0;
 
-    // ── Rémunération découpée ──
-    // Télépro / responsable : SON barème × signés visibles.
-    // Admin : son barème sur les RDV de sa propre entité (cc1) + MARGE sur les call centers
-    //         (frais fixes 50 € - le barème du responsable du call center, ex 50-30 = 20 €/signé).
-    const FRAIS_FIXE = 50;
+    // ── Rémunération : MOTEUR D'ACCORDS (table remuneration_accords, rien en dur) ──
+    // 1) Lignes issues des accords (call center / gestionnaire / télépro indépendant / apporteur).
+    // 2) Barème perso (compte) en complément UNIQUEMENT sur les signés non couverts par un accord
+    //    me concernant (évite tout double paiement ; l'admin ne compte que sa propre entité cc1).
     const schemes = await getCommissionSchemes();
     const mySc = schemes.get(myEmailLc) ?? { base: 0, pct: 0 };
     const signedAppts = active.filter(isSigned);
-    // Barème du responsable de chaque call center (coût du call center par signé).
-    const ccs = await listCallCenters();
-    const respSchemeByCc = new Map<number, { base: number; pct: number }>();
-    for (const c of ccs) {
-      if (c.responsable_email) respSchemeByCc.set(c.id, schemes.get(c.responsable_email.toLowerCase()) ?? { base: 0, pct: 0 });
-    }
+    const accords = await listAccords();
+    const allSignedIn = allAppts.filter((a) => inRange(a.startDateTime) && !a.cancelled && isSigned(a));
+    const engine = totalFor(myEmailLc, allSignedIn, accords);
+    const paidIds = new Set<string>();
+    for (const a of allSignedIn) for (const l of linesFor(a, accords)) if (l.payee === myEmailLc) paidIds.add(l.apptId);
 
-    let ownSigned: typeof signedAppts = signedAppts;
-    let margeCC = 0, margeCCCount = 0;
-    if (s.role === "admin") {
-      ownSigned = signedAppts.filter((a) => (a.callCenterId ?? 1) === 1);
-      for (const a of signedAppts) {
-        const cc = a.callCenterId ?? 1;
-        if (cc === 1) continue;
-        const rs = respSchemeByCc.get(cc) ?? { base: 0, pct: 0 };
-        const cost = rs.base + (rs.pct / 100) * (a.negotiation || 0);
-        margeCC += Math.max(FRAIS_FIXE - cost, 0);
-        margeCCCount++;
-      }
-      margeCC = Math.round(margeCC);
-    }
+    let ownSigned = signedAppts.filter((a) => !paidIds.has(a.id));
+    if (s.role === "admin") ownSigned = ownSigned.filter((a) => (a.callCenterId ?? 1) === 1);
     const negoTotal = ownSigned.reduce((sum, a) => sum + (a.negotiation || 0), 0);
     const commissionFixe = Math.round(mySc.base * ownSigned.length);
     const commissionVariable = Math.round((mySc.pct / 100) * negoTotal);
+    const margeCC = engine.total;           // total issu des accords
+    const margeCCCount = engine.count;      // nb de RDV concernés
+    const accordsByKind = engine.byKind;    // détail par type d'accord
     const commission = commissionFixe + commissionVariable + margeCC;
 
     // --- Signés par commercial (avec qui j'ai signé) ---
@@ -133,6 +122,7 @@ export async function GET(req: Request) {
       commissionVariable,
       margeCC,
       margeCCCount,
+      accordsByKind,
       negoTotal,
       scheme: { base: mySc.base, pct: mySc.pct },
       byCommercial,

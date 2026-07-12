@@ -26,6 +26,7 @@ type Stats = {
   commissionVariable: number;
   margeCC?: number;
   margeCCCount?: number;
+  accordsByKind?: Record<string, number>;
   negoTotal: number;
   scheme: { base: number; pct: number };
   byCommercial: { name: string; signed: number; total: number }[];
@@ -190,12 +191,12 @@ function StatsView({ data, from, to, onRange, busy }: {
                 <span style={{ fontSize: 13, color: MUTED }}>{data.scheme.pct}% de la négo{data.negoTotal > 0 ? ` (${eur(data.negoTotal)})` : ""}</span>
                 <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.commissionVariable)}</strong>
               </div>
-              {(data.margeCC ?? 0) > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
-                  <span style={{ fontSize: 13, color: MUTED }}>Marge call centers · {data.margeCCCount} signé{(data.margeCCCount ?? 0) > 1 ? "s" : ""}</span>
-                  <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.margeCC ?? 0)}</strong>
+              {Object.entries(data.accordsByKind ?? {}).map(([kind, amount]) => (
+                <div key={kind} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
+                  <span style={{ fontSize: 13, color: MUTED }}>{({ call_center: "Rémunération call center", gestionnaire: "Marge gestionnaire", telepro: "Rémunération télépro (accord)", apporteur: "Commission apporteur" } as Record<string, string>)[kind] ?? kind} · {data.margeCCCount} signé{(data.margeCCCount ?? 0) > 1 ? "s" : ""}</span>
+                  <strong style={{ fontSize: 15, color: NAVY }}>{eur(Math.round(amount))}</strong>
                 </div>
-              )}
+              ))}
             </div>
           </div>
         </section>

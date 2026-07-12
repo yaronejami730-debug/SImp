@@ -32,10 +32,10 @@ export async function POST(req: Request) {
   try {
     const b = (await req.json()) as {
       type?: "commercial" | "telepro";
-      email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number;
+      email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number; username?: string;
     };
-    if (!b.email?.trim() || !b.password?.trim() || !b.name?.trim()) {
-      return NextResponse.json({ error: "Nom, email et mot de passe requis." }, { status: 400 });
+    if (!b.username?.trim() || !b.password?.trim() || !b.name?.trim()) {
+      return NextResponse.json({ error: "Nom, pseudo et mot de passe requis." }, { status: 400 });
     }
     // Un responsable ne peut créer QUE des téléprospecteurs, dans son propre call center.
     if (s.role === "responsable" && b.type !== "telepro") {
@@ -46,14 +46,14 @@ export async function POST(req: Request) {
     // Admin peut cibler un call center précis (panneau call center) ; sinon son propre CC.
     const callCenterId = s.role === "admin" ? (b.callCenterId && b.callCenterId > 0 ? b.callCenterId : 1) : s.callCenterId;
     const user = await createUser({
-      email: b.email, password: b.password, name: b.name, role: "collab",
+      email: b.email, username: b.username, password: b.password, name: b.name, role: "collab",
       callCenterId, commissionBase: sch.base, commissionPct: sch.pct, phone: b.phone,
       isCommercial, isTeleprospector: !isCommercial,
     });
     return NextResponse.json({ ok: true, user });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erreur.";
-    return NextResponse.json({ error: /duplicate|unique/i.test(msg) ? "Cet email existe déjà." : msg }, { status: 500 });
+    return NextResponse.json({ error: /duplicate|unique/i.test(msg) ? "Ce pseudo (ou cet email) existe déjà." : msg }, { status: 500 });
   }
 }
 

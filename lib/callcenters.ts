@@ -1,7 +1,7 @@
 import { getPool } from "./db";
 import { createUser } from "./users";
 
-export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string };
+export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string };
 export type BrandTheme = { name: string; primary: string; dark: string; logo: string; headerDark: boolean };
 
 /** Thème de marque pour un utilisateur : on remonte la hiérarchie jusqu'à la RACINE
@@ -31,7 +31,7 @@ export type CallCenterDetail = CallCenter & { parent_name: string | null; commer
 
 export async function listCallCenters(): Promise<CallCenterDetail[]> {
   const { rows } = await getPool().query<CallCenterDetail>(
-    `select c.id, c.name, c.agence_only, c.responsable_email, c.parent_id,
+    `select c.id, c.name, c.agence_only, c.responsable_email, c.gestionnaire_email, c.parent_id,
             c.brand_primary, c.brand_dark, c.logo_url, c.header_dark,
             p.name as parent_name,
             (select count(*) from call_center_commercials x where x.call_center_id = c.id) as commercials_count,
@@ -62,19 +62,19 @@ export async function getCallCenter(id: number): Promise<CallCenter | undefined>
 /** Crée un call center + son responsable (role='responsable', rattaché au nouveau CC, parent = 1 racine). */
 export async function createCallCenter(input: {
   name: string; agenceOnly?: boolean;
-  responsable: { name: string; email: string; password: string; phone?: string };
+  responsable: { name: string; email?: string; username?: string; password: string; phone?: string };
 }): Promise<CallCenter> {
   const pool = getPool();
   const cc = await pool.query<CallCenter>(
     `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email)
      values ($1, '', 1, $2, $3)
      returning id, name, agence_only, responsable_email, parent_id`,
-    [input.name.trim(), !!input.agenceOnly, input.responsable.email.trim().toLowerCase()],
+    [input.name.trim(), !!input.agenceOnly, (input.responsable.email ?? "").trim().toLowerCase() || `${(input.responsable.username ?? "").trim().toLowerCase()}@no-mail.local`],
   );
   const ccId = Number(cc.rows[0].id);
   // Le responsable peut créer des RDV (téléprospecteur) et gère son équipe (role responsable).
   await createUser({
-    email: input.responsable.email, password: input.responsable.password, name: input.responsable.name,
+    email: input.responsable.email, username: input.responsable.username, password: input.responsable.password, name: input.responsable.name,
     role: "responsable", callCenterId: ccId, isTeleprospector: true, isCommercial: false, phone: input.responsable.phone,
   });
   return { ...cc.rows[0], id: ccId, agence_only: !!cc.rows[0].agence_only };
@@ -93,6 +93,11 @@ export async function createAgence(name: string): Promise<CallCenter> {
 /** Rattache un call center à une agence (parent). */
 export async function setCallCenterParent(ccId: number, parentId: number) {
   await getPool().query(`update call_centers set parent_id = $2 where id = $1`, [ccId, parentId]);
+}
+
+/** Définit le gestionnaire du call (celui qui touche la marge sur les signés du call center). */
+export async function setGestionnaire(ccId: number, email: string) {
+  await getPool().query(`update call_centers set gestionnaire_email = $2 where id = $1`, [ccId, email.trim().toLowerCase()]);
 }
 
 /** Renomme une agence / un call center. */

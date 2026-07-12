@@ -28,3 +28,6 @@ alter table call_centers add column if not exists logo_url      text not null de
 
 -- Fond du bandeau (header) : clair (défaut) ou foncé, pour la lisibilité des logos clairs.
 alter table call_centers add column if not exists header_dark boolean not null default false;
+
+-- Gestionnaire du call : la personne qui a apporté/gère le call center (touche la marge).
+alter table call_centers add column if not exists gestionnaire_email text not null default '';

@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
-import { getUserByEmail } from "@/lib/users";
+import { getUserByLogin } from "@/lib/users";
 import { themeForCallCenter } from "@/lib/callcenters";
 import { verifyPassword, signToken } from "@/lib/auth";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
-/** POST { email, password } -> token de session. */
+/** POST { email|identifier, password } -> token de session.
+ *  Login par PSEUDO (ou e-mail pour compat, ex comptes du call center Hanan). */
 export async function POST(req: Request) {
   try {
-    const { email, password } = (await req.json()) as { email?: string; password?: string };
-    if (!email || !password) {
-      return NextResponse.json({ error: "Email et mot de passe requis." }, { status: 400 });
+    const body = (await req.json()) as { email?: string; identifier?: string; password?: string };
+    const identifier = (body.identifier ?? body.email ?? "").trim();
+    const password = body.password;
+    if (!identifier || !password) {
+      return NextResponse.json({ error: "Pseudo et mot de passe requis." }, { status: 400 });
     }
-    const u = await getUserByEmail(email);
+    const u = await getUserByLogin(identifier);
     if (!u || !verifyPassword(password, u.password_hash)) {
       return NextResponse.json({ error: "Identifiants invalides." }, { status: 401 });
     }

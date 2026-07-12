@@ -48,6 +48,12 @@ function Agenda() {
   const [search, setSearch] = useState("");
   type RelFilter = "mine" | "created" | "assigned" | "team";
   const [relFilter, setRelFilter] = useState<RelFilter>("mine");
+  const [teleFilter, setTeleFilter] = useState<string>(""); // responsable : filtrer par télépro (owner)
+  const isResp = me?.role === "responsable";
+  // Commercial pur : l'agenda montre SES rendez-vous, point. Aucun onglet de filtre.
+  const isCommercialPur = me?.role !== "admin" && !!me?.isCommercial && !me?.isTeleprospector;
+  // Comptes call center (cc != 1) : le travail s'arrête au RDV signé -> on masque BC / vendu / négo.
+  const hideSale = !!me && me.role !== "admin" && (me.callCenterId ?? 1) !== 1;
 
   useEffect(() => { load(); }, []);
 
@@ -131,8 +137,15 @@ function Agenda() {
     else alert("Erreur : " + (d.error ?? ""));
   }
 
-  // Filtre par relation : tous mes RDV / créés par moi / qui me sont affectés / équipe.
+  // Filtre par relation. Responsable : "mine" = RDV pris PAR LUI ; "team" = tout son call center,
+  // avec filtre par télépro (owner). Autres rôles : logique historique.
   const relMatch = (a: Appt): boolean => {
+    if (isCommercialPur) return true; // le serveur ne renvoie déjà que ses RDV affectés
+    if (isResp) {
+      if (relFilter === "mine") return (a.owner || "").toLowerCase() === (me?.email || "").toLowerCase();
+      if (teleFilter) return (a.owner || "").toLowerCase() === teleFilter;
+      return true;
+    }
     switch (relFilter) {
       case "created": return a.relation === "created" || a.relation === "both";
       case "assigned": return a.relation === "assigned" || a.relation === "both";
@@ -154,7 +167,7 @@ function Agenda() {
       return hay.includes(q);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appts, search, relFilter]);
+  }, [appts, search, relFilter, teleFilter]);
 
   // Couleur dominante d'un jour selon priorité : annulé > signé > réfléchit > pris
   const dayColor = (list: Appt[]): string => {
@@ -266,8 +279,8 @@ function Agenda() {
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{a.startDateTime ? fmt(a.startDateTime) : "—"}</div>
           {a.signStatus === "signed" && <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 14, marginTop: 2 }}>{eur(commission(a))}</div>}
-          {a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#16a34a", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>🏁 VENDU</div>}
-          {a.bcSigned && !a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#2563eb", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>📝 BC SIGNÉ</div>}
+          {!hideSale && a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#16a34a", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>🏁 VENDU</div>}
+          {!hideSale && a.bcSigned && !a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#2563eb", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>📝 BC SIGNÉ</div>}
         </div>
       </div>
 
@@ -313,7 +326,7 @@ function Agenda() {
         {signBtn(a, "thinking", "🤔 Réfléchit", "#ca8a04")}
         {signBtn(a, "unsigned", "❌ Pas signé", "#dc2626")}
       </div>
-      {a.signStatus === "signed" && (
+      {a.signStatus === "signed" && !hideSale && (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
             <span style={{ fontSize: 13, color: "#6b7280" }}>Négo €</span>
@@ -428,17 +441,64 @@ function Agenda() {
       <GoogleCalendarCard />
       <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Rechercher dans tout l'agenda (nom, tél, e-mail, marque, modèle)" style={{ width: "100%", padding: 12, fontSize: 15, borderRadius: 10, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 10 }} />
 
-      {/* Filtres par relation au RDV */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {([
+      {/* Filtres par relation au RDV — responsable : vues épurées ; commercial pur : aucun onglet */}
+      {!isCommercialPur && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: isResp ? 8 : 14 }}>
+        {((isResp ? [
+          { k: "mine", label: "Tous mes rendez-vous" },
+          { k: "team", label: "Rendez-vous de mon équipe" },
+        ] : [
           { k: "mine", label: "Tous mes RDV" },
           { k: "created", label: "Mes RDV créés" },
           { k: "assigned", label: "Mes RDV affectés" },
           { k: "team", label: isAdmin ? "Tous (équipe)" : "RDV de mon équipe" },
-        ] as { k: RelFilter; label: string }[]).map((f) => (
-          <button key={f.k} onClick={() => setRelFilter(f.k)} style={{ padding: "7px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${relFilter === f.k ? PINK : "#e5e7eb"}`, background: relFilter === f.k ? PINK : "#fff", color: relFilter === f.k ? "#fff" : "#6b7280" }}>{f.label}</button>
+        ]) as { k: RelFilter; label: string }[]).map((f) => (
+          <button key={f.k} onClick={() => { setRelFilter(f.k); if (f.k === "mine") setTeleFilter(""); }} style={{ padding: "7px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${relFilter === f.k ? PINK : "#e5e7eb"}`, background: relFilter === f.k ? PINK : "#fff", color: relFilter === f.k ? "#fff" : "#6b7280" }}>{f.label}</button>
         ))}
-      </div>
+      </div>}
+
+      {/* Responsable : filtre par téléprospecteur + classement 🥇 */}
+      {isResp && (() => {
+        // Télépros du call : dérivés des RDV visibles (owner + nom du téléprospecteur).
+        const byOwner = new Map<string, { name: string; total: number; signed: number }>();
+        for (const a of appts) {
+          const o = (a.owner || "").toLowerCase();
+          if (!o || a.cancelled) continue;
+          const cur = byOwner.get(o) ?? { name: a.teleprospector || o.split("@")[0], total: 0, signed: 0 };
+          cur.total++;
+          if (a.signStatus === "signed") cur.signed++;
+          if (a.teleprospector) cur.name = a.teleprospector;
+          byOwner.set(o, cur);
+        }
+        const ranking = [...byOwner.entries()]
+          .map(([email, v]) => ({ email, ...v, rate: v.total ? Math.round((v.signed / v.total) * 100) : 0 }))
+          .sort((x, y) => y.signed - x.signed || y.total - x.total);
+        const medals = ["🥇", "🥈", "🥉"];
+        return (
+          <>
+            {relFilter === "team" && ranking.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                <button onClick={() => setTeleFilter("")} style={{ padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${teleFilter === "" ? NAVY : "#e5e7eb"}`, background: teleFilter === "" ? NAVY : "#fff", color: teleFilter === "" ? "#fff" : "#6b7280" }}>Toute l&apos;équipe</button>
+                {ranking.map((t) => (
+                  <button key={t.email} onClick={() => setTeleFilter(teleFilter === t.email ? "" : t.email)} style={{ padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", border: `1.5px solid ${teleFilter === t.email ? NAVY : "#e5e7eb"}`, background: teleFilter === t.email ? NAVY : "#fff", color: teleFilter === t.email ? "#fff" : "#6b7280" }}>{t.name}</button>
+                ))}
+              </div>
+            )}
+            {ranking.length > 0 && (
+              <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 8 }}>🏆 Classement des téléprospecteurs</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {ranking.map((t, i) => (
+                    <div key={t.email} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, background: i < 3 ? "#fffbeb" : "#f8fafc", borderRadius: 8, padding: "7px 10px" }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{medals[i] ?? `${i + 1}.`} {t.name}</span>
+                      <span style={{ fontSize: 12, color: "#64748b" }}><strong style={{ color: "#16a34a" }}>{t.signed}</strong> signé{t.signed > 1 ? "s" : ""} / {t.total} RDV · {t.rate}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>

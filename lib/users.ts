@@ -5,10 +5,10 @@ export type User = {
   id: number; email: string; name: string; role: "admin" | "responsable" | "collab";
   call_center_id: number; commission_base: number; commission_pct: number;
   is_commercial: boolean; is_teleprospector: boolean; phone: string; active: boolean; created_at: string;
-  agence_name?: string; call_center_name?: string;
+  username?: string; agence_name?: string; call_center_name?: string;
 };
 
-const USER_COLS = `id, email, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active`;
+const USER_COLS = `id, email, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active, username`;
 
 export async function getUserByEmail(email: string) {
   const { rows } = await getPool().query(
@@ -18,10 +18,21 @@ export async function getUserByEmail(email: string) {
   return rows[0] as (User & { password_hash: string }) | undefined;
 }
 
+/** Login par PSEUDO (prioritaire) ou e-mail (compat comptes existants, ex call center Hanan). */
+export async function getUserByLogin(identifier: string) {
+  const { rows } = await getPool().query(
+    `select ${USER_COLS}, password_hash from users
+      where (username <> '' and lower(username) = lower($1)) or lower(email) = lower($1)
+      order by (lower(username) = lower($1)) desc limit 1`,
+    [identifier.trim()],
+  );
+  return rows[0] as (User & { password_hash: string }) | undefined;
+}
+
 /** Liste les users (tous, ou d'un call center si fourni — cloisonnement legacy). */
 export async function listUsers(callCenterId?: number): Promise<User[]> {
   // agence_name = racine de la hiérarchie du call center (parent, sinon lui-même).
-  const cols = `u.id, u.email, u.name, u.role, u.call_center_id, u.commission_base, u.commission_pct, u.is_commercial, u.is_teleprospector, u.phone, u.active, u.created_at, cc.name as call_center_name, coalesce(p.name, cc.name) as agence_name`;
+  const cols = `u.id, u.email, u.name, u.role, u.call_center_id, u.commission_base, u.commission_pct, u.is_commercial, u.is_teleprospector, u.phone, u.active, u.created_at, u.username, cc.name as call_center_name, coalesce(p.name, cc.name) as agence_name`;
   const from = `from users u left join call_centers cc on cc.id = u.call_center_id left join call_centers p on p.id = cc.parent_id`;
   if (callCenterId != null) {
     const { rows } = await getPool().query(`select ${cols} ${from} where u.call_center_id = $1 order by u.role, u.name`, [callCenterId]);
@@ -73,20 +84,24 @@ export async function commercialEmailByName(name?: string): Promise<string> {
 }
 
 export type CreateUserInput = {
-  email: string; password: string; name: string; role?: "admin" | "responsable" | "collab";
+  email?: string; password: string; name: string; role?: "admin" | "responsable" | "collab";
   callCenterId?: number; commissionBase?: number; commissionPct?: number;
-  isCommercial?: boolean; isTeleprospector?: boolean; phone?: string;
+  isCommercial?: boolean; isTeleprospector?: boolean; phone?: string; username?: string;
 };
 
 export async function createUser(input: CreateUserInput): Promise<User> {
+  // Login = PSEUDO. L'e-mail devient optionnel (info de contact) ; on génère un placeholder unique si absent.
+  const username = (input.username ?? "").trim().toLowerCase() || (input.name ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
+  if (!username) throw new Error("Pseudo requis.");
+  const email = (input.email ?? "").trim().toLowerCase() || `${username}@no-mail.local`;
   const { rows } = await getPool().query(
-    `insert into users (email, password_hash, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
+    `insert into users (email, password_hash, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active, username)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,$11)
      returning ${USER_COLS}, created_at`,
     [
-      input.email.trim().toLowerCase(), hashPassword(input.password), input.name.trim(), input.role ?? "collab",
+      email, hashPassword(input.password), input.name.trim(), input.role ?? "collab",
       input.callCenterId ?? 1, input.commissionBase ?? 50, input.commissionPct ?? 10,
-      input.isCommercial ?? false, input.isTeleprospector ?? false, (input.phone ?? "").trim(),
+      input.isCommercial ?? false, input.isTeleprospector ?? false, (input.phone ?? "").trim(), username,
     ],
   );
   return rows[0] as User;

@@ -1,6 +1,7 @@
 "use client";
 
 import { getUser, getTheme, clearAuth } from "@/lib/client";
+import NotifBell from "./NotifBell";
 
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
@@ -15,6 +16,7 @@ const TABS = [
   { key: "prospection", label: "Prospection", href: "/prospection", teleOnly: true },
   { key: "rappels", label: "Rappels", href: "/rappels", teleOnly: true },
   { key: "statistiques", label: "Stats", href: "/statistiques" },
+  { key: "parametres", label: "Paramètres", href: "/parametres" },
   // Masqués pour l'instant (code conservé) : recherche, relances, hesitants, assistant.
 ];
 
@@ -31,7 +33,15 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
   // Téléprospecteur (ou admin) = peut créer des RDV / gérer les prospects.
   // Commercial pur = voit seulement Agenda / CRM / Stats (ses RDV affectés).
   const canCreate = user?.role === "admin" || !!user?.isTeleprospector;
-  const tabs = TABS.filter((t) => !t.teleOnly || canCreate);
+  // Vues par rôle : commercial pur = Agenda + Stats uniquement ; Bilan (financier) = admin seulement.
+  const commercialPur = user?.role !== "admin" && !!user?.isCommercial && !user?.isTeleprospector;
+  const tabs = TABS.filter((t) => {
+    // Commercial pur : menu minimal Agenda + Paramètres (cahier des charges).
+    if (commercialPur) return t.key === "agenda" || t.key === "parametres";
+    if (t.key === "parametres") return user?.role === "admin" || !!user?.isCommercial; // réglages de dispo = commerciaux
+    if (t.key === "bilan" && user?.role !== "admin") return false;
+    return !t.teleOnly || canCreate;
+  });
 
   function logout() {
     clearAuth();
@@ -48,6 +58,7 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
           <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 15, fontWeight: 700, color: headerInk, letterSpacing: 0.4, textTransform: "uppercase" }}>{brandName}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <NotifBell dark={headerDark} />
           {user && (
             <span style={{ color: headerSub, fontSize: 12 }}>
               {user.name}{user.role === "admin" ? " (admin)" : ""}
@@ -102,7 +113,7 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
             📧 Templates
           </a>
         )}
-        {user?.role === "admin" && (
+        {(user?.role === "admin" || user?.role === "responsable") && (
           <a
             href="/comptes"
             style={{

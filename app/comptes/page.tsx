@@ -12,10 +12,11 @@ type User = {
   id: number; email: string; name: string; role: "admin" | "responsable" | "collab";
   is_commercial?: boolean; is_teleprospector?: boolean; phone?: string; active?: boolean;
   commission_base?: number; commission_pct?: number;
-  call_center_id?: number; agence_name?: string; call_center_name?: string;
+  call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string;
 };
-type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
+type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
 type Assignment = { call_center_id: number; commercial_email: string };
+type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
 
 const inp: React.CSSProperties = { width: "100%", padding: 12, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" };
 
@@ -24,16 +25,18 @@ function Comptes() {
   const [role, setRole] = useState<"admin" | "responsable" | "collab">("collab");
   const [callCenters, setCallCenters] = useState<CallCenter[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [accords, setAccords] = useState<Accord[]>([]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [openCC, setOpenCC] = useState<number | null>(null); // call center déplié
   const [openAgence, setOpenAgence] = useState<number | null>(null); // agence dépliée
   // Mini-form "ajouter un télépro à CE call center"
-  const [ccTele, setCcTele] = useState({ name: "", email: "", password: "", phone: "" });
+  const [ccTele, setCcTele] = useState({ name: "", username: "", email: "", password: "", phone: "" });
 
   const [type, setType] = useState<"commercial" | "telepro" | "callcenter">("commercial");
   // Compte commercial / télépro
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
@@ -43,6 +46,7 @@ function Comptes() {
   const [ccName, setCcName] = useState("");
   const [ccAgence, setCcAgence] = useState(true);
   const [rName, setRName] = useState("");
+  const [rUsername, setRUsername] = useState("");
   const [rEmail, setREmail] = useState("");
   const [rPass, setRPass] = useState("");
   const [rPhone, setRPhone] = useState("");
@@ -57,7 +61,7 @@ function Comptes() {
       if (d.role === "admin") {
         const r2 = await fetch("/api/callcenters", { headers: authHeaders() });
         const d2 = await r2.json();
-        if (d2.ok) { setCallCenters(d2.callCenters); setAssignments(d2.assignments); }
+        if (d2.ok) { setCallCenters(d2.callCenters); setAssignments(d2.assignments); setAccords(d2.accords ?? []); }
       }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
@@ -68,23 +72,23 @@ function Comptes() {
   useEffect(() => { if (!isAdmin && type !== "telepro") setType("telepro"); }, [isAdmin, type]);
 
   async function addUser() {
-    if (!name.trim() || !email.trim() || !password.trim()) return;
+    if (!name.trim() || !username.trim() || !password.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" ? "commercial" : "telepro", name, email, password, phone, schemeKey, callCenterId: attachCC }) });
+      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" ? "commercial" : "telepro", name, username, email, password, phone, schemeKey, callCenterId: attachCC }) });
       const d = await res.json();
-      if (d.ok) { setName(""); setEmail(""); setPassword(""); setPhone(""); load(); }
+      if (d.ok) { setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); load(); }
       else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
   }
 
   async function addCallCenter() {
-    if (!ccName.trim() || !rName.trim() || !rEmail.trim() || !rPass.trim()) return;
+    if (!ccName.trim() || !rName.trim() || !rUsername.trim() || !rPass.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, responsable: { name: rName, email: rEmail, password: rPass, phone: rPhone } }) });
+      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone } }) });
       const d = await res.json();
-      if (d.ok) { setCcName(""); setRName(""); setREmail(""); setRPass(""); setRPhone(""); load(); }
+      if (d.ok) { setCcName(""); setRName(""); setRUsername(""); setREmail(""); setRPass(""); setRPhone(""); load(); }
       else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
   }
@@ -110,6 +114,19 @@ function Comptes() {
     const d = await res.json();
     if (d.ok) { alert("Couleurs enregistrées. Elles s'appliquent à la prochaine connexion des utilisateurs de cette franchise."); load(); }
     else alert(d.error ?? "Erreur");
+  }
+  async function saveAccords(cc: CallCenter) {
+    const callEur = Number((document.getElementById(`acc-call-${cc.id}`) as HTMLInputElement)?.value ?? 0);
+    const gestEur = Number((document.getElementById(`acc-gest-${cc.id}`) as HTMLInputElement)?.value ?? 0);
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: cc.id, action: "setAccords", callEur, gestEur, respEmail: cc.responsable_email, gestEmail: cc.gestionnaire_email || "" }) });
+    const d = await res.json();
+    if (d.ok) { alert(`Accord enregistré : ${callEur} € call center + ${gestEur} € gestionnaire par RDV signé (total ${callEur + gestEur} €).`); load(); }
+    else alert(d.error ?? "Erreur");
+  }
+  async function setGestionnaire(ccId: number, email: string) {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setGestionnaire", email }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
   async function renameCC(ccId: number, current: string) {
     const name = prompt("Nouveau nom (affiché au milieu du bandeau) :", current);
@@ -147,12 +164,12 @@ function Comptes() {
   }
 
   async function addTeleproToCC(ccId: number) {
-    if (!ccTele.name.trim() || !ccTele.email.trim() || !ccTele.password.trim()) return;
+    if (!ccTele.name.trim() || !ccTele.username.trim() || !ccTele.password.trim()) return;
     setBusy(true);
     try {
       const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: "telepro", ...ccTele, callCenterId: ccId }) });
       const d = await res.json();
-      if (d.ok) { setCcTele({ name: "", email: "", password: "", phone: "" }); load(); }
+      if (d.ok) { setCcTele({ name: "", username: "", email: "", password: "", phone: "" }); load(); }
       else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
   }
@@ -243,16 +260,18 @@ function Comptes() {
             </label>
             <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>Responsable du call center :</div>
             <input style={inp} value={rName} onChange={(e) => setRName(e.target.value)} placeholder="Nom du responsable" />
-            <input style={inp} type="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} placeholder="E-mail (login responsable)" />
+            <input style={inp} value={rUsername} onChange={(e) => setRUsername(e.target.value.toLowerCase())} placeholder="Pseudo (login responsable)" autoCapitalize="none" />
             <input style={inp} value={rPass} onChange={(e) => setRPass(e.target.value)} placeholder="Mot de passe" />
+            <input style={inp} type="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} placeholder="E-mail (optionnel)" />
             <input style={inp} value={rPhone} onChange={(e) => setRPhone(e.target.value)} placeholder="Téléphone (optionnel)" />
             <button onClick={addCallCenter} disabled={busy || !ccName.trim() || !rName.trim() || !rEmail.trim() || !rPass.trim()} style={{ padding: 13, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "Créer le call center"}</button>
           </div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "commercial" ? "Nom du commercial (ex: Jérémy Bonamy)" : "Nom du téléprospecteur"} />
-            <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail (login)" />
+            <input style={inp} value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="Pseudo (login, ex: jeremy)" autoCapitalize="none" />
             <input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mot de passe" />
+            <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail (optionnel — info de contact)" />
             {type === "commercial" && <input style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Téléphone (injecté dans les mails/SMS clients)" />}
             {isAdmin && (
               <div>
@@ -407,7 +426,7 @@ function Comptes() {
                 <div key={c.id} style={{ border: `1px solid ${open ? PINK : "#eef1f4"}`, borderRadius: 10, overflow: "hidden" }}>
                   {/* En-tête cliquable + suppression */}
                   <div style={{ display: "flex", alignItems: "stretch", background: open ? "#fff5f9" : "#f8fafc" }}>
-                    <button onClick={() => { setOpenCC(open ? null : c.id); setCcTele({ name: "", email: "", password: "", phone: "" }); }}
+                    <button onClick={() => { setOpenCC(open ? null : c.id); setCcTele({ name: "", username: "", email: "", password: "", phone: "" }); }}
                       style={{ flex: 1, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", background: "transparent", border: "none", padding: "12px 14px", cursor: "pointer" }}>
                       <div>
                         <span style={{ fontWeight: 700, color: NAVY }}>{c.name}</span>
@@ -426,7 +445,38 @@ function Comptes() {
                   {/* Détail */}
                   {open && (
                     <div style={{ padding: 14, display: "grid", gap: 16, borderTop: "1px solid #eef1f4" }}>
-                      <div style={{ fontSize: 13, color: "#6b7280" }}>Responsable : <strong style={{ color: NAVY }}>{c.responsable_email || "—"}</strong></div>
+                      <div style={{ fontSize: 13, color: "#6b7280" }}>Responsable : <strong style={{ color: NAVY }}>{c.responsable_email || "—"}</strong> <span style={{ color: "#9aa6b8" }}>(paye ses télépros, touche son barème par signé)</span></div>
+
+                      {/* Gestionnaire du call : celui qui a apporté le call center -> touche la marge (50 € - barème du responsable) */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: NAVY }}>💼 Gestionnaire du call :</span>
+                        <select value={c.gestionnaire_email ?? ""} onChange={(e) => e.target.value && setGestionnaire(c.id, e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff" }}>
+                          <option value="">— choisir —</option>
+                          {users.map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
+                        </select>
+                        <span style={{ fontSize: 11.5, color: "#9aa6b8" }}>touche la marge sur chaque signé du call (ex : 50 € − 30 € = 20 €)</span>
+                      </div>
+
+                      {/* Accord de rémunération (paramétrable, rien en dur) */}
+                      {(() => {
+                        const accCall = accords.find((x) => Number(x.call_center_id) === c.id && x.payee_kind === "call_center");
+                        const accGest = accords.find((x) => Number(x.call_center_id) === c.id && x.payee_kind === "gestionnaire");
+                        return (
+                          <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: NAVY, marginBottom: 8 }}>💶 Accord de rémunération (par RDV signé)</div>
+                            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                              <label style={{ fontSize: 12, color: "#6b7280" }}>Call center (responsable)<br />
+                                <input id={`acc-call-${c.id}`} type="number" defaultValue={accCall ? Number(accCall.base_eur) : 30} style={{ width: 90, padding: "7px 9px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 14, marginTop: 3 }} /> €
+                              </label>
+                              <label style={{ fontSize: 12, color: "#6b7280" }}>Gestionnaire<br />
+                                <input id={`acc-gest-${c.id}`} type="number" defaultValue={accGest ? Number(accGest.base_eur) : 20} style={{ width: 90, padding: "7px 9px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 14, marginTop: 3 }} /> €
+                              </label>
+                              <button onClick={() => saveAccords(c)} style={{ padding: "9px 14px", borderRadius: 8, border: "none", background: PINK, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Enregistrer l'accord</button>
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: 6 }}>Chacun ne voit que SA rémunération dans ses stats. Modifiable à tout moment, propre à chaque partenariat.</div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Rattacher à une agence */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -468,10 +518,11 @@ function Comptes() {
                       <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: NAVY }}>Ajouter un téléprospecteur à {c.name}</div>
                         <input style={inp} value={ccTele.name} onChange={(e) => setCcTele({ ...ccTele, name: e.target.value })} placeholder="Nom" />
-                        <input style={inp} type="email" value={ccTele.email} onChange={(e) => setCcTele({ ...ccTele, email: e.target.value })} placeholder="E-mail (login)" />
+                        <input style={inp} value={ccTele.username} onChange={(e) => setCcTele({ ...ccTele, username: e.target.value.toLowerCase() })} placeholder="Pseudo (login)" autoCapitalize="none" />
+                        <input style={inp} type="email" value={ccTele.email} onChange={(e) => setCcTele({ ...ccTele, email: e.target.value })} placeholder="E-mail (optionnel)" />
                         <input style={inp} value={ccTele.password} onChange={(e) => setCcTele({ ...ccTele, password: e.target.value })} placeholder="Mot de passe" />
                         <input style={inp} value={ccTele.phone} onChange={(e) => setCcTele({ ...ccTele, phone: e.target.value })} placeholder="Téléphone (optionnel)" />
-                        <button onClick={() => addTeleproToCC(c.id)} disabled={busy || !ccTele.name.trim() || !ccTele.email.trim() || !ccTele.password.trim()} style={{ padding: 11, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>{busy ? "…" : "Ajouter le téléprospecteur"}</button>
+                        <button onClick={() => addTeleproToCC(c.id)} disabled={busy || !ccTele.name.trim() || !ccTele.username.trim() || !ccTele.password.trim()} style={{ padding: 11, borderRadius: 8, border: "none", background: busy ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>{busy ? "…" : "Ajouter le téléprospecteur"}</button>
                       </div>
                     </div>
                   )}
@@ -501,7 +552,7 @@ function Comptes() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontWeight: 700, color: NAVY }}>{u.name} {roleBadges(u)}</div>
-            <div style={{ fontSize: 13, color: "#6b7280" }}>{u.email}{u.phone ? ` · ${u.phone}` : ""}</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>{u.username ? `@${u.username}` : ""}{u.email && !u.email.endsWith("no-mail.local") ? ` · ${u.email}` : ""}{u.phone ? ` · ${u.phone}` : ""}</div>
             {u.call_center_name && u.call_center_name !== u.agence_name && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>📞 {u.call_center_name}</div>}
             <div style={{ fontSize: 12.5, color: "#15803d", marginTop: 2 }}>{schemeLabel(u)}</div>
           </div>

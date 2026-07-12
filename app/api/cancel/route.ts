@@ -5,6 +5,7 @@ import { cancelledEmail } from "@/lib/email-templates";
 import { whatsappUrl } from "@/lib/links";
 import { getAuth } from "@/lib/auth";
 import { scheduleFollowup } from "@/lib/followups";
+import { notify } from "@/lib/notifications";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -44,6 +45,9 @@ export async function POST(req: Request) {
     }
 
     await markCancelled(eid);
+
+    // 🔔 RDV annulé -> notifie le créateur (télépro) en interne.
+    try { await notify([owner], "cancelled", `🗑️ RDV annulé — ${firstName} ${lastName}`.trim(), "", `/client/${encodeURIComponent(eid)}`); } catch { /* non-bloquant */ }
 
     // Mail d'annulation envoyé UNIQUEMENT si le RDV est encore à venir.
     // Si le RDV est déjà passé, l'annulation est purement interne (pas de mail :

@@ -20,7 +20,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier: email, password }),
       });
       const d = await res.json();
       if (d.ok) {
@@ -49,7 +49,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         <div style={{ height: 4, background: PINK }} />
         <div style={{ padding: 28 }}>
           <h1 style={{ fontFamily: "'Cabin',sans-serif", fontSize: 20, color: NAVY, margin: "0 0 8px", textTransform: "uppercase" }}>Connexion</h1>
-          <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Adresse e-mail" />
+          <input style={inp} type="text" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Pseudo" />
           <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Mot de passe" />
           {err && <p style={{ color: "#dc2626", fontSize: 14 }}>❌ {err}</p>}
           <button onClick={submit} disabled={loading || !email || !password} style={{ marginTop: 16, width: "100%", padding: 13, borderRadius: 8, border: "none", background: loading || !email || !password ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>

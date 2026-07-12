@@ -8,6 +8,8 @@ import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { getAuth } from "@/lib/auth";
 import { callCenterRule } from "@/lib/callcenters";
 import { cancelFollowup } from "@/lib/followups";
+import { notify } from "@/lib/notifications";
+import { isBlocked } from "@/lib/bookers";
 
 const nameTok = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
 import { commercialPhoneByName } from "@/lib/users";
@@ -57,6 +59,17 @@ export async function POST(req: Request) {
       }
     }
 
+    // 1a-bis. Le commercial a-t-il désactivé ce téléprospecteur ? (Paramètres > Qui prend mes RDV)
+    if (appt.commercial && auth.role !== "admin") {
+      try {
+        const { commercialEmailByName } = await import("@/lib/users");
+        const ce = await commercialEmailByName(appt.commercial);
+        if (ce && ce.toLowerCase() !== auth.email.toLowerCase() && await isBlocked(ce, auth.email)) {
+          return NextResponse.json({ error: `${appt.commercial} n'accepte plus de rendez-vous de ta part (désactivé dans ses paramètres).` }, { status: 403 });
+        }
+      } catch { /* non-bloquant */ }
+    }
+
     // 1b. Créneaux PAR COMMERCIAL : deux commerciaux peuvent avoir le même horaire.
     //     On bloque seulement si CE commercial est déjà pris à ce moment (+ marge trajet),
     //     ou si sa demi-journée est déjà dédiée à l'autre modalité (physique vs déplacement).
@@ -81,6 +94,15 @@ export async function POST(req: Request) {
 
     // 2b. Stoppe une éventuelle séquence de relances en cours pour ce client.
     try { await cancelFollowup(appt.email); } catch { /* non-bloquant */ }
+
+    // 🔔 Nouveau RDV -> notifie le commercial affecté (notification interne).
+    try {
+      const { commercialEmailByName } = await import("@/lib/users");
+      const commEmail = await commercialEmailByName(appt.commercial);
+      const when = new Date(appt.startDateTime).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" });
+      await notify([commEmail], "new_rdv", `📅 Nouveau RDV — ${appt.firstName} ${appt.lastName}`,
+        `${when} · pris par ${appt.teleprospector || auth.name}`, event.id ? `/client/${encodeURIComponent(event.id)}` : "");
+    } catch { /* non-bloquant */ }
 
     // Téléphone du commercial (depuis la base — aucun numéro codé en dur).
     const commPhone = await commercialPhoneByName(appt.commercial);

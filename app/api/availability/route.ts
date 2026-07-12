@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { listEvents, halfDay } from "@/lib/google";
-import { slotTimesForType, isWeekday, SLOT_MIN } from "@/lib/slots";
+import { slotTimesForType, isWeekday, weekday, SLOT_MIN } from "@/lib/slots";
 import { toParisISO } from "@/lib/parse";
 import { getAuth } from "@/lib/auth";
+import { commercialEmailByName } from "@/lib/users";
+import { getSettings, listTimeOff, listExceptions, computeSlots } from "@/lib/availability";
+
+const parisMin = (d: Date) => {
+  const parts = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  return Number(parts.find((p) => p.type === "hour")?.value ?? 0) * 60 + Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+};
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -20,9 +27,6 @@ export async function GET(req: Request) {
   const commercial = sp.get("commercial") ?? "";
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "Date invalide." }, { status: 400 });
-  }
-  if (!isWeekday(date)) {
-    return NextResponse.json({ ok: true, date, slots: [], closed: true });
   }
   getAuth(req); // auth facultative (formulaire interne)
 
@@ -48,6 +52,26 @@ export async function GET(req: Request) {
       .filter((b): b is { s: Date; e: Date; dep: boolean; comm: string; cancelled: boolean } => !!b.s && !!b.e && !b.cancelled)
       .filter((b) => (cset ? b.comm === cset : true));
 
+    // ── MOTEUR DE DISPONIBILITÉS : si le commercial a configuré ses réglages,
+    //    ses créneaux remplacent totalement la grille legacy (hebdo, durée, fréquence,
+    //    battement, vacances, exceptions — voir lib/availability). ──
+    const commEmail = commercial ? await commercialEmailByName(commercial) : "";
+    const settings = commEmail ? await getSettings(commEmail) : null;
+    if (settings) {
+      const [timeOff, exceptions] = await Promise.all([listTimeOff(commEmail), listExceptions(commEmail)]);
+      const busy: [number, number][] = evs.map((b) => [parisMin(b.s), parisMin(b.e)]);
+      const times = computeSlots(settings, date, weekday(date), timeOff, exceptions, busy);
+      const nowE = new Date();
+      const slots = times
+        .filter((time) => new Date(toParisISO(date, time)) > nowE)
+        .map((time) => ({ time, taken: false }));
+      return NextResponse.json({ ok: true, date, slots, engine: true });
+    }
+
+    // ── Grille legacy (aucun réglage commercial) : lun-ven, pas fixe ──
+    if (!isWeekday(date)) {
+      return NextResponse.json({ ok: true, date, slots: [], closed: true });
+    }
     // Demi-journées déjà dédiées à l'AUTRE modalité (uniquement en mode par-commercial).
     const oppHalfDays = new Set<string>();
     if (cset) for (const b of evs) if (b.dep !== isDep) oppHalfDays.add(halfDay(b.s));

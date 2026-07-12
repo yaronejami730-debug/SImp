@@ -6,6 +6,8 @@ import { sendEmail } from "@/lib/brevo";
 import { signedRatingEmail } from "@/lib/email-templates";
 import { signBooking } from "@/lib/auth";
 import { baseUrlFrom } from "@/lib/links";
+import { notify } from "@/lib/notifications";
+import { listCallCenters } from "@/lib/callcenters";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -60,6 +62,24 @@ export async function POST(req: Request) {
         }
       } catch (err) {
         console.error("post-sign action failed", err);
+      }
+      // 🔔 Notification interne : RDV signé -> owner + responsable + gestionnaire du call center.
+      if (signStatus === "signed") {
+        try {
+          const ev = await getEvent(eid);
+          const priv = ev.extendedProperties?.private ?? {};
+          const cc = Number(priv.cc ?? "1");
+          const ccs = await listCallCenters();
+          const c = ccs.find((x) => x.id === cc);
+          const client = `${priv.clientFirstName ?? ""} ${priv.clientLastName ?? ""}`.trim();
+          const vehicle = [priv.carBrand, priv.carModel].filter(Boolean).join(" ");
+          await notify(
+            [priv.owner, c?.responsable_email, c?.gestionnaire_email],
+            "signed", `🎉 RDV signé — ${client || "client"}`,
+            `${vehicle ? vehicle + " · " : ""}par ${priv.commercial || "?"}`,
+            `/client/${encodeURIComponent(eid)}`,
+          );
+        } catch { /* non-bloquant */ }
       }
     }
 

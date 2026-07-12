@@ -3,7 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
-import { authHeaders } from "@/lib/client";
+import { authHeaders, getUser } from "@/lib/client";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
 import { SMS_TEMPLATES, SMS_TEMPLATE_CATEGORIES } from "@/lib/sms-templates-list";
 import { COMMERCIAUX } from "@/lib/commerciaux";
@@ -1125,7 +1125,16 @@ function ClientPage({ id }: { id: string }) {
             📢 Annonce mise en ligne — mandat en cours de signature. On attend le retour du client.
           </div>
         )}
-        {a.signStatus === "signed" && (
+        {a.signStatus === "signed" && (() => {
+          // Comptes call center : le travail s'arrête au RDV signé -> pas de négo/BC/vendu.
+          const u = getUser();
+          return !!u && u.role !== "admin" && (u.callCenterId ?? 1) !== 1;
+        })() && (
+          <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", border: "1.5px solid #bbf7d0", fontSize: 13, color: "#166534" }}>
+            ✅ Mandat signé — mission accomplie pour le call center.
+          </div>
+        )}
+        {a.signStatus === "signed" && !((() => { const u = getUser(); return !!u && u.role !== "admin" && (u.callCenterId ?? 1) !== 1; })()) && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <span style={{ fontSize: 13, color: "#6b7280" }}>Montant négocié €</span>
