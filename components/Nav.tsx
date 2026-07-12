@@ -16,6 +16,7 @@ const TABS = [
   { key: "prospection", label: "Prospection", href: "/prospection", teleOnly: true },
   { key: "rappels", label: "Rappels", href: "/rappels", teleOnly: true },
   { key: "statistiques", label: "Stats", href: "/statistiques" },
+  { key: "paiements", label: "Mes paiements", href: "/paiements" },
   { key: "parametres", label: "Paramètres", href: "/parametres" },
   // Masqués pour l'instant (code conservé) : recherche, relances, hesitants, assistant.
 ];
@@ -37,8 +38,8 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
   const commercialPur = user?.role !== "admin" && !!user?.isCommercial && !user?.isTeleprospector;
   const tabs = TABS.filter((t) => {
     // Commercial pur : menu minimal Agenda + Paramètres (cahier des charges).
-    if (commercialPur) return t.key === "agenda" || t.key === "parametres";
-    if (t.key === "parametres") return user?.role === "admin" || !!user?.isCommercial; // réglages de dispo = commerciaux
+    if (commercialPur) return t.key === "agenda" || t.key === "paiements" || t.key === "parametres";
+    if (t.key === "parametres" || t.key === "paiements") return user?.role === "admin" || !!user?.isCommercial; // espace commercial
     if (t.key === "bilan" && user?.role !== "admin") return false;
     return !t.teleOnly || canCreate;
   });

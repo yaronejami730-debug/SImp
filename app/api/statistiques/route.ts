@@ -68,7 +68,8 @@ export async function GET(req: Request) {
     const mySc = schemes.get(myEmailLc) ?? { base: 0, pct: 0 };
     const signedAppts = active.filter(isSigned);
     const accords = await listAccords();
-    const allSignedIn = allAppts.filter((a) => inRange(a.startDateTime) && !a.cancelled && isSigned(a));
+    // Le moteur filtre lui-même l'éligibilité (signé ou honoré selon chaque accord).
+    const allSignedIn = allAppts.filter((a) => inRange(a.startDateTime) && !a.cancelled);
     const engine = totalFor(myEmailLc, allSignedIn, accords);
     const paidIds = new Set<string>();
     for (const a of allSignedIn) for (const l of linesFor(a, accords)) if (l.payee === myEmailLc) paidIds.add(l.apptId);
