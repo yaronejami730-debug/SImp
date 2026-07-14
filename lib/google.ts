@@ -151,7 +151,7 @@ function calendarClient(): calendar_v3.Calendar {
       key: privateKey,
       scopes: SCOPES,
     });
-    return google.calendar({ version: "v3", auth });
+    return mirrored(google.calendar({ version: "v3", auth }));
   }
 
   // Voie B : OAuth utilisateur via refresh token.
@@ -162,7 +162,34 @@ function calendarClient(): calendar_v3.Calendar {
   auth.setCredentials({
     refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN,
   });
-  return google.calendar({ version: "v3", auth });
+  return mirrored(google.calendar({ version: "v3", auth }));
+}
+
+/** P1 — DOUBLE ÉCRITURE : toute mutation du calendrier maître est reflétée dans Postgres
+ *  (table appointments), en fire-and-forget. Un seul point d'accroche pour tout le code. */
+function mirrored(cal: calendar_v3.Calendar): calendar_v3.Calendar {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const ev = cal.events as any;
+  for (const m of ["patch", "insert", "update"]) {
+    const orig = ev[m].bind(cal.events);
+    ev[m] = async (params: any) => {
+      const res = await orig(params);
+      if (res?.data?.id) {
+        import("./appointments-db").then((db) => db.upsertAppointmentRow(res.data)).catch((e) => console.error("mirror upsert", e));
+      }
+      return res;
+    };
+  }
+  const origDel = ev.delete.bind(cal.events);
+  ev.delete = async (params: any) => {
+    const res = await origDel(params);
+    if (params?.eventId) {
+      import("./appointments-db").then((db) => db.deleteAppointmentRow(params.eventId)).catch((e) => console.error("mirror delete", e));
+    }
+    return res;
+  };
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  return cal;
 }
 
 /** Crée l'événement dans Google Agenda. Les infos client sont stockées
@@ -425,7 +452,15 @@ export async function listAppointments(
   timeMin: Date,
   timeMax: Date,
 ): Promise<AppointmentItem[]> {
-  const items = await listEvents(timeMin, timeMax);
+  // P1 étape 2 : lectures depuis Postgres (miroir tenu par double écriture + réconciliation).
+  // READ_APPTS_FROM_DB=1 pour activer ; retirer la variable = retour instantané à Google.
+  let items: calendar_v3.Schema$Event[];
+  if (process.env.READ_APPTS_FROM_DB === "1") {
+    const db = await import("./appointments-db");
+    items = await db.listEventShapesFromDb(timeMin, timeMax);
+  } else {
+    items = await listEvents(timeMin, timeMax);
+  }
   return items
     // Ne garder que les RDV créés par l'app (pas les events perso de l'agenda).
     .filter((ev) => {
@@ -583,6 +618,20 @@ export async function patchCommercial(eventId: string, commercial: string) {
     calendarId: CALENDAR_ID,
     eventId,
     requestBody: { extendedProperties: { private: { commercial: commercial.trim(), commercialEmail } } },
+  });
+}
+
+/** Met à jour les détails du RDV (lien annonce, mode déplacement, adresse). */
+export async function patchApptDetails(eventId: string, fields: { listingUrl?: string; deplacement?: boolean; address?: string }) {
+  const cal = calendarClient();
+  const priv: Record<string, string> = {};
+  if (fields.listingUrl !== undefined) priv.listingUrl = fields.listingUrl.trim();
+  if (fields.deplacement !== undefined) priv.deplacement = fields.deplacement ? "1" : "";
+  if (fields.address !== undefined) priv.address = fields.address.trim();
+  await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
   });
 }
 
