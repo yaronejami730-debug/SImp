@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import { StripeCardSetup } from "@/components/StripeCardSetup";
 import { authHeaders } from "@/lib/client";
 
 const NAVY = "var(--brand-dark)";
@@ -122,6 +123,9 @@ function PaiementsPage() {
         </header>
 
         {err && <div style={{ padding: 16, background: "#fee", border: `1px solid #fcc`, borderRadius: 8, color: RED, fontSize: 14 }}>{err}</div>}
+
+        {/* Payment Method Setup */}
+        <StripeCardSetup />
 
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
