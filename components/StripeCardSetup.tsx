@@ -46,17 +46,36 @@ function CardSetupForm({ onSuccess }: { onSuccess: () => void }) {
         return;
       }
 
-      // Confirm setup with card element
+      // Create payment method from card element
+      const cardElement = elements.getElement(CardElement);
+      if (!cardElement) {
+        setError("Erreur: élément carte non trouvé");
+        setLoading(false);
+        return;
+      }
+
+      const pmResult = await stripe.createPaymentMethod({
+        type: "card",
+        card: cardElement,
+      });
+
+      if (pmResult.error) {
+        setError(pmResult.error.message || "Erreur lors de la création du moyen de paiement");
+        setLoading(false);
+        return;
+      }
+
+      // Confirm setup with payment method
       const result = await stripe.confirmCardSetup(data.clientSecret, {
-        payment_method: {
-          card: elements.getElement(CardElement)!,
-        },
+        payment_method: pmResult.paymentMethod!.id,
       });
 
       if (result.error) {
         setError(result.error.message || "Erreur lors de l'enregistrement");
-      } else {
+      } else if (result.setupIntent?.status === "succeeded") {
         onSuccess();
+      } else {
+        setError("Erreur lors de l'enregistrement de la carte");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
