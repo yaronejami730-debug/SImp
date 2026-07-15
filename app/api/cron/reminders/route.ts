@@ -126,6 +126,7 @@ export async function GET(req: Request) {
     const priv = ev.extendedProperties?.private ?? {};
     if (priv.reminder15Sent === "1") continue;
     if (priv.mobile === "1") continue; // anciens RDV déplacement (table) gérés ailleurs
+    if (priv.confirmed !== "1") continue; // SMS 15min seulement si RDV confirmé
     const isDep = priv.deplacement === "1";
     const phone = priv.clientPhone;
     const email = priv.clientEmail;
