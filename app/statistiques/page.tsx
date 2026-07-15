@@ -21,16 +21,20 @@ type Stats = {
   total: number;
   signed: number;
   rateSignature: number;
-  commission: number;
-  commissionFixe: number;
-  commissionVariable: number;
+  // Commercial-only fields
+  commission?: number;
+  commissionFixe?: number;
+  commissionVariable?: number;
   margeCC?: number;
   margeCCCount?: number;
   accordsByKind?: Record<string, number>;
-  negoTotal: number;
-  scheme: { base: number; pct: number };
-  byCommercial: { name: string; signed: number; total: number }[];
-  signedList: { firstName: string; lastName: string; car: string; commercial: string; date: string | null }[];
+  negoTotal?: number;
+  scheme?: { base: number; pct: number };
+  signedList?: { firstName: string; lastName: string; car: string; commercial: string; date: string | null }[];
+  // Responsable/Gestionnaire fields
+  byCommercial?: { name: string; email?: string; signed: number; total: number; totalOwed?: number; callCenterPortion?: number; beneficiaryPortion?: number }[];
+  // For debugging/layout
+  viewerRole?: "commercial" | "responsable" | "gestionnaire" | "admin";
 };
 
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -148,12 +152,17 @@ function StatsView({ data, from, to, onRange, busy }: {
   data: Stats; from: string; to: string;
   onRange: (from: string, to: string) => void; busy: boolean;
 }) {
+  const isCommercial = !data.byCommercial || data.commission !== undefined;
+  const isGestionnaire = data.viewerRole === "gestionnaire";
+
   return (
     <div style={{ opacity: busy ? 0.55 : 1, transition: "opacity .15s", display: "grid", gap: 16 }}>
       <header style={{ display: "grid", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: NAVY }}>Statistiques</h1>
+            <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: NAVY }}>
+              {isCommercial ? "Mes paiements" : isGestionnaire ? "Rémunérations (vue complète)" : "Rémunérations"}
+            </h1>
             <p style={{ margin: "4px 0 0", fontSize: 13, color: MUTED }}>Du {fmtFr(data.from)} au {fmtFr(data.to)}</p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -166,85 +175,107 @@ function StatsView({ data, from, to, onRange, busy }: {
         <MonthPresets from={from} to={to} onRange={onRange} />
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
-        {/* Taux de signature */}
+      {/* === COMMERCIAL VIEW === */}
+      {isCommercial && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 }}>
+            {/* Taux de signature */}
+            <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
+              <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Taux de signature</h2>
+              <Gauge value={data.rateSignature} sub={`${data.signed} signés sur ${data.total} RDV`} />
+            </section>
+
+            {/* Ma commission (TOTAL ONLY, pas de répartition) */}
+            <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22, display: "flex", flexDirection: "column" }}>
+              <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Ma commission</h2>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 16 }}>
+                <div>
+                  <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 48, fontWeight: 700, color: GREEN, lineHeight: 1 }}>{eur(data.commission!)}</div>
+                  <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>sur {data.signed} RDV signé{data.signed > 1 ? "s" : ""}</div>
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
+                    <span style={{ fontSize: 13, color: MUTED }}>Fixe · {data.scheme!.base} € × {data.signed} signé{data.signed > 1 ? "s" : ""}</span>
+                    <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.commissionFixe!)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
+                    <span style={{ fontSize: 13, color: MUTED }}>{data.scheme!.pct}% de la négo{data.negoTotal! > 0 ? ` (${eur(data.negoTotal!)})` : ""}</span>
+                    <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.commissionVariable!)}</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {/* Clients signés */}
+          <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
+            <h2 style={{ margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Clients signés</h2>
+            <p style={{ margin: "0 0 16px", fontSize: 12, color: FAINT }}>Qui a signé sur la période</p>
+            {(data.signedList ?? []).length === 0 ? (
+              <div style={{ fontSize: 13, color: MUTED }}>Aucune signature sur la période.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {data.signedList!.map((c, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: SURFACE, borderRadius: 8, padding: "10px 14px", flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: NAVY }}>
+                      {c.firstName} {c.lastName}
+                      {c.car && <span style={{ fontWeight: 400, color: MUTED }}> · {c.car}</span>}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: MUTED }}>{c.commercial && <>signé avec <strong style={{ color: NAVY }}>{c.commercial}</strong></>}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {/* === RESPONSABLE / GESTIONNAIRE VIEW === */}
+      {!isCommercial && (
         <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
-          <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Taux de signature</h2>
-          <Gauge value={data.rateSignature} sub={`${data.signed} signés sur ${data.total} RDV`} />
-        </section>
-
-        {/* Ma commission */}
-        <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22, display: "flex", flexDirection: "column" }}>
-          <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Ma commission</h2>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 16 }}>
-            <div>
-              <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 48, fontWeight: 700, color: GREEN, lineHeight: 1 }}>{eur(data.commission)}</div>
-              <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>sur {data.signed} RDV signé{data.signed > 1 ? "s" : ""}</div>
+          <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>
+            {isGestionnaire ? "Commerciaux & Répartition" : "Rémunération des commerciaux"}
+          </h2>
+          {(data.byCommercial ?? []).length === 0 ? (
+            <div style={{ fontSize: 13, color: MUTED }}>Aucun RDV sur la période.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${LINE}` }}>
+                    <th style={{ textAlign: "left", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Commercial</th>
+                    <th style={{ textAlign: "center", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Signés</th>
+                    <th style={{ textAlign: "center", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Total RDV</th>
+                    <th style={{ textAlign: "right", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>À payer</th>
+                    {isGestionnaire && (
+                      <>
+                        <th style={{ textAlign: "right", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>CC (share %)</th>
+                        <th style={{ textAlign: "right", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Gestionnaire</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.byCommercial ?? []).map((c, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${LINE}` }}>
+                      <td style={{ padding: "12px 8px", fontSize: 14, color: NAVY, fontWeight: 500 }}>{c.name}</td>
+                      <td style={{ padding: "12px 8px", textAlign: "center", fontSize: 14, color: GREEN, fontWeight: 600 }}>{c.signed}</td>
+                      <td style={{ padding: "12px 8px", textAlign: "center", fontSize: 13, color: MUTED }}>{c.total}</td>
+                      <td style={{ padding: "12px 8px", textAlign: "right", fontSize: 14, fontWeight: 600, color: NAVY }}>{eur(c.totalOwed ?? 0)}</td>
+                      {isGestionnaire && (
+                        <>
+                          <td style={{ padding: "12px 8px", textAlign: "right", fontSize: 14, color: "#6366f1", fontWeight: 600 }}>{eur(c.callCenterPortion ?? 0)}</td>
+                          <td style={{ padding: "12px 8px", textAlign: "right", fontSize: 14, color: "#f59e0b", fontWeight: 600 }}>{eur(c.beneficiaryPortion ?? 0)}</td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {/* Décomposition fixe + pourcentage */}
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
-                <span style={{ fontSize: 13, color: MUTED }}>Fixe · {data.scheme.base} € × {data.signed} signé{data.signed > 1 ? "s" : ""}</span>
-                <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.commissionFixe)}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
-                <span style={{ fontSize: 13, color: MUTED }}>{data.scheme.pct}% de la négo{data.negoTotal > 0 ? ` (${eur(data.negoTotal)})` : ""}</span>
-                <strong style={{ fontSize: 15, color: NAVY }}>{eur(data.commissionVariable)}</strong>
-              </div>
-              {Object.entries(data.accordsByKind ?? {}).map(([kind, amount]) => (
-                <div key={kind} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SURFACE, borderRadius: 8, padding: "10px 12px" }}>
-                  <span style={{ fontSize: 13, color: MUTED }}>{({ call_center: "Rémunération call center", gestionnaire: "Marge gestionnaire", telepro: "Rémunération télépro (accord)", apporteur: "Commission apporteur" } as Record<string, string>)[kind] ?? kind} · {data.margeCCCount} signé{(data.margeCCCount ?? 0) > 1 ? "s" : ""}</span>
-                  <strong style={{ fontSize: 15, color: NAVY }}>{eur(Math.round(amount))}</strong>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </section>
-      </div>
-
-      {/* Signatures par commercial */}
-      <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
-        <h2 style={{ margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Signatures par commercial</h2>
-        <p style={{ margin: "0 0 16px", fontSize: 12, color: FAINT }}>Avec qui les RDV ont été signés</p>
-        {data.byCommercial.length === 0 ? (
-          <div style={{ fontSize: 13, color: MUTED }}>Aucun RDV sur la période.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {(() => { const maxS = Math.max(...data.byCommercial.map((c) => c.signed), 1); return data.byCommercial.map((c) => (
-              <div key={c.name}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: NAVY, marginBottom: 5 }}>
-                  <span style={{ fontWeight: 600 }}>{c.name}</span>
-                  <span><strong style={{ color: GREEN }}>{c.signed}</strong> <span style={{ color: FAINT }}>signé{c.signed > 1 ? "s" : ""} / {c.total} RDV</span></span>
-                </div>
-                <div style={{ background: SURFACE, borderRadius: 5, height: 10, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.round((c.signed / maxS) * 100)}%`, height: "100%", background: GREEN, borderRadius: 5, transition: "width .4s" }} />
-                </div>
-              </div>
-            )); })()}
-          </div>
-        )}
-      </section>
-
-      {/* Clients signés */}
-      <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
-        <h2 style={{ margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Clients signés</h2>
-        <p style={{ margin: "0 0 16px", fontSize: 12, color: FAINT }}>Qui a signé sur la période</p>
-        {data.signedList.length === 0 ? (
-          <div style={{ fontSize: 13, color: MUTED }}>Aucune signature sur la période.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {data.signedList.map((c, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: SURFACE, borderRadius: 8, padding: "10px 14px", flexWrap: "wrap" }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: NAVY }}>
-                  {c.firstName} {c.lastName}
-                  {c.car && <span style={{ fontWeight: 400, color: MUTED }}> · {c.car}</span>}
-                </div>
-                <div style={{ fontSize: 12.5, color: MUTED }}>{c.commercial && <>signé avec <strong style={{ color: NAVY }}>{c.commercial}</strong></>}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 }
