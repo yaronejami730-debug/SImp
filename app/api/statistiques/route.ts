@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listAppointments } from "@/lib/google";
-import { getCommissionSchemes } from "@/lib/users";
 import { listAccords, linesFor, totalFor } from "@/lib/remuneration";
 import { toParisISO } from "@/lib/parse";
+import { getPool } from "@/lib/db";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -13,8 +13,11 @@ const isDate = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.t
 const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
 
 /** GET ?from=YYYY-MM-DD&to=YYYY-MM-DD
- *  Stats de l'utilisateur connecté sur la plage : taux de signature + SA commission
- *  (selon le barème de son compte), sur ses RDV attribués (commercial) ou générés (TP). */
+ *  Visibilité par rôle:
+ *  - Commercial (isCommercial=true): ses RDV + commission total (pas distribution)
+ *  - Responsable CC: RDV du CC + par commercial: total_owed (pas distribution)
+ *  - Gestionnaire (email = call_centers.gestionnaire_email): idem + call_center_portion + beneficiary_portion
+ *  - Admin: tout partout */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
@@ -24,7 +27,6 @@ export async function GET(req: Request) {
     const now = new Date();
     const fromParam = url.searchParams.get("from");
     const toParam = url.searchParams.get("to");
-    // Défaut : mois en cours -> aujourd'hui.
     const fromStr = isDate(fromParam) ? fromParam : new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now.getFullYear(), now.getMonth(), 1));
     const toStr = isDate(toParam) ? toParam : new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
     const fromMs = new Date(toParisISO(fromStr, "00:00")).getTime();
@@ -35,81 +37,127 @@ export async function GET(req: Request) {
       return t >= fromMs && t <= toMs;
     };
 
-    // Fenêtre large puis filtre plage.
     const allAppts = await listAppointments(new Date(fromMs - 7 * DAY), new Date(toMs + 7 * DAY));
 
-    // Visibilité par rôle :
-    //  - admin       : TOUT (sa rémunération = ses RDV cc1 + marge sur les call centers)
-    //  - responsable : tous les RDV de SON call center (payé sur chaque signé de son équipe)
-    //  - télépro     : ses RDV (créés ou affectés)
+    // Déterminer rôle viewer
     const myEmailLc = s.email.toLowerCase();
     const myNameTok = tokset(s.name);
+    let viewerRole: "commercial" | "responsable" | "gestionnaire" | "admin" = "admin";
+
+    if (s.role === "admin") {
+      viewerRole = "admin";
+    } else if (s.role === "responsable") {
+      // Vérifier si gestionnaire
+      const ccResult = await getPool().query("SELECT gestionnaire_email FROM call_centers WHERE id = $1", [s.callCenterId]);
+      if (ccResult.rows[0]?.gestionnaire_email?.toLowerCase() === myEmailLc) {
+        viewerRole = "gestionnaire";
+      } else {
+        viewerRole = "responsable";
+      }
+    } else if (s.isCommercial) {
+      viewerRole = "commercial";
+    }
+
+    // Filtre RDV selon rôle
     const isMine = (a: { owner?: string; commercial?: string; commercialEmail?: string }) =>
       a.owner === s.email ||
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmailLc) ||
       (!a.commercialEmail && !!myNameTok && tokset(a.commercial ?? "") === myNameTok);
-    const visible = s.role === "admin" ? allAppts
-      : s.role === "responsable" ? allAppts.filter((a) => a.callCenterId === s.callCenterId)
-      : allAppts.filter(isMine);
+
+    const visible = viewerRole === "admin" ? allAppts
+      : viewerRole === "commercial" ? allAppts.filter(isMine)
+      : allAppts.filter((a) => a.callCenterId === s.callCenterId); // responsable/gestionnaire: tous du CC
 
     const appts = visible.filter((a) => inRange(a.startDateTime));
     const active = appts.filter((a) => !a.cancelled);
-    const total = active.length;
-    // "Signé" = mandat signé ET non retiré (cohérent avec le bilan : un mandat retiré ne compte plus).
     const isSigned = (a: { signStatus?: string; mandatRemoved?: boolean }) => a.signStatus === "signed" && !a.mandatRemoved;
-    const signed = active.filter(isSigned).length;
-    const rateSignature = total > 0 ? Math.round((signed / total) * 100) : 0;
 
-    // ── Rémunération : MOTEUR D'ACCORDS (table remuneration_accords, rien en dur) ──
-    // 1) Lignes issues des accords (call center / gestionnaire / télépro indépendant / apporteur).
-    // 2) Barème perso (compte) en complément UNIQUEMENT sur les signés non couverts par un accord
-    //    me concernant (évite tout double paiement ; l'admin ne compte que sa propre entité cc1).
-    const schemes = await getCommissionSchemes();
-    const mySc = schemes.get(myEmailLc) ?? { base: 0, pct: 0 };
-    const signedAppts = active.filter(isSigned);
-    const accords = await listAccords();
-    // Le moteur filtre lui-même l'éligibilité (signé ou honoré selon chaque accord).
-    const allSignedIn = allAppts.filter((a) => inRange(a.startDateTime) && !a.cancelled);
-    const engine = totalFor(myEmailLc, allSignedIn, accords);
-    const paidIds = new Set<string>();
-    for (const a of allSignedIn) for (const l of linesFor(a, accords)) if (l.payee === myEmailLc) paidIds.add(l.apptId);
+    // Charger commercial_compensation
+    const compRes = await getPool().query(
+      `SELECT commercial_email, commercial_name, commission_base, commission_pct, call_center_share_pct
+       FROM commercial_compensation WHERE call_center_id = $1`,
+      [s.callCenterId]
+    );
+    const compByEmail = new Map<string, any>(compRes.rows.map(r => [r.commercial_email.toLowerCase(), r]));
 
-    let ownSigned = signedAppts.filter((a) => !paidIds.has(a.id));
-    if (s.role === "admin") ownSigned = ownSigned.filter((a) => (a.callCenterId ?? 1) === 1);
-    const negoTotal = ownSigned.reduce((sum, a) => sum + (a.negotiation || 0), 0);
-    const commissionFixe = Math.round(mySc.base * ownSigned.length);
-    const commissionVariable = Math.round((mySc.pct / 100) * negoTotal);
-    const margeCC = engine.total;           // total issu des accords
-    const margeCCCount = engine.count;      // nb de RDV concernés
-    const accordsByKind = engine.byKind;    // détail par type d'accord
-    const commission = commissionFixe + commissionVariable + margeCC;
+    // === CAS: COMMERCIAL ===
+    if (viewerRole === "commercial") {
+      const total = active.length;
+      const signed = active.filter(isSigned).length;
+      const rateSignature = total > 0 ? Math.round((signed / total) * 100) : 0;
 
-    // --- Signés par commercial (avec qui j'ai signé) ---
-    const accent = (s: string) => (s.match(/[À-ÿ]/g) || []).length;
-    const byCommMap = new Map<string, { name: string; signed: number; total: number }>();
-    for (const a of active) {
-      const name = (a.commercial ?? "").trim();
-      if (!name) continue;
-      const k = tokset(name);
-      const cur = byCommMap.get(k) ?? { name, signed: 0, total: 0 };
-      cur.total++;
-      if (isSigned(a)) cur.signed++;
-      if (accent(name) > accent(cur.name)) cur.name = name; // garder la variante la mieux orthographiée
-      byCommMap.set(k, cur);
-    }
-    const byCommercial = [...byCommMap.values()].sort((a, b) => b.signed - a.signed || b.total - a.total);
+      const signedAppts = active.filter(isSigned);
+      const comp = compByEmail.get(myEmailLc);
+      const commissionFixe = comp ? Math.round(comp.commission_base * signed) : 0;
+      const negoTotal = signedAppts.reduce((sum, a) => sum + (a.negotiation || 0), 0);
+      const commissionVariable = comp ? Math.round((comp.commission_pct / 100) * negoTotal) : 0;
+      const commission = commissionFixe + commissionVariable; // JAMAIS de répartition visible au commercial
 
-    // --- Clients signés (qui j'ai signé) : prénom nom + véhicule + commercial ---
-    const signedList = signedAppts
-      .slice()
-      .sort((a, b) => (a.startDateTime && b.startDateTime ? (a.startDateTime < b.startDateTime ? 1 : -1) : 0))
-      .map((a) => ({
+      const signedList = signedAppts.map((a) => ({
         firstName: a.firstName ?? "",
         lastName: a.lastName ?? "",
         car: [a.carBrand, a.carModel].filter(Boolean).join(" "),
         commercial: a.commercial ?? "",
         date: a.startDateTime ?? null,
       }));
+
+      return NextResponse.json({
+        ok: true,
+        from: fromStr,
+        to: toStr,
+        total,
+        signed,
+        rateSignature,
+        commission, // total seulement
+        commissionFixe,
+        commissionVariable,
+        negoTotal,
+        scheme: comp ? { base: comp.commission_base, pct: comp.commission_pct } : { base: 0, pct: 0 },
+        signedList,
+      });
+    }
+
+    // === CAS: RESPONSABLE / GESTIONNAIRE ===
+    const accent = (s: string) => (s.match(/[À-ÿ]/g) || []).length;
+    const byCommMap = new Map<string, any>();
+    for (const a of active) {
+      const name = (a.commercial ?? "").trim();
+      const email = a.commercialEmail?.toLowerCase();
+      if (!name) continue;
+      const k = tokset(name);
+      const cur = byCommMap.get(k) ?? { name, email, signed: 0, total: 0 };
+      cur.total++;
+      if (isSigned(a)) cur.signed++;
+      if (accent(name) > accent(cur.name)) cur.name = name;
+      byCommMap.set(k, cur);
+    }
+    const byCommercial = [...byCommMap.values()].sort((a, b) => b.signed - a.signed || b.total - a.total);
+
+    // Calculer commission par commercial
+    for (const comm of byCommercial) {
+      const comp = compByEmail.get(comm.email?.toLowerCase());
+      const commissionFixe = comp ? Math.round(comp.commission_base * comm.signed) : 0;
+      const signedAppts = active.filter(isSigned).filter((a) => a.commercialEmail?.toLowerCase() === comm.email?.toLowerCase());
+      const negoTotal = signedAppts.reduce((sum, a) => sum + (a.negotiation || 0), 0);
+      const commissionVariable = comp ? Math.round((comp.commission_pct / 100) * negoTotal) : 0;
+      comm.totalOwed = commissionFixe + commissionVariable;
+
+      if (viewerRole === "gestionnaire") {
+        comm.callCenterPortion = Math.round((comp?.call_center_share_pct ?? 0) / 100 * comm.totalOwed);
+        comm.beneficiaryPortion = comm.totalOwed - comm.callCenterPortion;
+      }
+    }
+
+    const total = active.length;
+    const signed = active.filter(isSigned).length;
+    const rateSignature = total > 0 ? Math.round((signed / total) * 100) : 0;
+    const signedList = active.filter(isSigned).map((a) => ({
+      firstName: a.firstName ?? "",
+      lastName: a.lastName ?? "",
+      car: [a.carBrand, a.carModel].filter(Boolean).join(" "),
+      commercial: a.commercial ?? "",
+      date: a.startDateTime ?? null,
+    }));
 
     return NextResponse.json({
       ok: true,
@@ -118,16 +166,9 @@ export async function GET(req: Request) {
       total,
       signed,
       rateSignature,
-      commission,
-      commissionFixe,
-      commissionVariable,
-      margeCC,
-      margeCCCount,
-      accordsByKind,
-      negoTotal,
-      scheme: { base: mySc.base, pct: mySc.pct },
       byCommercial,
       signedList,
+      viewerRole, // pour debug
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
