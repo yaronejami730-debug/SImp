@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getPool } from "@/lib/db";
-
-function getStripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error("STRIPE_SECRET_KEY not configured");
-  const Stripe = require("stripe");
-  return new Stripe(key);
-}
+import Stripe from "stripe";
 
 export const maxDuration = 60;
 
@@ -51,7 +45,7 @@ export async function POST(req: Request) {
 
   try {
     const pool = getPool();
-    const stripe = getStripe();
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 
     // Check if customer already exists
     let customerRes = await pool.query(
@@ -105,7 +99,7 @@ export async function DELETE(req: Request) {
 
   try {
     const pool = getPool();
-    const stripe = getStripe();
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
 
     const res = await pool.query(
       "SELECT stripe_payment_method_id FROM stripe_customers WHERE commercial_email = $1",

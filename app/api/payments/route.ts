@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getPool } from "@/lib/db";
-
-function getStripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error("STRIPE_SECRET_KEY not configured");
-  const Stripe = require("stripe");
-  return new Stripe(key);
-}
+import Stripe from "stripe";
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
 
@@ -58,7 +52,7 @@ export async function POST(req: Request) {
       [invoices[0].commercial_email.toLowerCase()]
     );
 
-    const stripe = getStripe();
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
     const stripeCustomerId = stripeRes.rows[0]?.stripe_customer_id;
     const paymentMethodId = stripeRes.rows[0]?.stripe_payment_method_id;
 
@@ -109,7 +103,7 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.text();
-    const stripe = getStripe();
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
     event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return NextResponse.json({ error: "Webhook signature failed" }, { status: 400 });
