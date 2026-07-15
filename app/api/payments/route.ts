@@ -52,11 +52,24 @@ export async function POST(req: Request) {
     // Calculate total
     const total = invoices.reduce((sum, i) => sum + Number(i.amount), 0);
 
-    // Create Stripe Payment Intent
+    // Get payment method if registered
+    const stripeRes = await pool.query(
+      "SELECT stripe_customer_id, stripe_payment_method_id FROM stripe_customers WHERE commercial_email = $1",
+      [invoices[0].commercial_email.toLowerCase()]
+    );
+
     const stripe = getStripe();
+    const stripeCustomerId = stripeRes.rows[0]?.stripe_customer_id;
+    const paymentMethodId = stripeRes.rows[0]?.stripe_payment_method_id;
+
+    // Create Stripe Payment Intent
     const intent = await stripe.paymentIntents.create({
       amount: Math.round(total * 100), // Stripe uses cents
       currency: "eur",
+      customer: stripeCustomerId,
+      payment_method: paymentMethodId || undefined,
+      off_session: !!paymentMethodId, // Indicate it's off-session if using saved card
+      confirm: !!paymentMethodId, // Auto-confirm if card is on file
       metadata: {
         invoiceIds: invoiceIds.join(","),
         commercialEmail: invoices[0].commercial_email,
