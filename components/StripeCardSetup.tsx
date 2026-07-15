@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { authHeaders } from "@/lib/client";
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY || "");
@@ -18,7 +18,7 @@ interface SetupStatus {
   paymentMethodLast4?: string;
 }
 
-function CardSetupForm({ onSuccess }: { onSuccess: () => void }) {
+function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSuccess: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -32,50 +32,18 @@ function CardSetupForm({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true);
 
     try {
-      // Create Setup Intent on server
-      const res = await fetch("/api/stripe-setup", {
-        method: "POST",
-        headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({}),
-      });
-      const data = await res.json();
-
-      if (!data.ok || !data.clientSecret) {
-        setError(data.error || "Erreur lors de la création du Setup Intent");
-        setLoading(false);
-        return;
-      }
-
-      // Create payment method from card element
-      const cardElement = elements.getElement(CardElement);
-      if (!cardElement) {
-        setError("Erreur: élément carte non trouvé");
-        setLoading(false);
-        return;
-      }
-
-      const pmResult = await stripe.createPaymentMethod({
-        type: "card",
-        card: cardElement,
+      // Confirm setup with Payment Element
+      const result = await stripe.confirmSetup({
+        elements,
+        clientSecret,
+        confirmParams: {
+          return_url: `${window.location.origin}/paiements?setup=success`,
+        },
       });
 
-      if (pmResult.error) {
-        setError(pmResult.error.message || "Erreur lors de la création du moyen de paiement");
-        setLoading(false);
-        return;
-      }
-
-      // Confirm setup with payment method
-      const result = await stripe.confirmCardSetup(data.clientSecret, {
-        payment_method: pmResult.paymentMethod!.id,
-      });
-
+      // Note: confirmSetup redirects on success, so this only runs on error
       if (result.error) {
         setError(result.error.message || "Erreur lors de l'enregistrement");
-      } else if (result.setupIntent?.status === "succeeded") {
-        onSuccess();
-      } else {
-        setError("Erreur lors de l'enregistrement de la carte");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -86,19 +54,12 @@ function CardSetupForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
-      <div style={{ padding: 16, border: `1.5px solid ${LINE}`, borderRadius: 8, background: "#fff" }}>
-        <CardElement
-          options={{
-            style: {
-              base: {
-                fontSize: "14px",
-                color: "#232323",
-                "::placeholder": { color: MUTED },
-              },
-            },
-          }}
-        />
-      </div>
+      <PaymentElement
+        options={{
+          layout: "tabs",
+          wallets: { applePay: "auto", googlePay: "auto" },
+        }}
+      />
       {error && <div style={{ fontSize: 13, color: RED }}>{error}</div>}
       <button
         type="submit"
@@ -115,7 +76,7 @@ function CardSetupForm({ onSuccess }: { onSuccess: () => void }) {
           opacity: !stripe || loading ? 0.6 : 1,
         }}
       >
-        {loading ? "Enregistrement..." : "Enregistrer la carte"}
+        {loading ? "Enregistrement..." : "Enregistrer"}
       </button>
     </form>
   );
@@ -124,8 +85,10 @@ function CardSetupForm({ onSuccess }: { onSuccess: () => void }) {
 export function StripeCardSetup() {
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [clientSecret, setClientSecret] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   async function loadStatus() {
     try {
@@ -136,6 +99,26 @@ export function StripeCardSetup() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function startSetup() {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/stripe-setup", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.ok && data.clientSecret) {
+        setClientSecret(data.clientSecret);
+        setShowForm(true);
+      } else {
+        alert(data.error || "Erreur");
+      }
+    } finally {
+      setCreating(false);
     }
   }
 
@@ -161,6 +144,16 @@ export function StripeCardSetup() {
 
   useEffect(() => { loadStatus(); }, []);
 
+  // Handle return from Stripe redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("setup") === "success") {
+      loadStatus();
+      setShowForm(false);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   if (loading) return null;
 
   return (
@@ -172,7 +165,7 @@ export function StripeCardSetup() {
       {status?.hasPaymentMethod ? (
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ padding: 12, background: "#efe", borderRadius: 8, fontSize: 13, color: GREEN, fontWeight: 600 }}>
-            ✓ Carte {status.paymentMethodType} enregistrée (•••• {status.paymentMethodLast4})
+            ✓ {status.paymentMethodType} enregistrée (•••• {status.paymentMethodLast4})
           </div>
           <button
             onClick={() => deletePaymentMethod()}
@@ -195,12 +188,13 @@ export function StripeCardSetup() {
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <p style={{ margin: 0, fontSize: 13, color: MUTED }}>
-            Enregistrez une fois votre carte pour payer plus rapidement à l'avenir. Aucun prélèvement ne sera effectué.
+            Enregistrez votre carte une fois pour payer plus rapidement. Apple Pay, Google Pay, ou cartes bancaires. Aucun prélèvement.
           </p>
 
           {!showForm ? (
             <button
-              onClick={() => setShowForm(true)}
+              onClick={startSetup}
+              disabled={creating}
               style={{
                 padding: "12px 20px",
                 borderRadius: 8,
@@ -210,13 +204,15 @@ export function StripeCardSetup() {
                 fontSize: 14,
                 fontWeight: 600,
                 cursor: "pointer",
+                opacity: creating ? 0.6 : 1,
               }}
             >
-              Enregistrer ma carte bancaire
+              {creating ? "Initialisation..." : "Enregistrer ma carte bancaire"}
             </button>
           ) : (
             <Elements stripe={stripePromise}>
               <CardSetupForm
+                clientSecret={clientSecret}
                 onSuccess={() => {
                   setShowForm(false);
                   loadStatus();
