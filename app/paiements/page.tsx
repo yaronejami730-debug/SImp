@@ -6,168 +6,278 @@ import { authHeaders } from "@/lib/client";
 
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
+const MUTED = "#64748b";
+const LINE = "#e8ebef";
 const GREEN = "#16a34a";
+const RED = "#dc2626";
+const ORANGE = "#f59e0b";
+const SURFACE = "#f8fafc";
 
-type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; sold_eur: number; sold_pct: number; trigger_kind: "signed" | "honored" };
-type Line = { apptId: string; amount: number; kind: string; payeeName: string; date: string | null; client: string; vehicle: string; telepro: string; sold: boolean; signed: boolean };
-type Gest = { ccId: number; ccName: string; email: string; name: string };
-type Indep = { email: string; name: string };
+type Invoice = {
+  id: number;
+  appointment_id: string;
+  client_name: string;
+  vehicle: string;
+  amount: number;
+  status: "pending" | "paid" | "cancelled" | "disputed";
+  appointment_date: string;
+  signed_date: string;
+  created_at: string;
+  updated_at: string;
+};
 
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-const ymd = (d: Date) => new Intl.DateTimeFormat("en-CA").format(d);
-const card: React.CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18, marginBottom: 14 };
-const h2: React.CSSProperties = { margin: "0 0 4px", fontFamily: "'Cabin',sans-serif", fontSize: 15, fontWeight: 700, color: NAVY };
-const hint: React.CSSProperties = { margin: "0 0 12px", fontSize: 12, color: "#94a3b8" };
-const nIn: React.CSSProperties = { width: 80, padding: "7px 9px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 13 };
+const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("fr-FR") : "-";
 
-function Paiements() {
-  const now = new Date();
-  const [from, setFrom] = useState(ymd(new Date(now.getFullYear(), now.getMonth() - 2, 1)));
-  const [to, setTo] = useState(ymd(now));
-  const [accords, setAccords] = useState<Accord[]>([]);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [gests, setGests] = useState<Gest[]>([]);
-  const [indeps, setIndeps] = useState<Indep[]>([]);
+function PaiementsPage() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [tab, setTab] = useState<"pending" | "paid">("pending");
   const [loading, setLoading] = useState(true);
-  // Ajout d'accord
-  const [selKey, setSelKey] = useState("");
-  const [baseEur, setBaseEur] = useState(50);
-  const [soldEur, setSoldEur] = useState(0);
-  const [soldPct, setSoldPct] = useState(0);
-  const [trigger, setTrigger] = useState<"signed" | "honored">("signed");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
   async function load() {
-    const r = await fetch(`/api/paiements?from=${from}&to=${to}`, { headers: authHeaders() });
-    const d = await r.json();
-    if (d.ok) { setAccords(d.accords); setLines(d.lines); setGests(d.gestionnaires); setIndeps(d.independants); }
-    setLoading(false);
+    setErr("");
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/invoices`, { headers: authHeaders() });
+      const d = await res.json();
+      if (d.ok) {
+        setInvoices(d.invoices);
+      } else {
+        setErr(d.error ?? "Erreur");
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to]);
 
-  async function post(body: Record<string, unknown>) {
-    const r = await fetch("/api/paiements", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body) });
-    const d = await r.json();
-    if (d.ok) load(); else alert(d.error ?? "Erreur");
-  }
-  function addAccord() {
-    if (!selKey) return;
-    const [kind, ...rest] = selKey.split("|");
-    if (kind === "g") { const g = gests.find((x) => `${x.ccId}` === rest[0]); if (g) post({ action: "add", kind: "gestionnaire", payeeEmail: g.email, ccId: g.ccId, baseEur, soldEur, soldPct, trigger }); }
-    else { post({ action: "add", kind: "telepro", payeeEmail: rest[0], baseEur, soldEur, soldPct, trigger }); }
-    setSelKey("");
-  }
-  const payeeLabel = (a: Accord) => {
-    const g = gests.find((x) => x.email === a.payee_email && x.ccId === a.call_center_id);
-    if (g) return `${g.name} — gestionnaire ${g.ccName}`;
-    const i = indeps.find((x) => x.email === a.payee_email);
-    return i ? `${i.name} — télépro indépendant` : a.payee_email;
-  };
+  useEffect(() => { load(); }, []);
 
-  // Comptabilisation groupée par mois (desc)
-  const byMonth = new Map<string, Line[]>();
-  for (const l of lines) {
-    const k = l.date ? l.date.slice(0, 7) : "?";
-    byMonth.set(k, [...(byMonth.get(k) ?? []), l]);
-  }
-  const months = [...byMonth.keys()].sort().reverse();
-  const monthLabel = (k: string) => { const [y, m] = k.split("-"); return `${["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"][Number(m) - 1]} ${y}`; };
-  const grandTotal = lines.reduce((s, l) => s + l.amount, 0);
+  const filtered = invoices.filter(i => i.status === tab);
+  const pending = invoices.filter(i => i.status === "pending");
+  const paid = invoices.filter(i => i.status === "paid");
+  const totalPending = pending.reduce((sum, i) => sum + i.amount, 0);
+  const totalPaid = paid.reduce((sum, i) => sum + i.amount, 0);
+  const selectedAmount = Array.from(selected).reduce((sum, id) => sum + (invoices.find(i => i.id === id)?.amount || 0), 0);
 
-  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Chargement…</div>;
+  async function checkout(invoiceIds: number[]) {
+    if (invoiceIds.length === 0) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/payments", {
+        method: "POST",
+        headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ invoiceIds }),
+      });
+      const d = await res.json();
+      if (d.ok && d.clientSecret) {
+        alert(`Paiement initié!\n\nMontant: ${eur(d.amount)}\n\nRedirection vers Stripe en cours...`);
+        setSelected(new Set());
+        load();
+      } else {
+        alert(d.error ?? "Erreur");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center", color: MUTED }}>Chargement…</div>;
 
   return (
-    <>
-      <header style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: NAVY }}>Mes paiements</h1>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>Tes accords de rémunération et ce que tu dois, mois par mois.</p>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 13, color: "#64748b" }}>Du</span>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ padding: "7px 9px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 13 }} />
-          <span style={{ fontSize: 13, color: "#64748b" }}>au</span>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ padding: "7px 9px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 13 }} />
-        </div>
-      </header>
+    <Shell active="paiements">
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gap: 24 }}>
+        <header>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>Mes paiements</h1>
+          <p style={{ margin: "8px 0 0", fontSize: 14, color: MUTED }}>Gestion de vos factures et paiements</p>
+        </header>
 
-      {/* Mes accords */}
-      <div style={card}>
-        <h2 style={h2}>💶 Mes accords de rémunération</h2>
-        <p style={hint}>Le prix que TU as négocié. L&apos;accord s&apos;applique EN CONTINU à tous les rendez-vous, tant que tu ne le renégocies pas. Entrée : au mandat signé OU dès que le client honore le RDV. Sortie : € fixes et/ou % du montant négocié quand le véhicule est vendu.</p>
-        {accords.length === 0 && <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 10 }}>Aucun accord — ajoute ton premier ci-dessous.</div>}
-        <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
-          {accords.map((a) => (
-            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#f8fafc", borderRadius: 8, padding: "10px 12px" }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: NAVY }}>{payeeLabel(a)}</span>
-              <span style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, color: "#64748b", flexWrap: "wrap" }}>
-                <select defaultValue={a.trigger_kind} id={`pt-${a.id}`} style={{ padding: "7px 8px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 12.5, background: "#fff" }}>
-                  <option value="signed">Entrée au mandat SIGNÉ</option>
-                  <option value="honored">Entrée dès RDV HONORÉ</option>
-                </select>
-                <input type="number" defaultValue={a.base_eur} id={`pb-${a.id}`} style={nIn} /> €
-                · Sortie (vendu) <input type="number" defaultValue={a.sold_eur} id={`ps-${a.id}`} style={nIn} /> € + <input type="number" defaultValue={a.sold_pct} id={`pp-${a.id}`} style={{ ...nIn, width: 60 }} /> %
-                <button onClick={() => post({ action: "update", id: a.id, baseEur: Number((document.getElementById(`pb-${a.id}`) as HTMLInputElement).value), soldEur: Number((document.getElementById(`ps-${a.id}`) as HTMLInputElement).value), soldPct: Number((document.getElementById(`pp-${a.id}`) as HTMLInputElement).value), trigger: (document.getElementById(`pt-${a.id}`) as HTMLSelectElement).value })} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: NAVY, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>OK</button>
-                <button onClick={() => confirm("Supprimer cet accord ?") && post({ action: "remove", id: a.id })} style={{ padding: "6px 8px", borderRadius: 7, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, cursor: "pointer" }}>✕</button>
-              </span>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: "1px dashed #e5e7eb", paddingTop: 12 }}>
-          <select value={selKey} onChange={(e) => setSelKey(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff", maxWidth: 280 }}>
-            <option value="">— choisir un bénéficiaire —</option>
-            {gests.length > 0 && <optgroup label="Gestionnaires de call center">{gests.map((g) => <option key={`g${g.ccId}`} value={`g|${g.ccId}`}>{g.name} ({g.ccName})</option>)}</optgroup>}
-            {indeps.length > 0 && <optgroup label="Téléprospecteurs indépendants">{indeps.map((i) => <option key={i.email} value={`t|${i.email}`}>{i.name}</option>)}</optgroup>}
-          </select>
-          <select value={trigger} onChange={(e) => setTrigger(e.target.value as "signed" | "honored")} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff" }}>
-            <option value="signed">Entrée au mandat SIGNÉ</option>
-            <option value="honored">Entrée dès RDV HONORÉ</option>
-          </select>
-          <span style={{ fontSize: 12.5, color: "#64748b" }}>Entrée</span><input type="number" value={baseEur} onChange={(e) => setBaseEur(Number(e.target.value))} style={nIn} /><span style={{ fontSize: 12.5, color: "#64748b" }}>€ · Sortie (vendu)</span>
-          <input type="number" value={soldEur} onChange={(e) => setSoldEur(Number(e.target.value))} style={nIn} /><span style={{ fontSize: 12.5, color: "#64748b" }}>€ +</span>
-          <input type="number" value={soldPct} onChange={(e) => setSoldPct(Number(e.target.value))} style={{ ...nIn, width: 60 }} /><span style={{ fontSize: 12.5, color: "#64748b" }}>% du négocié</span>
-          <button disabled={!selKey} onClick={addAccord} style={{ padding: "9px 14px", borderRadius: 8, border: "none", background: PINK, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Ajouter l&apos;accord</button>
-        </div>
-      </div>
+        {err && <div style={{ padding: 16, background: "#fee", border: `1px solid #fcc`, borderRadius: 8, color: RED, fontSize: 14 }}>{err}</div>}
 
-      {/* Comptabilisation */}
-      <div style={card}>
-        <h2 style={h2}>📊 Comptabilisation</h2>
-        <p style={hint}>Comptabilisation en continu selon tes accords (regroupée par mois pour la lecture). Sortie incluse quand le véhicule est vendu.</p>
-        {months.length === 0 && <div style={{ fontSize: 13, color: "#94a3b8" }}>Aucun RDV comptabilisé sur la période.</div>}
-        {months.map((mk) => {
-          const ls = byMonth.get(mk)!;
-          const tot = ls.reduce((s, l) => s + l.amount, 0);
-          return (
-            <div key={mk} style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>{monthLabel(mk)}</span>
-                <span style={{ fontFamily: "'Cabin',sans-serif", fontSize: 16, fontWeight: 700, color: GREEN }}>{eur(tot)}</span>
-              </div>
-              <div style={{ display: "grid", gap: 5 }}>
-                {ls.map((l, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", background: "#f8fafc", borderRadius: 8, padding: "8px 12px" }}>
-                    <span style={{ fontSize: 13, color: NAVY }}>
-                      <strong>{l.client || "Client"}</strong>{l.vehicle ? ` · ${l.vehicle}` : ""}
-                      <span style={{ color: "#94a3b8", fontSize: 12 }}> — {l.date ? new Date(l.date).toLocaleDateString("fr-FR") : ""} · {l.telepro || l.payeeName}{l.signed ? " · ✍️ signé" : " · 🙋 honoré"}{l.sold ? " · 🏁 vendu" : ""}</span>
-                    </span>
-                    <strong style={{ fontSize: 13.5, color: NAVY }}>{eur(l.amount)}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-        {months.length > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "2px solid #e5e7eb", paddingTop: 10, fontFamily: "'Cabin',sans-serif", fontWeight: 700 }}>
-            <span style={{ color: NAVY }}>TOTAL période</span>
-            <span style={{ color: GREEN, fontSize: 18 }}>{eur(grandTotal)}</span>
+        {/* Summary Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
+          <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 20 }}>
+            <div style={{ fontSize: 13, color: MUTED, fontWeight: 600, marginBottom: 8 }}>Solde actuel</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: RED, marginBottom: 4 }}>{eur(totalPending)}</div>
+            <div style={{ fontSize: 12, color: MUTED }}>À régler</div>
+          </div>
+
+          <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 20 }}>
+            <div style={{ fontSize: 13, color: MUTED, fontWeight: 600, marginBottom: 8 }}>Déjà payé</div>
+            <div style={{ fontSize: 32, fontWeight: 700, color: GREEN, marginBottom: 4 }}>{eur(totalPaid)}</div>
+            <div style={{ fontSize: 12, color: MUTED }}>Historique</div>
+          </div>
+
+          <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 20 }}>
+            <div style={{ fontSize: 13, color: MUTED, fontWeight: 600, marginBottom: 8 }}>Statistiques</div>
+            <div style={{ fontSize: 14, color: NAVY, marginBottom: 4 }}><strong>{pending.length}</strong> impayés</div>
+            <div style={{ fontSize: 14, color: NAVY }}><strong>{paid.length}</strong> réglés</div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        {tab === "pending" && pending.length > 0 && (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {selected.size > 0 && (
+              <button
+                onClick={() => checkout(Array.from(selected))}
+                disabled={busy}
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: ORANGE,
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  opacity: busy ? 0.6 : 1,
+                }}
+              >
+                Régler {selectedAmount > 0 ? eur(selectedAmount) : ""}
+              </button>
+            )}
+            <button
+              onClick={() => checkout(pending.map(i => i.id))}
+              disabled={busy}
+              style={{
+                padding: "12px 20px",
+                borderRadius: 8,
+                border: "none",
+                background: PINK,
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                opacity: busy ? 0.6 : 1,
+              }}
+            >
+              Régler le solde ({eur(totalPending)})
+            </button>
           </div>
         )}
+
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 8, borderBottom: `1px solid ${LINE}` }}>
+          <button
+            onClick={() => setTab("pending")}
+            style={{
+              padding: "12px 16px",
+              border: "none",
+              background: "transparent",
+              borderBottom: tab === "pending" ? `3px solid ${PINK}` : "none",
+              color: tab === "pending" ? PINK : MUTED,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            À payer ({pending.length})
+          </button>
+          <button
+            onClick={() => setTab("paid")}
+            style={{
+              padding: "12px 16px",
+              border: "none",
+              background: "transparent",
+              borderBottom: tab === "paid" ? `3px solid ${PINK}` : "none",
+              color: tab === "paid" ? PINK : MUTED,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Réglés ({paid.length})
+          </button>
+        </div>
+
+        {/* Table */}
+        <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, overflow: "hidden" }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: 32, textAlign: "center", color: MUTED }}>
+              {tab === "pending" ? "Aucune facture en attente." : "Aucun paiement réglé."}
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${LINE}`, background: SURFACE }}>
+                    {tab === "pending" && (
+                      <th style={{ padding: "12px 16px", textAlign: "center", fontWeight: 600, color: NAVY }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.size > 0 && selected.size === pending.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelected(new Set(pending.map(i => i.id)));
+                            } else {
+                              setSelected(new Set());
+                            }
+                          }}
+                        />
+                      </th>
+                    )}
+                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: NAVY }}>Date</th>
+                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: NAVY }}>Client</th>
+                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: NAVY }}>Véhicule</th>
+                    <th style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: NAVY }}>Montant</th>
+                    <th style={{ padding: "12px 16px", textAlign: "center", fontWeight: 600, color: NAVY }}>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((inv) => (
+                    <tr key={inv.id} style={{ borderBottom: `1px solid ${LINE}`, background: selected.has(inv.id) ? "#f0f8ff" : "transparent" }}>
+                      {tab === "pending" && (
+                        <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(inv.id)}
+                            onChange={(e) => {
+                              const newSel = new Set(selected);
+                              if (e.target.checked) {
+                                newSel.add(inv.id);
+                              } else {
+                                newSel.delete(inv.id);
+                              }
+                              setSelected(newSel);
+                            }}
+                          />
+                        </td>
+                      )}
+                      <td style={{ padding: "12px 16px", color: NAVY }}>{fmtDate(inv.appointment_date)}</td>
+                      <td style={{ padding: "12px 16px", color: NAVY, fontWeight: 600 }}>{inv.client_name}</td>
+                      <td style={{ padding: "12px 16px", color: MUTED }}>{inv.vehicle || "-"}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "right", color: NAVY, fontWeight: 600 }}>{eur(inv.amount)}</td>
+                      <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: inv.status === "pending" ? "#fee" : "#efe",
+                            color: inv.status === "pending" ? RED : GREEN,
+                          }}
+                        >
+                          {inv.status === "pending" ? "À payer" : "Payé"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
-    </>
+    </Shell>
   );
 }
 
 export default function Page() {
-  return <Shell active="paiements"><Paiements /></Shell>;
+  return <PaiementsPage />;
 }
