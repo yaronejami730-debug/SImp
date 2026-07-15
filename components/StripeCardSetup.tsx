@@ -18,7 +18,12 @@ interface SetupStatus {
   paymentMethodLast4?: string;
 }
 
-function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSuccess: () => void }) {
+interface CardSetupFormProps {
+  clientSecret: string;
+  onSuccess: () => void;
+}
+
+function CardSetupForm({ clientSecret, onSuccess }: CardSetupFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -26,13 +31,15 @@ function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSu
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!stripe || !elements) return;
+    if (!stripe || !elements || !clientSecret) {
+      setError("Formulaire non prêt");
+      return;
+    }
 
     setError("");
     setLoading(true);
 
     try {
-      // Confirm setup with Payment Element
       const result = await stripe.confirmSetup({
         elements,
         clientSecret,
@@ -41,7 +48,6 @@ function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSu
         },
       });
 
-      // Note: confirmSetup redirects on success, so this only runs on error
       if (result.error) {
         setError(result.error.message || "Erreur lors de l'enregistrement");
       }
@@ -50,6 +56,10 @@ function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSu
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!clientSecret) {
+    return <div style={{ color: RED }}>Erreur: Setup Intent non créé</div>;
   }
 
   return (
@@ -63,7 +73,7 @@ function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSu
       {error && <div style={{ fontSize: 13, color: RED }}>{error}</div>}
       <button
         type="submit"
-        disabled={!stripe || loading}
+        disabled={!stripe || loading || !clientSecret}
         style={{
           padding: "12px 20px",
           borderRadius: 8,
@@ -73,7 +83,7 @@ function CardSetupForm({ clientSecret, onSuccess }: { clientSecret: string; onSu
           fontSize: 14,
           fontWeight: 600,
           cursor: "pointer",
-          opacity: !stripe || loading ? 0.6 : 1,
+          opacity: !stripe || loading || !clientSecret ? 0.6 : 1,
         }}
       >
         {loading ? "Enregistrement..." : "Enregistrer"}
@@ -210,7 +220,10 @@ export function StripeCardSetup() {
               {creating ? "Initialisation..." : "Enregistrer ma carte bancaire"}
             </button>
           ) : (
-            <Elements stripe={stripePromise}>
+            <Elements
+              stripe={stripePromise}
+              options={{ clientSecret, appearance: { theme: "stripe" } }}
+            >
               <CardSetupForm
                 clientSecret={clientSecret}
                 onSuccess={() => {
