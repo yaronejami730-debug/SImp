@@ -64,6 +64,7 @@ function CardSetupForm({ clientSecret, onSuccess }: CardSetupFormProps) {
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
+      <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Apple Pay, Google Pay, ou carte bancaire</div>
       <PaymentElement
         options={{
           layout: "tabs",
@@ -195,44 +196,41 @@ export function StripeCardSetup() {
             {deleting ? "Suppression..." : "Supprimer ma carte bancaire"}
           </button>
         </div>
+      ) : showForm && clientSecret ? (
+        <Elements
+          stripe={stripePromise}
+          options={{ clientSecret, appearance: { theme: "stripe" } }}
+        >
+          <CardSetupForm
+            clientSecret={clientSecret}
+            onSuccess={() => {
+              setShowForm(false);
+              loadStatus();
+            }}
+          />
+        </Elements>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <p style={{ margin: 0, fontSize: 13, color: MUTED }}>
             Enregistrez votre carte une fois pour payer plus rapidement. Apple Pay, Google Pay, ou cartes bancaires. Aucun prélèvement.
           </p>
-
-          {!showForm ? (
-            <button
-              onClick={startSetup}
-              disabled={creating}
-              style={{
-                padding: "12px 20px",
-                borderRadius: 8,
-                border: "none",
-                background: PINK,
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: "pointer",
-                opacity: creating ? 0.6 : 1,
-              }}
-            >
-              {creating ? "Initialisation..." : "Enregistrer ma carte bancaire"}
-            </button>
-          ) : (
-            <Elements
-              stripe={stripePromise}
-              options={{ clientSecret, appearance: { theme: "stripe" } }}
-            >
-              <CardSetupForm
-                clientSecret={clientSecret}
-                onSuccess={() => {
-                  setShowForm(false);
-                  loadStatus();
-                }}
-              />
-            </Elements>
-          )}
+          <button
+            onClick={startSetup}
+            disabled={creating}
+            style={{
+              padding: "14px 20px",
+              borderRadius: 8,
+              border: "none",
+              background: PINK,
+              color: "#fff",
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: "pointer",
+              opacity: creating ? 0.6 : 1,
+            }}
+          >
+            {creating ? "Initialisation..." : "🍎 Apple Pay / Carte bancaire"}
+          </button>
         </div>
       )}
     </div>
