@@ -115,15 +115,26 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
           </a>
         )}
         {(user?.role === "admin" || user?.role === "responsable") && (
-          <a
-            href="/comptes"
-            style={{
-              flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
-              background: active === "comptes" ? PINK : "#fff", color: active === "comptes" ? "#fff" : NAVY, border: "1px solid " + (active === "comptes" ? PINK : "#e5e7eb"),
-            }}
-          >
-            Comptes
-          </a>
+          <>
+            <a
+              href="/baremes"
+              style={{
+                flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
+                background: active === "baremes" ? PINK : "#fff", color: active === "baremes" ? "#fff" : NAVY, border: "1px solid " + (active === "baremes" ? PINK : "#e5e7eb"),
+              }}
+            >
+              Barèmes
+            </a>
+            <a
+              href="/comptes"
+              style={{
+                flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
+                background: active === "comptes" ? PINK : "#fff", color: active === "comptes" ? "#fff" : NAVY, border: "1px solid " + (active === "comptes" ? PINK : "#e5e7eb"),
+              }}
+            >
+              Comptes
+            </a>
+          </>
         )}
       </div>
     </div>
