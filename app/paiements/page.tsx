@@ -91,9 +91,36 @@ function PaiementsPage() {
   return (
     <Shell active="paiements">
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gap: 24 }}>
-        <header>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>Mes paiements</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 14, color: MUTED }}>Gestion de vos factures et paiements</p>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>Mes paiements</h1>
+            <p style={{ margin: "8px 0 0", fontSize: 14, color: MUTED }}>Gestion de vos factures et paiements</p>
+          </div>
+          {totalPending > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 200 }}>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Solde à régler</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: RED }}>{eur(totalPending)}</div>
+              </div>
+              <button
+                onClick={() => checkout(pending.map(i => i.id))}
+                disabled={busy || pending.length === 0}
+                style={{
+                  padding: "12px 20px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: PINK,
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  opacity: busy || pending.length === 0 ? 0.6 : 1,
+                }}
+              >
+                {busy ? "Traitement..." : "Régler le solde"}
+              </button>
+            </div>
+          )}
         </header>
 
         {err && <div style={{ padding: 16, background: "#fee", border: `1px solid #fcc`, borderRadius: 8, color: RED, fontSize: 14 }}>{err}</div>}
