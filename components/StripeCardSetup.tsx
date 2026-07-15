@@ -23,73 +23,63 @@ interface CardSetupFormProps {
   onSuccess: () => void;
 }
 
-function CardSetupForm({ clientSecret, onSuccess }: CardSetupFormProps) {
+function SetupRedirectButton({ clientSecret, onLoading }: { clientSecret: string; onLoading: (b: boolean) => void }) {
   const stripe = useStripe();
-  const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements || !clientSecret) {
-      setError("Formulaire non prêt");
-      return;
-    }
+  async function handleRedirect() {
+    if (!stripe || !clientSecret) return;
 
-    setError("");
     setLoading(true);
+    onLoading(true);
 
     try {
+      // Redirect to Stripe Hosted Setup
       const result = await stripe.confirmSetup({
-        elements,
         clientSecret,
         confirmParams: {
           return_url: `${window.location.origin}/paiements?setup=success`,
         },
+        redirect: "always", // Force redirect to Stripe
       });
 
       if (result.error) {
-        setError(result.error.message || "Erreur lors de l'enregistrement");
+        setError(result.error.message || "Erreur lors de la redirection");
+        setLoading(false);
+        onLoading(false);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
       setLoading(false);
+      onLoading(false);
     }
   }
 
-  if (!clientSecret) {
-    return <div style={{ color: RED }}>Erreur: Setup Intent non créé</div>;
-  }
-
   return (
-    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
-      <div style={{ fontSize: 12, color: MUTED, marginBottom: 4 }}>Apple Pay, Google Pay, ou carte bancaire</div>
-      <PaymentElement
-        options={{
-          layout: "tabs",
-          wallets: { applePay: "auto", googlePay: "auto" },
-        }}
-      />
+    <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ fontSize: 12, color: MUTED, background: "#f0f4f8", padding: 12, borderRadius: 8 }}>
+        ℹ️ Vous allez être redirigé vers Stripe pour enregistrer votre carte de manière sécurisée.
+      </div>
       {error && <div style={{ fontSize: 13, color: RED }}>{error}</div>}
       <button
-        type="submit"
+        onClick={handleRedirect}
         disabled={!stripe || loading || !clientSecret}
         style={{
-          padding: "12px 20px",
+          padding: "14px 20px",
           borderRadius: 8,
           border: "none",
           background: PINK,
           color: "#fff",
-          fontSize: 14,
+          fontSize: 15,
           fontWeight: 600,
           cursor: "pointer",
           opacity: !stripe || loading || !clientSecret ? 0.6 : 1,
         }}
       >
-        {loading ? "Enregistrement..." : "Enregistrer"}
+        {loading ? "Redirection vers Stripe..." : "Aller sur Stripe pour enregistrer"}
       </button>
-    </form>
+    </div>
   );
 }
 
@@ -197,22 +187,13 @@ export function StripeCardSetup() {
           </button>
         </div>
       ) : showForm && clientSecret ? (
-        <Elements
-          stripe={stripePromise}
-          options={{ clientSecret, appearance: { theme: "stripe" } }}
-        >
-          <CardSetupForm
-            clientSecret={clientSecret}
-            onSuccess={() => {
-              setShowForm(false);
-              loadStatus();
-            }}
-          />
+        <Elements stripe={stripePromise}>
+          <SetupRedirectButton clientSecret={clientSecret} onLoading={setCreating} />
         </Elements>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <p style={{ margin: 0, fontSize: 13, color: MUTED }}>
-            Enregistrez votre carte une fois pour payer plus rapidement. Apple Pay, Google Pay, ou cartes bancaires. Aucun prélèvement.
+            Enregistrez votre carte une fois pour payer plus rapidement. Aucun prélèvement automatique.
           </p>
           <button
             onClick={startSetup}
@@ -229,7 +210,7 @@ export function StripeCardSetup() {
               opacity: creating ? 0.6 : 1,
             }}
           >
-            {creating ? "Initialisation..." : "🍎 Apple Pay / Carte bancaire"}
+            {creating ? "Initialisation..." : "Enregistrer ma carte bancaire"}
           </button>
         </div>
       )}
