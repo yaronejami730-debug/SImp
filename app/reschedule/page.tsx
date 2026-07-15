@@ -9,13 +9,14 @@ const LOGO = "/logo.png";
 
 export default function Reschedule() {
   const [eid, setEid] = useState("");
-  const [info, setInfo] = useState<{ firstName?: string; startDateTime?: string | null; location?: string } | null>(null);
+  const [info, setInfo] = useState<{ firstName?: string; startDateTime?: string | null; location?: string; commercial?: string } | null>(null);
   const [loadErr, setLoadErr] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ startDateTime: string } | null>(null);
   const [err, setErr] = useState("");
+  const [canForce, setCanForce] = useState(false);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("eid") ?? "";
@@ -33,18 +34,22 @@ export default function Reschedule() {
       .catch(() => setLoadErr("Erreur de chargement."));
   }, []);
 
-  async function submit() {
+  async function submit(force = false) {
     setLoading(true);
     setErr("");
+    setCanForce(false);
     try {
       const res = await fetch("/api/reschedule", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ eid, date, time }),
+        body: JSON.stringify({ eid, date, time, force }),
       });
       const d = await res.json();
       if (d.ok) setDone({ startDateTime: d.startDateTime });
-      else setErr(d.error ?? "Erreur.");
+      else {
+        setErr(d.error ?? "Erreur.");
+        if (d.canForce) setCanForce(true);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erreur.");
     } finally {
@@ -105,22 +110,59 @@ export default function Reschedule() {
           {!loadErr && !done && (
             <>
               {current && (
-                <p style={{ color: "#6b7280", marginTop: 0 }}>
-                  Rendez-vous actuel : <strong style={{ color: "#232323" }}>{current}</strong>
-                  {info?.firstName ? ` — ${info.firstName}` : ""}
-                </p>
+                <div style={{ color: "#6b7280", marginTop: 0, marginBottom: 12 }}>
+                  <p style={{ margin: "0 0 6px" }}>
+                    <strong style={{ color: "#232323" }}>Rendez-vous actuel:</strong><br />
+                    {current}
+                  </p>
+                  {info?.firstName && (
+                    <p style={{ margin: "6px 0" }}>
+                      <strong style={{ color: "#232323" }}>Client:</strong> {info.firstName}
+                    </p>
+                  )}
+                  {info?.commercial && (
+                    <p style={{ margin: "6px 0" }}>
+                      <strong style={{ color: "#232323" }}>Commercial:</strong> {info.commercial}
+                    </p>
+                  )}
+                </div>
               )}
               <p style={{ marginBottom: 16 }}>Choisissez un nouveau créneau :</p>
 
               <SlotPicker value={{ date, time }} onChange={(v) => { setDate(v.date); setTime(v.time); }} />
 
-              {err && <p style={{ color: "#dc2626", marginTop: 14 }}>❌ {err}</p>}
+              {err && (
+                <div style={{ marginTop: 14 }}>
+                  <p style={{ color: "#dc2626", margin: "0 0 12px" }}>❌ {err}</p>
+                  {canForce && (
+                    <button
+                      onClick={() => submit(true)}
+                      disabled={loading}
+                      style={{
+                        width: "100%",
+                        padding: "12px 14px",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        borderRadius: 8,
+                        border: "none",
+                        cursor: loading ? "not-allowed" : "pointer",
+                        background: loading ? "#cbd5e1" : "#f59e0b",
+                        color: "#fff",
+                        fontFamily: "inherit",
+                        marginBottom: 8,
+                      }}
+                    >
+                      {loading ? "Reprogrammation forcée…" : "🔒 Forcer quand même"}
+                    </button>
+                  )}
+                </div>
+              )}
 
               <button
-                onClick={submit}
+                onClick={() => submit(false)}
                 disabled={loading || !date || !time}
                 style={{
-                  marginTop: 22,
+                  marginTop: err ? 8 : 22,
                   width: "100%",
                   padding: "14px 18px",
                   fontSize: 15,

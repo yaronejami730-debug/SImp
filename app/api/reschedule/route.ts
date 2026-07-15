@@ -22,6 +22,7 @@ export async function GET(req: Request) {
       firstName: priv?.clientFirstName ?? "",
       startDateTime: ev.start?.dateTime ?? null,
       location: ev.location ?? "",
+      commercial: priv?.commercial ?? "",
     });
   } catch {
     return NextResponse.json({ error: "Rendez-vous introuvable." }, { status: 404 });
