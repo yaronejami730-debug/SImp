@@ -28,13 +28,15 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST { eid, date, time } -> déplace l'événement Google + mail de confirmation. */
+/** POST { eid, date, time, force? } -> déplace l'événement Google + mail de confirmation.
+ *  force=true: permet la reprogrammation même s'il y a un conflit d'horaire. */
 export async function POST(req: Request) {
   try {
-    const { eid, date, time } = (await req.json()) as {
+    const { eid, date, time, force } = (await req.json()) as {
       eid?: string;
       date?: string;
       time?: string;
+      force?: boolean;
     };
     if (!eid || !date || !time) {
       return NextResponse.json({ error: "Champs manquants." }, { status: 400 });
@@ -45,10 +47,10 @@ export async function POST(req: Request) {
     // Entité du RDV (pour la dispo par entité).
     const existingCc = Number((await getEvent(eid)).extendedProperties?.private?.cc ?? "1");
 
-    // Anti-chevauchement par entité (en ignorant le RDV lui-même).
-    if (!(await isSlotFree(newStart, SLOT_MIN, eid, existingCc))) {
+    // Anti-chevauchement par entité (en ignorant le RDV lui-même), sauf si force=true.
+    if (!force && !(await isSlotFree(newStart, SLOT_MIN, eid, existingCc))) {
       return NextResponse.json(
-        { error: "Ce créneau est déjà pris. Choisissez-en un autre." },
+        { error: "Ce créneau est déjà pris. Choisissez-en un autre.", canForce: true },
         { status: 409 },
       );
     }
