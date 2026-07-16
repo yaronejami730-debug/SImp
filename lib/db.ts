@@ -8,7 +8,9 @@ export function getPool(): Pool {
     pool = new Pool({
       connectionString: process.env.SUPABASE_DB_URL,
       ssl: { rejectUnauthorized: false },
-      max: 3,
+      max: 10, // Supabase session mode limit: 15. Use 10 to leave margin
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
     });
   }
   return pool;
