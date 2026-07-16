@@ -23,11 +23,18 @@ export function StripeCardSetup() {
 
   async function loadStatus() {
     try {
+      console.log("[loadStatus] Fetching card status...");
       const res = await fetch("/api/stripe-setup", { headers: authHeaders() });
       const data = await res.json();
+      console.log("[loadStatus] Response:", data);
       if (data.ok) {
         setStatus(data);
+        console.log("[loadStatus] Status updated:", data.hasPaymentMethod ? "Card found" : "No card");
+      } else {
+        console.error("[loadStatus] Error:", data.error);
       }
+    } catch (e) {
+      console.error("[loadStatus] Fetch failed:", e);
     } finally {
       setLoading(false);
     }

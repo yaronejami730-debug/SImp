@@ -13,7 +13,10 @@ export default function Shell({ active, children, wide }: { active: string; chil
 
   useEffect(() => {
     applyTheme(); // couleurs de la franchise de l'utilisateur connecté
-    setAuthed(!!getToken());
+    const token = getToken();
+    console.log("[Shell] Mount - Token exists:", !!token);
+    if (!token) console.log("[Shell] localStorage keys:", Object.keys(localStorage));
+    setAuthed(!!token);
     setReady(true);
   }, []);
 
