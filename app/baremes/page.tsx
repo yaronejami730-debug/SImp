@@ -4,238 +4,232 @@ import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 
-const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
-const MUTED = "#64748b";
-const LINE = "#e8ebef";
+const GRAY = "#64748b";
 const GREEN = "#16a34a";
 const RED = "#dc2626";
+const LINE = "#e8ebef";
 
-type Comp = {
+interface CallCenter { id: number; name: string; }
+interface Commercial { id: number; name: string; email: string; }
+interface Agreement {
   id: number;
-  commercial_email: string;
+  call_center_name: string;
   commercial_name: string;
-  commission_base: number;
-  commission_pct: number;
-  call_center_share_pct: number;
-  total_signed_rdv: number;
-  total_owed: number;
-  total_paid: number;
-};
+  commercial_email: string;
+  base_amount: number;
+  gestionnaire_amount: number;
+  call_center_amount: number;
+  status: "pending_confirmation" | "active" | "rejected";
+  confirmed_at: string | null;
+  created_at: string;
+}
 
-const inp: React.CSSProperties = { padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${LINE}`, fontSize: 14, fontFamily: "inherit" };
-const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-
-function BaremesPage() {
-  const [comps, setComps] = useState<Comp[]>([]);
-  const [err, setErr] = useState("");
+export default function BaremesPage() {
+  const [callCenters, setCallCenters] = useState<CallCenter[]>([]);
+  const [selectedCC, setSelectedCC] = useState<string>("");
+  const [commercials, setCommercials] = useState<Commercial[]>([]);
+  const [selectedCommercial, setSelectedCommercial] = useState<string>("");
+  const [baseAmount, setBaseAmount] = useState("");
+  const [gestionnaireAmount, setGestionnaireAmount] = useState("");
+  const [callCenterAmount, setCallCenterAmount] = useState("");
+  const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [edit, setEdit] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  // Form state
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [base, setBase] = useState(50);
-  const [pct, setPct] = useState(10);
-  const [share, setShare] = useState(50);
+  useEffect(() => {
+    loadCallCenters();
+    loadAgreements();
+  }, []);
 
-  async function load() {
-    setErr("");
-    setLoading(true);
+  useEffect(() => {
+    if (selectedCC) loadCommercials();
+  }, [selectedCC]);
+
+  async function loadCallCenters() {
     try {
-      const res = await fetch("/api/commercial-compensation", { headers: authHeaders() });
-      const d = await res.json();
-      if (d.ok) {
-        setComps(d.compensations);
-      } else {
-        setErr(d.error ?? "Erreur");
-      }
+      const res = await fetch("/api/call-centers", { headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) setCallCenters(data.callCenters || []);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Erreur");
+      console.error("Failed to load call centers:", e);
+    }
+  }
+
+  async function loadCommercials() {
+    try {
+      const res = await fetch(`/api/users?callCenterId=${selectedCC}&role=commercial`, { headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) setCommercials(data.users || []);
+    } catch (e) {
+      console.error("Failed to load commercials:", e);
+    }
+  }
+
+  async function loadAgreements() {
+    try {
+      const res = await fetch(`/api/pricing-agreements`, { headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) setAgreements(data.agreements || []);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, []);
+  async function handleCreate() {
+    if (!selectedCC || !selectedCommercial || !baseAmount || gestionnaireAmount === "" || callCenterAmount === "") {
+      alert("Tous les champs obligatoires");
+      return;
+    }
 
-  async function saveComp() {
-    if (!name.trim() || !email.trim()) return;
-    setBusy(true);
+    setCreating(true);
     try {
-      const res = await fetch("/api/commercial-compensation", {
+      const res = await fetch("/api/pricing-agreements", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ commercialName: name, commercialEmail: email, commissionBase: base, commissionPct: pct, callCenterSharePct: share }),
+        body: JSON.stringify({
+          callCenterId: parseInt(selectedCC),
+          commercialId: parseInt(selectedCommercial),
+          baseAmount: parseFloat(baseAmount),
+          gestionnaireAmount: parseFloat(gestionnaireAmount),
+          callCenterAmount: parseFloat(callCenterAmount),
+        }),
       });
-      const d = await res.json();
-      if (d.ok) {
-        setName("");
-        setEmail("");
-        setBase(50);
-        setPct(10);
-        setShare(50);
-        setEdit(null);
-        load();
+
+      const data = await res.json();
+      if (data.ok) {
+        alert("Accord créé avec succès");
+        setBaseAmount("");
+        setGestionnaireAmount("");
+        setCallCenterAmount("");
+        setSelectedCommercial("");
+        loadAgreements();
       } else {
-        alert(d.error ?? "Erreur");
+        alert(data.error || "Erreur lors de la création");
       }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erreur");
     } finally {
-      setBusy(false);
+      setCreating(false);
     }
   }
 
-  async function delComp(id: number) {
-    if (!confirm("Supprimer ce barème ?")) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/commercial-compensation?id=${id}`, { method: "DELETE", headers: authHeaders() });
-      const d = await res.json();
-      if (d.ok) {
-        load();
-      } else {
-        alert(d.error ?? "Erreur");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (loading) return <div style={{ padding: 40, textAlign: "center", color: MUTED }}>Chargement…</div>;
+  if (loading) return <Shell active="baremes"><div style={{ padding: 40, textAlign: "center" }}>Chargement...</div></Shell>;
 
   return (
-    <Shell active="baremes">
-      <div style={{ maxWidth: 1000, margin: "0 auto", display: "grid", gap: 24 }}>
-        <header>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>Barèmes commerciaux</h1>
-          <p style={{ margin: "8px 0 0", fontSize: 14, color: MUTED }}>Configuration de la rémunération : base € + % négociation + répartition</p>
-        </header>
+    <Shell active="baremes" wide>
+      <div style={{ maxWidth: 900 }}>
+        <div style={{ background: "#fff", borderRadius: 12, padding: 24, marginBottom: 24, border: `1px solid ${LINE}` }}>
+          <h2 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700 }}>Créer un accord</h2>
 
-        {err && <div style={{ padding: 16, background: "#fee", border: `1px solid #fcc`, borderRadius: 8, color: RED, fontSize: 14 }}>{err}</div>}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Call Center</label>
+            <select
+              value={selectedCC}
+              onChange={(e) => {
+                setSelectedCC(e.target.value);
+                setSelectedCommercial("");
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 6,
+                border: `1px solid ${LINE}`,
+                fontSize: 14,
+              }}
+            >
+              <option value="">Sélectionner un call center</option>
+              {callCenters.map((cc) => (
+                <option key={cc.id} value={cc.id}>
+                  {cc.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {/* Form ajout/edit */}
-        <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 24 }}>
-          <h2 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>
-            {edit ? "Modifier" : "Ajouter"} un barème
-          </h2>
-          <div style={{ display: "grid", gap: 14 }}>
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: NAVY, marginBottom: 6 }}>Nom commercial</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={{ ...inp, width: "100%" }} placeholder="ex: Raphaël Dahan" />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: NAVY, marginBottom: 6 }}>Email (unique)</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ ...inp, width: "100%" }} placeholder="ex: raphael@example.com" disabled={!!edit} />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14 }}>
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: NAVY, marginBottom: 6 }}>Base € / signé</label>
-                <input type="number" value={base} onChange={(e) => setBase(Number(e.target.value))} style={{ ...inp, width: "100%" }} min="0" max="500" />
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: NAVY, marginBottom: 6 }}>% négociation</label>
-                <input type="number" value={pct} onChange={(e) => setPct(Number(e.target.value))} style={{ ...inp, width: "100%" }} min="0" max="100" />
-              </div>
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: NAVY, marginBottom: 6 }}>% Call Center</label>
-                <input type="number" value={share} onChange={(e) => setShare(Number(e.target.value))} style={{ ...inp, width: "100%" }} min="0" max="100" />
-                <p style={{ fontSize: 11, color: MUTED, margin: "6px 0 0" }}>Reste → Gestionnaire</p>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={saveComp}
-                disabled={busy || !name.trim() || !email.trim()}
+          {selectedCC && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Commercial</label>
+              <select
+                value={selectedCommercial}
+                onChange={(e) => setSelectedCommercial(e.target.value)}
                 style={{
-                  padding: "12px 24px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: PINK,
-                  color: "#fff",
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 6,
+                  border: `1px solid ${LINE}`,
                   fontSize: 14,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  opacity: busy || !name.trim() ? 0.6 : 1,
                 }}
               >
-                {edit ? "Enregistrer" : "Ajouter"}
-              </button>
-              {edit && (
-                <button onClick={() => setEdit(null)} style={{ padding: "12px 24px", borderRadius: 8, border: `1.5px solid ${LINE}`, background: "#fff", color: NAVY, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                  Annuler
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Liste */}
-        <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 24 }}>
-          <h2 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>Commerciaux ({comps.length})</h2>
-          {comps.length === 0 ? (
-            <p style={{ color: MUTED, fontSize: 14 }}>Aucun barème configuré.</p>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {comps.map((c) => (
-                <div key={c.id} style={{ border: `1px solid ${LINE}`, borderRadius: 8, padding: 16, display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center" }}>
-                  <div>
-                    <h3 style={{ margin: "0 0 8px", fontSize: 15, fontWeight: 600, color: NAVY }}>{c.commercial_name}</h3>
-                    <p style={{ margin: 0, fontSize: 13, color: MUTED }}>{c.commercial_email}</p>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,auto)", gap: 20, marginTop: 12, fontSize: 13 }}>
-                      <div>
-                        <span style={{ color: MUTED, fontSize: 12 }}>Base</span>
-                        <br />
-                        <strong style={{ color: NAVY }}>{c.commission_base} €</strong>
-                      </div>
-                      <div>
-                        <span style={{ color: MUTED, fontSize: 12 }}>% Négo</span>
-                        <br />
-                        <strong style={{ color: NAVY }}>{c.commission_pct}%</strong>
-                      </div>
-                      <div>
-                        <span style={{ color: MUTED, fontSize: 12 }}>Répartition</span>
-                        <br />
-                        <strong style={{ color: NAVY }}>CC {c.call_center_share_pct}% | G {100 - c.call_center_share_pct}%</strong>
-                      </div>
-                      <div>
-                        <span style={{ color: MUTED, fontSize: 12 }}>Signés</span>
-                        <br />
-                        <strong style={{ color: GREEN }}>{c.total_signed_rdv}</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <button
-                      onClick={() => {
-                        setName(c.commercial_name);
-                        setEmail(c.commercial_email);
-                        setBase(c.commission_base);
-                        setPct(c.commission_pct);
-                        setShare(c.call_center_share_pct);
-                        setEdit(c.id);
-                      }}
-                      style={{ padding: "8px 16px", borderRadius: 6, border: `1.5px solid ${PINK}`, background: "#fff", color: PINK, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-                    >
-                      Modifier
-                    </button>
-                    <button
-                      onClick={() => delComp(c.id)}
-                      style={{ padding: "8px 16px", borderRadius: 6, border: `1.5px solid ${RED}`, background: "#fff", color: RED, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </div>
-              ))}
+                <option value="">Sélectionner un commercial</option>
+                {commercials.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.email})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
-        </section>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Base (Commercial)</label>
+              <input type="number" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} placeholder="60" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Gestionnaire</label>
+              <input type="number" value={gestionnaireAmount} onChange={(e) => setGestionnaireAmount(e.target.value)} placeholder="30" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Call Center</label>
+              <input type="number" value={callCenterAmount} onChange={(e) => setCallCenterAmount(e.target.value)} placeholder="30" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
+            </div>
+          </div>
+
+          <button onClick={handleCreate} disabled={creating || !selectedCommercial} style={{ padding: "12px 20px", borderRadius: 6, border: "none", background: PINK, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: creating ? 0.6 : 1 }}>
+            {creating ? "Création..." : "Créer l'accord"}
+          </button>
+        </div>
+
+        <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: `1px solid ${LINE}` }}>
+          <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Accords ({agreements.length})</h2>
+
+          {agreements.length === 0 ? (
+            <p style={{ color: GRAY, fontSize: 14 }}>Aucun accord créé</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #e8ebef" }}>
+                    <th style={{ textAlign: "left", padding: "12px 0", fontWeight: 600 }}>Call Center</th>
+                    <th style={{ textAlign: "left", padding: "12px 0", fontWeight: 600 }}>Commercial</th>
+                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Base</th>
+                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Gest.</th>
+                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>CC</th>
+                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agreements.map((a) => (
+                    <tr key={a.id} style={{ borderBottom: "1px solid #e8ebef" }}>
+                      <td style={{ padding: "12px 0" }}>{a.call_center_name}</td>
+                      <td style={{ padding: "12px 0" }}>{a.commercial_name}</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>{a.base_amount.toFixed(2)}€</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{a.gestionnaire_amount.toFixed(2)}€</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{a.call_center_amount.toFixed(2)}€</td>
+                      <td style={{ textAlign: "center", padding: "12px 0" }}>
+                        <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: a.status === "active" ? "#dffcf0" : a.status === "pending_confirmation" ? "#fef3c7" : "#fee2e2", color: a.status === "active" ? GREEN : a.status === "pending_confirmation" ? "#92400e" : RED }}>
+                          {a.status === "pending_confirmation" ? "En attente" : a.status === "active" ? "Actif" : "Rejeté"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </Shell>
   );
 }
-
-export default BaremesPage;
