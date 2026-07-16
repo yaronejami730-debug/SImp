@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { loadStripe, Stripe as StripeType } from "@stripe/stripe-js";
+import { Elements, useStripe, useElements } from "@stripe/react-stripe-js";
 import { authHeaders } from "@/lib/client";
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY || "");
+let stripePromise: ReturnType<typeof loadStripe> | null = null;
+
+function getStripePromise() {
+  if (!stripePromise && process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY) {
+    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY);
+  }
+  return stripePromise;
+}
+
 const PINK = "var(--brand-primary)";
 const MUTED = "#64748b";
 const GREEN = "#16a34a";
@@ -187,7 +195,7 @@ export function StripeCardSetup() {
           </button>
         </div>
       ) : showForm && clientSecret ? (
-        <Elements stripe={stripePromise}>
+        <Elements stripe={getStripePromise()!}>
           <SetupRedirectButton clientSecret={clientSecret} onLoading={setCreating} />
         </Elements>
       ) : (
