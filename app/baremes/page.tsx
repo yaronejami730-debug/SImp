@@ -36,21 +36,52 @@ export default function BaremesPage() {
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [userRole, setUserRole] = useState<string>("");
+  const [userCC, setUserCC] = useState<number>(0);
 
   useEffect(() => {
-    loadCallCenters();
+    loadUser();
     loadAgreements();
   }, []);
+
+  useEffect(() => {
+    if (userRole && userCC) loadCallCenters();
+  }, [userRole, userCC]);
 
   useEffect(() => {
     if (selectedCC) loadCommercials();
   }, [selectedCC]);
 
+  async function loadUser() {
+    try {
+      const res = await fetch("/api/auth/me", { headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) {
+        setUserRole(data.role);
+        setUserCC(data.callCenterId);
+        // Auto-select if gestionnaire
+        if (data.role === "gestionnaire") {
+          setSelectedCC(String(data.callCenterId));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load user:", e);
+    }
+  }
+
   async function loadCallCenters() {
     try {
       const res = await fetch("/api/callcenters", { headers: authHeaders() });
       const data = await res.json();
-      if (data.ok) setCallCenters(data.callcenters || []);
+      if (data.ok) {
+        const ccs = data.callcenters || [];
+        // Filter if gestionnaire
+        if (userRole === "gestionnaire") {
+          setCallCenters(ccs.filter((cc: CallCenter) => cc.id === userCC));
+        } else {
+          setCallCenters(ccs);
+        }
+      }
     } catch (e) {
       console.error("Failed to load call centers:", e);
     }
