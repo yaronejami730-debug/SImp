@@ -9,6 +9,7 @@ import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { signBooking } from "@/lib/auth";
 import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
 import { getUserByEmail } from "@/lib/users";
+import { isFrenchMobile } from "@/lib/parse";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -131,6 +132,9 @@ export async function PATCH(req: Request, { params }: Params) {
       await patchVehicle(id, { carBrand: body.carBrand?.trim(), carModel: body.carModel?.trim(), carFinish: body.carFinish?.trim(), immatriculation: body.immatriculation?.trim().toUpperCase() });
     }
     if (hasContact) {
+      if (body.phone !== undefined && body.phone.trim() && !isFrenchMobile(body.phone)) {
+        return NextResponse.json({ error: "Numéro refusé : uniquement les mobiles 06 / 07 (pas de fixe ni passerelle)." }, { status: 400 });
+      }
       await patchContact(id, { phone: body.phone?.trim(), email: body.email?.trim() });
     }
     if (body.note !== undefined) {

@@ -228,6 +228,10 @@ function Home() {
   }, [form.phone, form.listingUrl]);
 
   async function submit(force = false) {
+    // Même règle que le serveur : mobiles 06/07 uniquement (les fixes/passerelles ne se rappellent pas).
+    const d = form.phone.replace(/\D/g, "");
+    const mobileOk = /^0[67]\d{8}$/.test(d) || /^33[67]\d{8}$/.test(d) || /^0033[67]\d{8}$/.test(d);
+    if (!mobileOk) { setResult({ ok: false, error: "Numéro refusé : demande au client son 06 ou 07 (les 01/03/04/05 sont des numéros passerelle, impossibles à rappeler)." }); return; }
     setLoading(true);
     setResult(null);
     try {
@@ -272,6 +276,10 @@ function Home() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
           <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="jean.dupont@email.com" /></div>
           <div><label style={labelStyle}>Téléphone du client</label><input style={inputStyle} type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="06 12 34 56 78" /></div>
+        </div>
+        {/* ⚠️ Écriteau : numéros passerelle des plateformes */}
+        <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fffbeb", border: "1.5px solid #fbbf24", fontSize: 13, color: "#92400e", lineHeight: 1.55 }}>
+          <strong>⚠️ HYPER IMPORTANT — numéro de téléphone :</strong> LaCentrale (et d&apos;autres plateformes) peut afficher un numéro qui commence par <strong>01, 03, 04, 05…</strong> C&apos;est un <strong>numéro fixe / passerelle</strong> : impossible de rappeler le client derrière. Lors de la prise de rendez-vous, <strong>demande toujours au client son 06 ou son 07</strong>. Le formulaire refuse tout autre numéro.
         </div>
         <div>
           <label style={labelStyle}>Lien de l&apos;annonce <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label>

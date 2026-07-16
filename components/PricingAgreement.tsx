@@ -172,23 +172,13 @@ export function PricingAgreement() {
               <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: "#232323" }}>
                 {active.call_center_name}
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", gap: 20, fontSize: 13, marginTop: 8 }}>
-                <div>
-                  <span style={{ color: GRAY, fontSize: 12 }}>Base (vous)</span>
-                  <br />
-                  <strong style={{ color: GREEN }}>{Number(active.base_amount).toFixed(2)}€</strong>
-                </div>
-                <div>
-                  <span style={{ color: GRAY, fontSize: 12 }}>Gestionnaire</span>
-                  <br />
-                  <strong>{Number(active.gestionnaire_amount).toFixed(2)}€</strong>
-                </div>
-                <div>
-                  <span style={{ color: GRAY, fontSize: 12 }}>Call Center</span>
-                  <br />
-                  <strong>{Number(active.call_center_amount).toFixed(2)}€</strong>
-                </div>
-              </div>
+              {/* Le commercial ne voit QUE ce qu'il paie — jamais la répartition interne. */}
+              <p style={{ margin: 0, fontSize: 15, color: "#232323" }}>
+                Vous payez <strong style={{ fontSize: 18 }}>{Number(active.base_amount).toFixed(0)} €</strong> par rendez-vous
+              </p>
+              <p style={{ margin: "6px 0 0", fontSize: 12.5, color: GRAY }}>
+                Type : rendez-vous {(active as unknown as { trigger_kind?: string }).trigger_kind === "honored" ? "honoré (client venu)" : "signé"}
+              </p>
               <p style={{ margin: "8px 0 0", fontSize: 12, color: GREEN, fontWeight: 600 }}>
                 ✓ Accord confirmé
               </p>

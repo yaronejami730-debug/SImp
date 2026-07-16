@@ -32,6 +32,12 @@ export const appointmentSchema = z.object({
 
 export type Appointment = z.infer<typeof appointmentSchema>;
 
+/** Mobile français uniquement : 06/07 (ou +33 6 / +33 7). Fixes 01/03/04/05... refusés. */
+export function isFrenchMobile(phone?: string): boolean {
+  const d = (phone ?? "").replace(/\D/g, "");
+  return /^0[67]\d{8}$/.test(d) || /^33[67]\d{8}$/.test(d) || /^0033[67]\d{8}$/.test(d);
+}
+
 /** Lieu de rendez-vous fixe (toujours le même). */
 export const DEFAULT_LOCATION =
   process.env.DEFAULT_LOCATION ?? "3 rue Bélidor, 75017 Paris";

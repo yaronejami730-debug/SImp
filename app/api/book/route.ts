@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyBooking } from "@/lib/auth";
 import { buildAppointment } from "@/lib/parse";
+import { isFrenchMobile } from "@/lib/parse";
 import { createEvent, isSlotFree, commercialConflict, halfDayModalityBlocked } from "@/lib/google";
 import { SLOT_MIN } from "@/lib/slots";
 import { sendEmail } from "@/lib/brevo";
@@ -44,6 +45,9 @@ export async function POST(req: Request) {
 
     if (!body.firstName?.trim() || !body.lastName?.trim() || !body.phone?.trim() || !email || !date || !time) {
       return NextResponse.json({ error: "Champs manquants." }, { status: 400 });
+    }
+    if (!isFrenchMobile(body.phone)) {
+      return NextResponse.json({ error: "Numéro invalide : merci d'indiquer un mobile en 06 ou 07." }, { status: 400 });
     }
 
     const appt = buildAppointment({

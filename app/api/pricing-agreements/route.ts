@@ -52,7 +52,15 @@ export async function GET(req: Request) {
     query += ` ORDER BY pa.created_at DESC`;
 
     const res = await pool.query(query, params);
-    return NextResponse.json({ ok: true, agreements: res.rows });
+    // Cloisonnement : le COMMERCIAL ne reçoit jamais la répartition (parts gestionnaire /
+    // call center) ; le RESPONSABLE ne reçoit que la part call center. Gestionnaire/admin = tout.
+    let rows = res.rows;
+    if (s.role === "collab" && s.isCommercial) {
+      rows = rows.map((r) => ({ ...r, gestionnaire_amount: null, call_center_amount: null }));
+    } else if (s.role === "responsable") {
+      rows = rows.map((r) => ({ ...r, gestionnaire_amount: null, base_amount: null }));
+    }
+    return NextResponse.json({ ok: true, agreements: rows });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 500 });
   }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildAppointment, type AppointmentInput } from "@/lib/parse";
+import { buildAppointment, isFrenchMobile, type AppointmentInput } from "@/lib/parse";
 import { createEvent, createGoogleContact, commercialConflict, halfDayModalityBlocked } from "@/lib/google";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
@@ -39,6 +39,11 @@ export async function POST(req: Request) {
         { error: `Champs manquants : ${missing.join(", ")}.` },
         { status: 400 },
       );
+    }
+
+    // Mobiles uniquement (06/07) : les 01/03/04/05 sont des fixes/passerelles, impossibles à rappeler.
+    if (!isFrenchMobile(body.phone)) {
+      return NextResponse.json({ error: "Numéro refusé : demande au client son 06 ou 07 (les 01/03/04/05 sont des numéros passerelle, on ne peut pas rappeler)." }, { status: 400 });
     }
 
     // Téléprospecteur par défaut = l'utilisateur connecté (créateur du RDV).

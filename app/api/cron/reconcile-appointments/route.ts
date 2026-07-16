@@ -35,6 +35,17 @@ export async function POST(req: Request) {
     } while (pageToken);
     return NextResponse.json({ ok: true, upserted, deleted });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
+    const msg = e instanceof Error ? e.message : String(e);
+    // 🚨 Token Google mort (mode Test = 7 jours) : alerte immédiate à l'admin,
+    // sinon les écritures échouent silencieusement pendant des jours.
+    if (/invalid_grant/i.test(msg)) {
+      try {
+        const { notify } = await import("@/lib/notifications");
+        await notify(["yaronejami730@gmail.com"], "token_dead",
+          "🚨 Token Google expiré — écritures RDV bloquées",
+          "Relance `node get-token.mjs` + push Vercel, ou PUBLIE l'app Google (fix définitif).");
+      } catch { /* best effort */ }
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
