@@ -37,8 +37,12 @@ function SetupRedirectButton({ clientSecret, onLoading }: { clientSecret: string
   const [error, setError] = useState("");
 
   async function handleRedirect() {
-    if (!stripe || !clientSecret) return;
+    if (!stripe || !clientSecret) {
+      setError("Stripe ou clientSecret non disponible");
+      return;
+    }
 
+    console.log("[Setup Redirect] Confirming with clientSecret:", clientSecret.substring(0, 20) + "...");
     setLoading(true);
     onLoading(true);
 
@@ -49,15 +53,18 @@ function SetupRedirectButton({ clientSecret, onLoading }: { clientSecret: string
         confirmParams: {
           return_url: `${window.location.origin}/paiements?setup=success`,
         },
-        redirect: "always", // Force redirect to Stripe
+        redirect: "always",
       });
 
+      console.log("[Setup Redirect] Result:", result);
       if (result.error) {
+        console.error("[Setup Redirect] Error:", result.error);
         setError(result.error.message || "Erreur lors de la redirection");
         setLoading(false);
         onLoading(false);
       }
     } catch (e) {
+      console.error("[Setup Redirect] Exception:", e);
       setError(e instanceof Error ? e.message : "Erreur");
       setLoading(false);
       onLoading(false);
