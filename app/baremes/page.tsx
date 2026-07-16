@@ -54,7 +54,7 @@ export default function BaremesPage() {
 
   async function loadUser() {
     try {
-      const res = await fetch("/api/auth/me", { headers: authHeaders() });
+      const res = await fetch("/api/me", { headers: authHeaders() });
       const data = await res.json();
       if (data.ok) {
         setUserRole(data.role);
@@ -74,7 +74,7 @@ export default function BaremesPage() {
       const res = await fetch("/api/callcenters", { headers: authHeaders() });
       const data = await res.json();
       if (data.ok) {
-        const ccs = data.callcenters || [];
+        const ccs = data.callCenters || data.callcenters || [];
         // Filter if gestionnaire
         if (userRole === "gestionnaire") {
           setCallCenters(ccs.filter((cc: CallCenter) => cc.id === userCC));
@@ -91,7 +91,7 @@ export default function BaremesPage() {
     try {
       const res = await fetch(`/api/users?callCenterId=${selectedCC}&role=commercial`, { headers: authHeaders() });
       const data = await res.json();
-      if (data.ok) setCommercials(data.users || []);
+      if (data.ok) setCommercials((data.users || []).filter((u: { is_commercial?: boolean }) => u.is_commercial));
     } catch (e) {
       console.error("Failed to load commercials:", e);
     }

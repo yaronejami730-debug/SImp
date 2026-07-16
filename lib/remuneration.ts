@@ -54,6 +54,12 @@ export function linesFor(a: AppointmentItem, accords: Accord[]): RemuLine[] {
     // Portée call center : le RDV appartient à ce call center.
     if (r.call_center_id != null) {
       if (cc !== r.call_center_id) continue;
+      // Portée affinée (accord de gestionnaire) : cc ET commercial précis.
+      if (r.commercial_email) {
+        const okC = (commEmail && commEmail === r.commercial_email) ||
+          (!commEmail && commName && commName === tok(r.commercial_email.split("@")[0]));
+        if (!okC) continue;
+      }
     } else if (r.commercial_email) {
       // Portée commercial : le RDV est géré par ce commercial.
       const matchEmail = commEmail && commEmail === r.commercial_email;

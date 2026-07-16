@@ -45,6 +45,25 @@ export async function GET(req: Request) {
     }
     const independants = bookers.filter((b) => !b.callCenter).map((b) => ({ email: b.email, name: b.name }));
 
+    // Call centers dont JE suis le GESTIONNAIRE : je négocie les accords commercial <-> call.
+    const allAccords = await listAccords();
+    const managed = [] as { ccId: number; ccName: string; responsable: string; commercials: { email: string; name: string }[]; deals: { commercial: string; commercialName: string; callEur: number; gestEur: number; trigger: string; soldEur: number; soldPct: number; ids: number[] }[] }[];
+    for (const c of ccs) {
+      if (c.id === 1 || (c.gestionnaire_email ?? "").toLowerCase() !== me) continue;
+      const coms = await commercialsForCallCenterInherited(c.id);
+      // Regroupe les accords négociés (payer = un commercial, portée cc + commercial)
+      const dealMap = new Map<string, { commercial: string; commercialName: string; callEur: number; gestEur: number; trigger: string; soldEur: number; soldPct: number; ids: number[] }>();
+      for (const a of allAccords) {
+        if (a.call_center_id !== c.id || !a.payer_email || !a.commercial_email) continue;
+        const d = dealMap.get(a.commercial_email) ?? { commercial: a.commercial_email, commercialName: nameOf(a.commercial_email), callEur: 0, gestEur: 0, trigger: a.trigger_kind, soldEur: 0, soldPct: 0, ids: [] };
+        if (a.payee_kind === "call_center") d.callEur = a.base_eur;
+        if (a.payee_kind === "gestionnaire") { d.gestEur = a.base_eur; d.soldEur = a.sold_eur; d.soldPct = a.sold_pct; d.trigger = a.trigger_kind; }
+        d.ids.push(a.id);
+        dealMap.set(a.commercial_email, d);
+      }
+      managed.push({ ccId: c.id, ccName: c.name, responsable: c.responsable_email ?? "", commercials: coms.map((x) => ({ email: x.email.toLowerCase(), name: x.name })), deals: [...dealMap.values()] });
+    }
+
     // Comptabilisation : lignes dues sur la plage (RDV signés non annulés, mandat non retiré).
     const appts = (await listAppointments(new Date(fromMs - 86400e3), new Date(toMs + 86400e3)))
       .filter((a) => a.startDateTime && !a.cancelled) // le moteur applique le déclencheur de chaque accord (signé / honoré)
@@ -56,7 +75,7 @@ export async function GET(req: Request) {
       telepro: l.appt.teleprospector || "", sold: !!l.appt.vehicleSold, signed: l.appt.signStatus === "signed",
     }));
 
-    return NextResponse.json({ ok: true, from: fromStr, to: toStr, accords, gestionnaires, independants, lines });
+    return NextResponse.json({ ok: true, from: fromStr, to: toStr, accords, gestionnaires, independants, lines, managed });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
@@ -72,6 +91,45 @@ export async function POST(req: Request) {
     const me = s.email.toLowerCase();
     const b = (await req.json()) as { action?: string; kind?: "gestionnaire" | "telepro"; payeeEmail?: string; ccId?: number; baseEur?: number; soldEur?: number; soldPct?: number; trigger?: "signed" | "honored"; id?: number };
     const pool = getPool();
+    // GESTIONNAIRE : crée l'accord commercial <-> call center qu'il a négocié.
+    // { action:"brokerDeal", ccId, commercialEmail, trigger, callEur (part call center), gestEur (ma part), soldEur, soldPct }
+    if (b.action === "brokerDeal") {
+      const bb = b as unknown as { ccId?: number; commercialEmail?: string; trigger?: string; callEur?: number; gestEur?: number; soldEur?: number; soldPct?: number };
+      if (!bb.ccId || !bb.commercialEmail?.trim()) return NextResponse.json({ error: "Call center et commercial requis." }, { status: 400 });
+      const { listCallCenters: lcc } = await import("@/lib/callcenters");
+      const cc = (await lcc()).find((c) => c.id === Number(bb.ccId));
+      if (!cc || (cc.gestionnaire_email ?? "").toLowerCase() !== me) {
+        return NextResponse.json({ error: "Tu n'es pas le gestionnaire de ce call center." }, { status: 403 });
+      }
+      const payer = bb.commercialEmail.trim().toLowerCase();
+      const trig = bb.trigger === "honored" ? "honored" : "signed";
+      // Remplace l'accord existant de ce couple (renégociation = désactivation + recréation).
+      await pool.query(`update remuneration_accords set active=false where call_center_id=$1 and lower(commercial_email)=$2 and payer_email<>''`, [cc.id, payer]);
+      if (Number(bb.callEur ?? 0) > 0 && cc.responsable_email) {
+        await pool.query(
+          `insert into remuneration_accords (call_center_id, commercial_email, payee_email, payee_kind, base_eur, trigger_kind, payer_email, label)
+           values ($1,$2,$3,'call_center',$4,$5,$6,$7)`,
+          [cc.id, payer, cc.responsable_email.toLowerCase(), Number(bb.callEur), trig, payer, `Accord négocié par ${s.name} (gestionnaire ${cc.name})`],
+        );
+      }
+      await pool.query(
+        `insert into remuneration_accords (call_center_id, commercial_email, payee_email, payee_kind, base_eur, sold_eur, sold_pct, trigger_kind, payer_email, label)
+         values ($1,$2,$3,'gestionnaire',$4,$5,$6,$7,$8,$9)`,
+        [cc.id, payer, me, Number(bb.gestEur ?? 0), Number(bb.soldEur ?? 0), Number(bb.soldPct ?? 0), trig, payer, `Accord négocié par ${s.name} (gestionnaire ${cc.name})`],
+      );
+      return NextResponse.json({ ok: true });
+    }
+    if (b.action === "removeDeal") {
+      const bb = b as unknown as { ids?: number[] };
+      if (!bb.ids?.length) return NextResponse.json({ error: "ids requis." }, { status: 400 });
+      // Sécurité : ne désactive que les accords dont je suis le bénéficiaire gestionnaire OU gestionnaire du cc.
+      await pool.query(
+        `update remuneration_accords set active=false where id = any($1)
+           and (lower(payee_email) = $2 or call_center_id in (select id from call_centers where lower(gestionnaire_email) = $2))`,
+        [bb.ids, me],
+      );
+      return NextResponse.json({ ok: true });
+    }
     if (b.action === "add" && b.payeeEmail && (b.kind === "gestionnaire" || b.kind === "telepro")) {
       await pool.query(
         `insert into remuneration_accords (call_center_id, commercial_email, payee_email, payee_kind, base_eur, sold_eur, sold_pct, trigger_kind, payer_email, label)

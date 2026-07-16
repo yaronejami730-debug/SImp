@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db";
 import crypto from "crypto";
-import bcrypt from "bcrypt";
+import { hashPassword } from "@/lib/auth";
 
 export const maxDuration = 60;
 
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     const userId = res.rows[0].id;
 
     // Hash new password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = hashPassword(password);
 
     // Update password and clear reset token
     await pool.query(
