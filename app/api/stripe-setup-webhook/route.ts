@@ -12,8 +12,11 @@ export async function POST(req: Request) {
   let event;
 
   try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+    }
     const body = await req.text();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return NextResponse.json({ error: "Webhook signature failed" }, { status: 400 });
@@ -28,7 +31,7 @@ export async function POST(req: Request) {
       const paymentMethodId = setupIntent.payment_method;
 
       // Get payment method details
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
       const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
 
       // Update customer with payment method

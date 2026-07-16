@@ -22,6 +22,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No invoices selected" }, { status: 400 });
     }
 
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+    }
+
     const pool = getPool();
 
     // Get invoices
@@ -52,7 +56,7 @@ export async function POST(req: Request) {
       [invoices[0].commercial_email.toLowerCase()]
     );
 
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const stripeCustomerId = stripeRes.rows[0]?.stripe_customer_id;
     const paymentMethodId = stripeRes.rows[0]?.stripe_payment_method_id;
 
@@ -102,8 +106,11 @@ export async function PUT(req: Request) {
   let event;
 
   try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+    }
     const body = await req.text();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return NextResponse.json({ error: "Webhook signature failed" }, { status: 400 });

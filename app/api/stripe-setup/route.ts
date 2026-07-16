@@ -44,8 +44,13 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.error("STRIPE_SECRET_KEY not configured");
+      return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+    }
+
     const pool = getPool();
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "");
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
     // Check if customer already exists
     let customerRes = await pool.query(
