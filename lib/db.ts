@@ -8,8 +8,8 @@ export function getPool(): Pool {
     pool = new Pool({
       connectionString: process.env.SUPABASE_DB_URL,
       ssl: { rejectUnauthorized: false },
-      max: 10, // Supabase session mode limit: 15. Use 10 to leave margin
-      idleTimeoutMillis: 30000,
+      max: 14, // Supabase session mode limit: 15. Use 14 to leave 1 margin
+      idleTimeoutMillis: 10000, // Close idle connections faster (10s vs 30s)
       connectionTimeoutMillis: 2000,
     });
   }
