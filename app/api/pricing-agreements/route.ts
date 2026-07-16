@@ -20,10 +20,12 @@ export async function GET(req: Request) {
         pa.*,
         u.name as commercial_name,
         u.email as commercial_email,
-        cc.name as call_center_name
+        cc.name as call_center_name,
+        coalesce(gu.name, cc.gestionnaire_email, '') as gestionnaire_name
       FROM pricing_agreements pa
       JOIN users u ON pa.commercial_id = u.id
       JOIN call_centers cc ON pa.call_center_id = cc.id
+      LEFT JOIN users gu ON lower(gu.email) = lower(cc.gestionnaire_email)
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { callCenterId, commercialId, baseAmount, gestionnaireAmount, callCenterAmount } = body;
+    const { callCenterId, commercialId, baseAmount, gestionnaireAmount, callCenterAmount, trigger } = body;
 
     if (!callCenterId || !commercialId || !baseAmount || gestionnaireAmount === undefined || callCenterAmount === undefined) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -97,10 +99,10 @@ export async function POST(req: Request) {
 
     // Create agreement
     const res = await pool.query(
-      `INSERT INTO pricing_agreements (call_center_id, commercial_id, base_amount, gestionnaire_amount, call_center_amount, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO pricing_agreements (call_center_id, commercial_id, base_amount, gestionnaire_amount, call_center_amount, created_by, trigger_kind)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [callCenterId, commercialId, baseAmount, gestionnaireAmount, callCenterAmount, creatorId]
+      [callCenterId, commercialId, baseAmount, gestionnaireAmount, callCenterAmount, creatorId, trigger === "honored" ? "honored" : "signed"]
     );
 
     return NextResponse.json({ ok: true, agreement: res.rows[0] });
@@ -187,9 +189,10 @@ export async function PATCH(req: Request) {
     const res = await getPool().query(
       `UPDATE pricing_agreements
           SET base_amount=$2, gestionnaire_amount=$3, call_center_amount=$4,
+              trigger_kind=coalesce($5, trigger_kind),
               status='pending_confirmation', confirmed_by_commercial=null, updated_at=now()
         WHERE id=$1 RETURNING *`,
-      [id, Number(b.baseAmount), Number(b.gestionnaireAmount ?? 0), Number(b.callCenterAmount ?? 0)],
+      [id, Number(b.baseAmount), Number(b.gestionnaireAmount ?? 0), Number(b.callCenterAmount ?? 0), b.trigger === "honored" ? "honored" : b.trigger === "signed" ? "signed" : null],
     );
     return NextResponse.json({ ok: true, agreement: res.rows[0] });
   } catch (e) {

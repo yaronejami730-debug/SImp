@@ -31,6 +31,7 @@ export default function BaremesPage() {
   const [commercials, setCommercials] = useState<Commercial[]>([]);
   const [selectedCommercial, setSelectedCommercial] = useState<string>("");
   const [baseAmount, setBaseAmount] = useState("");
+  const [trigger, setTrigger] = useState<"signed" | "honored">("signed");
   const [gestionnaireAmount, setGestionnaireAmount] = useState("");
   const [callCenterAmount, setCallCenterAmount] = useState("");
   const [agreements, setAgreements] = useState<Agreement[]>([]);
@@ -114,9 +115,11 @@ export default function BaremesPage() {
     if (gest === null) return;
     const cc = prompt("Part call center (€) :", String(Number(a.call_center_amount)));
     if (cc === null) return;
+    const trig = prompt("Déclencheur — tape 'signe' ou 'honore' :", (a as unknown as { trigger_kind?: string }).trigger_kind === "honored" ? "honore" : "signe");
+    if (trig === null) return;
     const res = await fetch("/api/pricing-agreements", {
       method: "PATCH", headers: authHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ agreementId: a.id, baseAmount: Number(base), gestionnaireAmount: Number(gest), callCenterAmount: Number(cc) }),
+      body: JSON.stringify({ agreementId: a.id, baseAmount: Number(base), gestionnaireAmount: Number(gest), callCenterAmount: Number(cc), trigger: trig.toLowerCase().startsWith("hono") ? "honored" : "signed" }),
     });
     const d = await res.json();
     if (d.ok) { alert("Accord renégocié — repasse en attente de confirmation du commercial."); loadAgreements(); }
@@ -146,6 +149,7 @@ export default function BaremesPage() {
           baseAmount: parseFloat(baseAmount),
           gestionnaireAmount: parseFloat(gestionnaireAmount),
           callCenterAmount: parseFloat(callCenterAmount),
+          trigger,
         }),
       });
 
@@ -227,6 +231,10 @@ export default function BaremesPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
             <div>
               <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Base (Commercial)</label>
+              <select value={trigger} onChange={(e) => setTrigger(e.target.value as "signed" | "honored")} style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box", marginBottom: 10, background: "#fff" }}>
+                <option value="signed">Payé au rendez-vous SIGNÉ (mandat)</option>
+                <option value="honored">Payé au rendez-vous HONORÉ (client venu)</option>
+              </select>
               <input type="number" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} placeholder="60" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
             </div>
             <div>
@@ -256,6 +264,7 @@ export default function BaremesPage() {
                   <tr style={{ borderBottom: "2px solid #e8ebef" }}>
                     <th style={{ textAlign: "left", padding: "12px 0", fontWeight: 600 }}>Call Center</th>
                     <th style={{ textAlign: "left", padding: "12px 0", fontWeight: 600 }}>Commercial</th>
+                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Déclencheur</th>
                     <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Base</th>
                     <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Gest.</th>
                     <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>CC</th>
@@ -268,6 +277,7 @@ export default function BaremesPage() {
                     <tr key={a.id} style={{ borderBottom: "1px solid #e8ebef" }}>
                       <td style={{ padding: "12px 0" }}>{a.call_center_name}</td>
                       <td style={{ padding: "12px 0" }}>{a.commercial_name}</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", fontSize: 12 }}>{(a as unknown as { trigger_kind?: string }).trigger_kind === "honored" ? "🙋 Honoré" : "✍️ Signé"}</td>
                       <td style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>{Number(a.base_amount).toFixed(2)}€</td>
                       <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{Number(a.gestionnaire_amount).toFixed(2)}€</td>
                       <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{Number(a.call_center_amount).toFixed(2)}€</td>

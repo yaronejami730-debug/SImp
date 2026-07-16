@@ -95,29 +95,18 @@ export function PricingAgreement() {
                 }}
               >
                 <div>
-                  <p style={{ margin: "0 0 8px", fontSize: 14, fontWeight: 600, color: "#232323" }}>
-                    {a.call_center_name}
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", gap: 20, fontSize: 13, marginTop: 8 }}>
-                    <div>
-                      <span style={{ color: GRAY, fontSize: 12 }}>Base (vous)</span>
-                      <br />
-                      <strong style={{ color: "#232323" }}>{a.base_amount.toFixed(2)}€</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: GRAY, fontSize: 12 }}>Gestionnaire</span>
-                      <br />
-                      <strong style={{ color: "#232323" }}>{a.gestionnaire_amount.toFixed(2)}€</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: GRAY, fontSize: 12 }}>Call Center</span>
-                      <br />
-                      <strong style={{ color: "#232323" }}>{a.call_center_amount.toFixed(2)}€</strong>
-                    </div>
-                  </div>
-                  <p style={{ margin: "8px 0 0", fontSize: 12, color: GRAY }}>
-                    Vous percevrez {a.base_amount.toFixed(2)}€ par rendez-vous signé
-                  </p>
+                  {(() => {
+                    const x = a as unknown as { gestionnaire_name?: string; trigger_kind?: string; commercial_name?: string };
+                    const prenom = (x.commercial_name ?? "").split(" ")[0] || "";
+                    const trig = x.trigger_kind === "honored" ? "honoré (client venu)" : "signé";
+                    return (
+                      <p style={{ margin: 0, fontSize: 14.5, color: "#232323", lineHeight: 1.6 }}>
+                        Bonjour {prenom}, êtes-vous d&apos;accord pour que {x.gestionnaire_name ? <>le gestionnaire <strong>{x.gestionnaire_name}</strong></> : <strong>{a.call_center_name}</strong>} vous prenne des rendez-vous pour{" "}
+                        <strong style={{ fontSize: 16 }}>{Number(a.base_amount).toFixed(0)} € par rendez-vous {trig}</strong> ?
+                      </p>
+                    );
+                  })()}
+                  <p style={{ margin: "6px 0 0", fontSize: 12, color: GRAY }}>{a.call_center_name}</p>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
                   <button
@@ -187,17 +176,17 @@ export function PricingAgreement() {
                 <div>
                   <span style={{ color: GRAY, fontSize: 12 }}>Base (vous)</span>
                   <br />
-                  <strong style={{ color: GREEN }}>{active.base_amount.toFixed(2)}€</strong>
+                  <strong style={{ color: GREEN }}>{Number(active.base_amount).toFixed(2)}€</strong>
                 </div>
                 <div>
                   <span style={{ color: GRAY, fontSize: 12 }}>Gestionnaire</span>
                   <br />
-                  <strong>{active.gestionnaire_amount.toFixed(2)}€</strong>
+                  <strong>{Number(active.gestionnaire_amount).toFixed(2)}€</strong>
                 </div>
                 <div>
                   <span style={{ color: GRAY, fontSize: 12 }}>Call Center</span>
                   <br />
-                  <strong>{active.call_center_amount.toFixed(2)}€</strong>
+                  <strong>{Number(active.call_center_amount).toFixed(2)}€</strong>
                 </div>
               </div>
               <p style={{ margin: "8px 0 0", fontSize: 12, color: GREEN, fontWeight: 600 }}>
