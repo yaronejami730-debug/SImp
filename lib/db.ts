@@ -8,9 +8,11 @@ export function getPool(): Pool {
     pool = new Pool({
       connectionString: process.env.SUPABASE_DB_URL,
       ssl: { rejectUnauthorized: false },
-      max: 14, // Supabase session mode limit: 15. Use 14 to leave 1 margin
-      idleTimeoutMillis: 10000, // Close idle connections faster (10s vs 30s)
-      connectionTimeoutMillis: 2000,
+      // Pooler Supabase en mode TRANSACTION (port 6543) : ~200 connexions globales,
+      // multiplexées. max modéré par instance = bon citoyen en serverless.
+      max: 5,
+      idleTimeoutMillis: 5000,     // libère vite les connexions inactives
+      connectionTimeoutMillis: 10000, // patiente au lieu d'échouer sous contention
     });
   }
   return pool;
