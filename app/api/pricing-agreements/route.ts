@@ -59,9 +59,7 @@ export async function GET(req: Request) {
 /** POST: create new pricing agreement */
 export async function POST(req: Request) {
   const s = getAuth(req);
-  if (!s || !["gestionnaire", "super_admin"].includes(s.role)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
+  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
     const body = await req.json();
@@ -73,14 +71,24 @@ export async function POST(req: Request) {
 
     const pool = getPool();
 
-    // Verify commercial belongs to call center
-    const commRes = await pool.query(
-      "SELECT id FROM users WHERE id = $1 AND call_center_id = $2",
-      [commercialId, callCenterId]
-    );
+    // Autorisé : super-admin OU le GESTIONNAIRE de CE call center (rôle relationnel, pas un rôle de compte).
+    const ccRow = await pool.query("SELECT gestionnaire_email FROM call_centers WHERE id = $1", [callCenterId]);
+    const gest = (ccRow.rows[0]?.gestionnaire_email ?? "").toLowerCase();
+    if (s.role !== "admin" && gest !== s.email.toLowerCase()) {
+      return NextResponse.json({ error: "Réservé au gestionnaire de ce call center (ou admin)." }, { status: 403 });
+    }
 
+    // Le commercial doit être rattaché au call center : compte dedans OU lié via call_center_commercials (héritage agence inclus).
+    const commRes = await pool.query("SELECT id, email, name FROM users WHERE id = $1 AND is_commercial = true", [commercialId]);
     if (commRes.rows.length === 0) {
-      return NextResponse.json({ error: "Commercial not found in call center" }, { status: 404 });
+      return NextResponse.json({ error: "Commercial introuvable." }, { status: 404 });
+    }
+    const commercialEmail = (commRes.rows[0].email ?? "").toLowerCase();
+    const { commercialsForCallCenterInherited } = await import("@/lib/callcenters");
+    const linked = await commercialsForCallCenterInherited(Number(callCenterId));
+    const sameCc = await pool.query("SELECT 1 FROM users WHERE id = $1 AND call_center_id = $2", [commercialId, callCenterId]);
+    if (!sameCc.rows.length && !linked.some((c) => c.email.toLowerCase() === commercialEmail)) {
+      return NextResponse.json({ error: "Ce commercial n'est pas lié à ce call center." }, { status: 400 });
     }
 
     // Lookup creator by email

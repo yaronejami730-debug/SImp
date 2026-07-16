@@ -245,9 +245,9 @@ export default function BaremesPage() {
                     <tr key={a.id} style={{ borderBottom: "1px solid #e8ebef" }}>
                       <td style={{ padding: "12px 0" }}>{a.call_center_name}</td>
                       <td style={{ padding: "12px 0" }}>{a.commercial_name}</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>{a.base_amount.toFixed(2)}€</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{a.gestionnaire_amount.toFixed(2)}€</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{a.call_center_amount.toFixed(2)}€</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>{Number(a.base_amount).toFixed(2)}€</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{Number(a.gestionnaire_amount).toFixed(2)}€</td>
+                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{Number(a.call_center_amount).toFixed(2)}€</td>
                       <td style={{ textAlign: "center", padding: "12px 0" }}>
                         <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: a.status === "active" ? "#dffcf0" : a.status === "pending_confirmation" ? "#fef3c7" : "#fee2e2", color: a.status === "active" ? GREEN : a.status === "pending_confirmation" ? "#92400e" : RED }}>
                           {a.status === "pending_confirmation" ? "En attente" : a.status === "active" ? "Actif" : "Rejeté"}
