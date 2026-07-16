@@ -20,7 +20,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string; location: string;
   immatriculation?: string; vehiclePhotoUrl?: string; teleprospector?: string;
   note: string;
-  present: boolean; signStatus: Sign; negotiation: number; owner: string; commercial: string;
+  present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; owner: string; commercial: string;
   commissionBase?: number; commissionPct?: number; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean; confirmed?: boolean;
@@ -1092,7 +1092,7 @@ function ClientPage({ id }: { id: string }) {
         })()}
         <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
           {(() => {
-            const isNoShow = a.history.some((h) => h.t === "noshow");
+            const isNoShow = a.history.some((h) => h.t === "noshow") || a.presence === "absent";
             const base: React.CSSProperties = { flex: 1, padding: "12px 10px", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" };
             return (
               <>

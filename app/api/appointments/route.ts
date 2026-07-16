@@ -25,10 +25,17 @@ export async function GET(req: Request) {
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
       (!a.commercialEmail && !!myName && tokset(a.commercial) === myName);
-    // Super-admin : tout. Responsable : les RDV de SON call center. Sinon : ses RDV créés + affectés.
+    // Visibilité : super-admin = tout ; responsable = son call center ;
+    // sinon : mes RDV créés + affectés + ceux des call centers dont je suis GESTIONNAIRE.
+    const { listCallCenters } = await import("@/lib/callcenters");
+    const managedCc = new Set(
+      (await listCallCenters().catch(() => []))
+        .filter((c) => (c.gestionnaire_email ?? "").toLowerCase() === myEmail)
+        .map((c) => c.id),
+    );
     const visible = s.role === "admin" ? items
-      : s.role === "responsable" ? items.filter((a) => a.callCenterId === s.callCenterId)
-      : items.filter((a) => isCreator(a) || isAssignee(a));
+      : s.role === "responsable" ? items.filter((a) => a.callCenterId === s.callCenterId || managedCc.has(a.callCenterId ?? 1))
+      : items.filter((a) => isCreator(a) || isAssignee(a) || managedCc.has(a.callCenterId ?? 1));
     const annotated = visible.map((a) => {
       const created = isCreator(a);
       const assigned = isAssignee(a);

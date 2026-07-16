@@ -173,6 +173,7 @@ function Agenda() {
   const dayColor = (list: Appt[]): string => {
     if (list.length === 0) return "transparent";
     if (list.some((a) => a.cancelled)) return "#dc2626"; // rouge
+    if (list.some((a) => a.presence === "absent")) return "#dc2626"; // rouge : no-show
     if (list.some((a) => a.signStatus === "signed" || a.bcSigned || a.vehicleSold)) return "#16a34a"; // vert
     if (list.some((a) => a.signStatus === "listed")) return "#0891b2"; // cyan (annonce en ligne)
     if (list.some((a) => a.signStatus === "thinking")) return "#f59e0b"; // orange
@@ -181,6 +182,7 @@ function Agenda() {
   };
   const statusColor = (a: Appt): string => {
     if (a.cancelled) return "#dc2626";
+    if (a.presence === "absent") return "#dc2626"; // client pas présent
     if (a.signStatus === "signed" || a.bcSigned || a.vehicleSold) return "#16a34a";
     if (a.signStatus === "listed") return "#0891b2";
     if (a.signStatus === "thinking") return "#f59e0b";

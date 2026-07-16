@@ -16,12 +16,21 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 type GEvent = Awaited<ReturnType<typeof getEvent>>;
-function ownsOrAdmin(ev: GEvent, email: string, role: string) {
+/** Accès fiche : admin, créateur (télépro), commercial assigné, responsable du call center
+ *  du RDV, ou GESTIONNAIRE de ce call center — tous les acteurs liés au rendez-vous. */
+async function ownsOrAdmin(ev: GEvent, email: string, role: string): Promise<boolean> {
   const p = ev.extendedProperties?.private ?? {};
   const owner = p.owner ?? "";
   const commercialEmail = (p.commercialEmail ?? "").toLowerCase();
-  // Admin, ou le téléprospecteur créateur, ou le commercial assigné.
-  return role === "admin" || owner === email || (!!commercialEmail && commercialEmail === email.toLowerCase());
+  const me = email.toLowerCase();
+  if (role === "admin" || owner === email || (!!commercialEmail && commercialEmail === me)) return true;
+  try {
+    const cc = Number(p.cc ?? "1");
+    const { getCallCenter } = await import("@/lib/callcenters");
+    const c = await getCallCenter(cc);
+    if (c && ((c.responsable_email ?? "").toLowerCase() === me || (c.gestionnaire_email ?? "").toLowerCase() === me)) return true;
+  } catch { /* refus par défaut */ }
+  return false;
 }
 
 /** GET → renvoie le RDV complet (extendedProperties incluses). */
@@ -31,7 +40,7 @@ export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
   try {
     const ev = await getEvent(id);
-    if (!ownsOrAdmin(ev, s.email, s.role)) {
+    if (!(await ownsOrAdmin(ev, s.email, s.role))) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
     const p = ev.extendedProperties?.private ?? {};
@@ -74,6 +83,7 @@ export async function GET(req: Request, { params }: Params) {
         note: p.note ?? "",
         location: ev.location ?? "",
         present: p.present === "1",
+        presence: p.present === "1" ? "present" : p.present === "0" ? "absent" : "unknown",
         signStatus: p.signStatus ?? "",
         negotiation: p.negotiation ? Number(p.negotiation) : 0,
         owner: p.owner ?? "",
@@ -107,7 +117,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
   try {
     const ev = await getEvent(id);
-    if (!ownsOrAdmin(ev, s.email, s.role)) {
+    if (!(await ownsOrAdmin(ev, s.email, s.role))) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
     const body = (await req.json()) as { carBrand?: string; carModel?: string; carFinish?: string; immatriculation?: string; phone?: string; email?: string; note?: string; commercial?: string; firstName?: string; lastName?: string; civility?: string; listingUrl?: string; deplacement?: boolean; address?: string };
@@ -153,7 +163,7 @@ export async function POST(req: Request, { params }: Params) {
 
   try {
     const ev = await getEvent(id);
-    if (!ownsOrAdmin(ev, s.email, s.role)) {
+    if (!(await ownsOrAdmin(ev, s.email, s.role))) {
       return NextResponse.json({ error: "Interdit." }, { status: 403 });
     }
     const p = ev.extendedProperties?.private ?? {};

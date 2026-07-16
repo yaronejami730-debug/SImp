@@ -639,9 +639,10 @@ export async function patchApptDetails(eventId: string, fields: { listingUrl?: s
  *  9=Blueberry bleu / 10=Basil vert / 6=Tangerine orange / 8=Graphite gris / 11=Tomato rouge / 3=Grape violet */
 export function colorIdForStatus(opts: {
   cancelled?: boolean; signStatus?: string;
-  bcSigned?: boolean; vehicleSold?: boolean;
+  bcSigned?: boolean; vehicleSold?: boolean; absent?: boolean;
 }): string {
   if (opts.cancelled) return "11"; // rouge
+  if (opts.absent) return "11";    // rouge : client pas présent (no-show)
   if (opts.vehicleSold || opts.bcSigned || opts.signStatus === "signed") return "10"; // vert
   if (opts.signStatus === "listed") return "7"; // paon/cyan (annonce en ligne, mandat en cours)
   if (opts.signStatus === "thinking") return "6"; // orange
@@ -670,9 +671,9 @@ export async function patchTracking(
     priv.vehicleSold = fields.vehicleSold ? "1" : "";
     priv.soldAt = fields.vehicleSold ? new Date().toISOString() : "";
   }
-  // Calcule couleur à partir de l'état projeté
+  // Calcule couleur à partir de l'état projeté (présence incluse : absent = rouge)
   let colorId: string | undefined;
-  if (fields.signStatus !== undefined || fields.bcSigned !== undefined || fields.vehicleSold !== undefined) {
+  if (fields.signStatus !== undefined || fields.bcSigned !== undefined || fields.vehicleSold !== undefined || fields.present !== undefined) {
     const ev = await getEvent(eventId);
     const p = ev.extendedProperties?.private ?? {};
     const next = {
@@ -680,6 +681,7 @@ export async function patchTracking(
       signStatus: fields.signStatus ?? p.signStatus ?? "",
       bcSigned: fields.bcSigned ?? p.bcSigned === "1",
       vehicleSold: fields.vehicleSold ?? p.vehicleSold === "1",
+      absent: fields.present !== undefined ? fields.present === false : p.present === "0",
     };
     colorId = colorIdForStatus(next);
   }
