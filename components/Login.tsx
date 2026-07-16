@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { setAuth } from "@/lib/client";
 
 const NAVY = "var(--brand-dark)";
@@ -55,6 +56,11 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
           <button onClick={submit} disabled={loading || !email || !password} style={{ marginTop: 16, width: "100%", padding: 13, borderRadius: 8, border: "none", background: loading || !email || !password ? "#cbd5e1" : PINK, color: "#fff", fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
             {loading ? "…" : "Se connecter"}
           </button>
+          <div style={{ marginTop: 16, textAlign: "center" }}>
+            <Link href="/account-recovery" style={{ fontSize: 13, color: PINK, textDecoration: "none", fontWeight: 600 }}>
+              Identifiant ou mot de passe oublié ?
+            </Link>
+          </div>
         </div>
       </div>
     </main>
