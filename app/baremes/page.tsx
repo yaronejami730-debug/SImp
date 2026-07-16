@@ -48,9 +48,9 @@ export default function BaremesPage() {
 
   async function loadCallCenters() {
     try {
-      const res = await fetch("/api/call-centers", { headers: authHeaders() });
+      const res = await fetch("/api/callcenters", { headers: authHeaders() });
       const data = await res.json();
-      if (data.ok) setCallCenters(data.callCenters || []);
+      if (data.ok) setCallCenters(data.callcenters || []);
     } catch (e) {
       console.error("Failed to load call centers:", e);
     }
