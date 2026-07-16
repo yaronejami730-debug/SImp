@@ -1,18 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loadStripe, Stripe as StripeType } from "@stripe/stripe-js";
-import { Elements, useStripe, useElements } from "@stripe/react-stripe-js";
 import { authHeaders } from "@/lib/client";
-
-let stripePromise: ReturnType<typeof loadStripe> | null = null;
-
-function getStripePromise() {
-  if (!stripePromise && process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY) {
-    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY);
-  }
-  return stripePromise;
-}
 
 const PINK = "var(--brand-primary)";
 const MUTED = "#64748b";
@@ -26,55 +15,11 @@ interface SetupStatus {
   paymentMethodLast4?: string;
 }
 
-interface CardSetupFormProps {
-  clientSecret: string;
-  onSuccess: () => void;
-}
-
-function SetupRedirectButton({ clientSecret, onLoading }: { clientSecret: string; onLoading: (b: boolean) => void }) {
-  const [loading, setLoading] = useState(false);
-
-  function handleRedirect() {
-    if (!clientSecret) return;
-    setLoading(true);
-    onLoading(true);
-    // Redirect to setup-card page with clientSecret
-    window.location.href = `/setup-card?secret=${encodeURIComponent(clientSecret)}`;
-  }
-
-  return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ fontSize: 12, color: MUTED, background: "#f0f4f8", padding: 12, borderRadius: 8 }}>
-        ℹ️ Vous allez être redirigé vers un formulaire sécurisé Stripe pour enregistrer votre carte.
-      </div>
-      <button
-        onClick={handleRedirect}
-        disabled={loading || !clientSecret}
-        style={{
-          padding: "14px 20px",
-          borderRadius: 8,
-          border: "none",
-          background: PINK,
-          color: "#fff",
-          fontSize: 15,
-          fontWeight: 600,
-          cursor: "pointer",
-          opacity: loading || !clientSecret ? 0.6 : 1,
-        }}
-      >
-        {loading ? "Redirection..." : "Aller sur Stripe pour enregistrer"}
-      </button>
-    </div>
-  );
-}
-
 export function StripeCardSetup() {
   const [status, setStatus] = useState<SetupStatus | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [clientSecret, setClientSecret] = useState("");
   const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function loadStatus() {
     try {
@@ -88,25 +33,23 @@ export function StripeCardSetup() {
     }
   }
 
-  async function startSetup() {
+  async function startStripeCheckout() {
     setCreating(true);
     try {
-      const res = await fetch("/api/stripe-setup", {
+      const res = await fetch("/api/stripe-checkout-setup", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
         body: JSON.stringify({}),
       });
       const data = await res.json();
-      console.log("Setup Intent response:", data);
-      if (data.ok && data.clientSecret) {
-        setClientSecret(data.clientSecret);
-        setShowForm(true);
+      console.log("[Stripe Checkout] Response:", data);
+      if (data.ok && data.checkoutUrl) {
+        // Redirect to Stripe Checkout (Stripe Hosted page)
+        window.location.href = data.checkoutUrl;
       } else {
-        console.error("Setup error:", data.error);
-        alert(data.error || "Erreur lors de la création du Setup Intent");
+        alert(data.error || "Erreur lors de la création de la session");
       }
     } catch (e) {
-      console.error("Setup fetch error:", e);
       alert(e instanceof Error ? e.message : "Erreur");
     } finally {
       setCreating(false);
@@ -123,7 +66,6 @@ export function StripeCardSetup() {
       });
       const data = await res.json();
       if (data.ok) {
-        setShowForm(false);
         loadStatus();
       } else {
         alert(data.error || "Erreur");
@@ -133,14 +75,12 @@ export function StripeCardSetup() {
     }
   }
 
-  useEffect(() => { loadStatus(); }, []);
-
-  // Handle return from Stripe redirect
   useEffect(() => {
+    loadStatus();
+    // Check if returning from Stripe with setup=success
     const params = new URLSearchParams(window.location.search);
     if (params.get("setup") === "success") {
       loadStatus();
-      setShowForm(false);
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -176,17 +116,13 @@ export function StripeCardSetup() {
             {deleting ? "Suppression..." : "Supprimer ma carte bancaire"}
           </button>
         </div>
-      ) : showForm && clientSecret ? (
-        <Elements stripe={getStripePromise()!}>
-          <SetupRedirectButton clientSecret={clientSecret} onLoading={setCreating} />
-        </Elements>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           <p style={{ margin: 0, fontSize: 13, color: MUTED }}>
-            Enregistrez votre carte une fois pour payer plus rapidement. Aucun prélèvement automatique.
+            Enregistrez votre carte auprès de Stripe de manière sécurisée et chiffrée. Aucun prélèvement automatique.
           </p>
           <button
-            onClick={startSetup}
+            onClick={startStripeCheckout}
             disabled={creating}
             style={{
               padding: "14px 20px",
@@ -200,7 +136,7 @@ export function StripeCardSetup() {
               opacity: creating ? 0.6 : 1,
             }}
           >
-            {creating ? "Initialisation..." : "Enregistrer ma carte bancaire"}
+            {creating ? "Redirection vers Stripe..." : "Enregistrer ma carte bancaire"}
           </button>
         </div>
       )}
