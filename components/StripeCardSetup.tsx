@@ -32,54 +32,24 @@ interface CardSetupFormProps {
 }
 
 function SetupRedirectButton({ clientSecret, onLoading }: { clientSecret: string; onLoading: (b: boolean) => void }) {
-  const stripe = useStripe();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  async function handleRedirect() {
-    if (!stripe || !clientSecret) {
-      setError("Stripe ou clientSecret non disponible");
-      return;
-    }
-
-    console.log("[Setup Redirect] Confirming with clientSecret:", clientSecret.substring(0, 20) + "...");
+  function handleRedirect() {
+    if (!clientSecret) return;
     setLoading(true);
     onLoading(true);
-
-    try {
-      // Redirect to Stripe Hosted Setup
-      const result = await stripe.confirmSetup({
-        clientSecret,
-        confirmParams: {
-          return_url: `${window.location.origin}/paiements?setup=success`,
-        },
-        redirect: "always",
-      });
-
-      console.log("[Setup Redirect] Result:", result);
-      if (result.error) {
-        console.error("[Setup Redirect] Error:", result.error);
-        setError(result.error.message || "Erreur lors de la redirection");
-        setLoading(false);
-        onLoading(false);
-      }
-    } catch (e) {
-      console.error("[Setup Redirect] Exception:", e);
-      setError(e instanceof Error ? e.message : "Erreur");
-      setLoading(false);
-      onLoading(false);
-    }
+    // Redirect to setup-card page with clientSecret
+    window.location.href = `/setup-card?secret=${encodeURIComponent(clientSecret)}`;
   }
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
       <div style={{ fontSize: 12, color: MUTED, background: "#f0f4f8", padding: 12, borderRadius: 8 }}>
-        ℹ️ Vous allez être redirigé vers Stripe pour enregistrer votre carte de manière sécurisée.
+        ℹ️ Vous allez être redirigé vers un formulaire sécurisé Stripe pour enregistrer votre carte.
       </div>
-      {error && <div style={{ fontSize: 13, color: RED }}>{error}</div>}
       <button
         onClick={handleRedirect}
-        disabled={!stripe || loading || !clientSecret}
+        disabled={loading || !clientSecret}
         style={{
           padding: "14px 20px",
           borderRadius: 8,
@@ -89,10 +59,10 @@ function SetupRedirectButton({ clientSecret, onLoading }: { clientSecret: string
           fontSize: 15,
           fontWeight: 600,
           cursor: "pointer",
-          opacity: !stripe || loading || !clientSecret ? 0.6 : 1,
+          opacity: loading || !clientSecret ? 0.6 : 1,
         }}
       >
-        {loading ? "Redirection vers Stripe..." : "Aller sur Stripe pour enregistrer"}
+        {loading ? "Redirection..." : "Aller sur Stripe pour enregistrer"}
       </button>
     </div>
   );
