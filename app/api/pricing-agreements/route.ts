@@ -28,15 +28,15 @@ export async function GET(req: Request) {
     `;
     const params: any[] = [];
 
-    // If commercial, show only their agreements
+    // If commercial, show only their agreements (lookup by email)
     if (s.role === "collab" && s.isCommercial) {
-      query += ` AND pa.commercial_id = $${params.length + 1}`;
-      params.push(s.userId);
+      query += ` AND u.email = $${params.length + 1}`;
+      params.push(s.email.toLowerCase());
     } else if (callCenterId) {
       // Gestionnaire/Admin can filter by call center
       query += ` AND pa.call_center_id = $${params.length + 1}`;
       params.push(parseInt(callCenterId));
-    } else if (s.role === "collab" && s.isResponsable) {
+    } else if (s.role === "responsable") {
       // Responsable sees only their call center
       query += ` AND pa.call_center_id = $${params.length + 1}`;
       params.push(s.callCenterId);
@@ -83,12 +83,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Commercial not found in call center" }, { status: 404 });
     }
 
+    // Lookup creator by email
+    const creatorRes = await pool.query("SELECT id FROM users WHERE email = $1", [s.email.toLowerCase()]);
+    const creatorId = creatorRes.rows[0]?.id || null;
+
     // Create agreement
     const res = await pool.query(
       `INSERT INTO pricing_agreements (call_center_id, commercial_id, base_amount, gestionnaire_amount, call_center_amount, created_by)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [callCenterId, commercialId, baseAmount, gestionnaireAmount, callCenterAmount, s.userId]
+      [callCenterId, commercialId, baseAmount, gestionnaireAmount, callCenterAmount, creatorId]
     );
 
     return NextResponse.json({ ok: true, agreement: res.rows[0] });
@@ -114,10 +118,16 @@ export async function PUT(req: Request) {
 
     const pool = getPool();
 
-    // Verify ownership
+    // Verify ownership (lookup commercial by email)
+    const commRes = await pool.query("SELECT id FROM users WHERE email = $1", [s.email.toLowerCase()]);
+    if (commRes.rows.length === 0) {
+      return NextResponse.json({ error: "Commercial not found" }, { status: 404 });
+    }
+    const commercialId = commRes.rows[0].id;
+
     const agreeRes = await pool.query(
       "SELECT * FROM pricing_agreements WHERE id = $1 AND commercial_id = $2",
-      [agreementId, s.userId]
+      [agreementId, commercialId]
     );
 
     if (agreeRes.rows.length === 0) {
