@@ -120,12 +120,17 @@ export function StripeCardSetup() {
         body: JSON.stringify({}),
       });
       const data = await res.json();
+      console.log("Setup Intent response:", data);
       if (data.ok && data.clientSecret) {
         setClientSecret(data.clientSecret);
         setShowForm(true);
       } else {
-        alert(data.error || "Erreur");
+        console.error("Setup error:", data.error);
+        alert(data.error || "Erreur lors de la création du Setup Intent");
       }
+    } catch (e) {
+      console.error("Setup fetch error:", e);
+      alert(e instanceof Error ? e.message : "Erreur");
     } finally {
       setCreating(false);
     }

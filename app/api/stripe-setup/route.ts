@@ -49,6 +49,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
     }
 
+    console.log("[Stripe Setup] Creating Setup Intent for", s.email);
     const pool = getPool();
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -61,7 +62,9 @@ export async function POST(req: Request) {
     let customerId: string;
     if (customerRes.rows.length > 0) {
       customerId = customerRes.rows[0].stripe_customer_id;
+      console.log("[Stripe Setup] Using existing customer", customerId);
     } else {
+      console.log("[Stripe Setup] Creating new Stripe customer");
       // Create new Stripe customer
       const customer = await stripe.customers.create({
         email: s.email.toLowerCase(),
@@ -69,6 +72,7 @@ export async function POST(req: Request) {
         metadata: { callCenterId: s.callCenterId, commercialEmail: s.email.toLowerCase() },
       });
       customerId = customer.id;
+      console.log("[Stripe Setup] Created customer", customerId);
 
       // Store in DB
       await pool.query(
@@ -79,19 +83,23 @@ export async function POST(req: Request) {
     }
 
     // Create Setup Intent
+    console.log("[Stripe Setup] Creating Setup Intent for customer", customerId);
     const setupIntent = await stripe.setupIntents.create({
       customer: customerId,
       payment_method_types: ["card"],
-      usage: "off_session", // Allow future payments without user interaction
+      usage: "off_session",
     });
 
+    console.log("[Stripe Setup] Setup Intent created", setupIntent.id);
     return NextResponse.json({
       ok: true,
       clientSecret: setupIntent.client_secret,
       setupIntentId: setupIntent.id,
     });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 500 });
+    const errMsg = e instanceof Error ? e.message : "Error";
+    console.error("[Stripe Setup] Error:", errMsg);
+    return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }
 
