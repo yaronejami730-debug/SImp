@@ -162,3 +162,52 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 500 });
   }
 }
+
+/** Droit de gestion : super-admin OU gestionnaire du call center de l'accord. */
+async function canManage(s: { role: string; email: string }, agreementId: number): Promise<boolean> {
+  const pool = getPool();
+  const r = await pool.query(
+    `SELECT cc.gestionnaire_email FROM pricing_agreements pa JOIN call_centers cc ON cc.id = pa.call_center_id WHERE pa.id = $1`,
+    [agreementId],
+  );
+  if (!r.rows.length) return false;
+  return s.role === "admin" || (r.rows[0].gestionnaire_email ?? "").toLowerCase() === s.email.toLowerCase();
+}
+
+/** PATCH { agreementId, baseAmount, gestionnaireAmount, callCenterAmount } -> modifie les montants.
+ *  Un accord actif modifié repasse en attente de confirmation du commercial (renégociation). */
+export async function PATCH(req: Request) {
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const b = await req.json();
+    const id = Number(b.agreementId);
+    if (!id || b.baseAmount === undefined) return NextResponse.json({ error: "Champs manquants." }, { status: 400 });
+    if (!(await canManage(s, id))) return NextResponse.json({ error: "Réservé au gestionnaire de ce call center (ou admin)." }, { status: 403 });
+    const res = await getPool().query(
+      `UPDATE pricing_agreements
+          SET base_amount=$2, gestionnaire_amount=$3, call_center_amount=$4,
+              status='pending_confirmation', confirmed_by_commercial=null, updated_at=now()
+        WHERE id=$1 RETURNING *`,
+      [id, Number(b.baseAmount), Number(b.gestionnaireAmount ?? 0), Number(b.callCenterAmount ?? 0)],
+    );
+    return NextResponse.json({ ok: true, agreement: res.rows[0] });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 500 });
+  }
+}
+
+/** DELETE ?id= -> supprime l'accord. */
+export async function DELETE(req: Request) {
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const id = Number(new URL(req.url).searchParams.get("id"));
+  if (!id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
+  try {
+    if (!(await canManage(s, id))) return NextResponse.json({ error: "Réservé au gestionnaire de ce call center (ou admin)." }, { status: 403 });
+    await getPool().query(`DELETE FROM pricing_agreements WHERE id = $1`, [id]);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Error" }, { status: 500 });
+  }
+}

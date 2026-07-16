@@ -107,6 +107,28 @@ export default function BaremesPage() {
     }
   }
 
+  async function handleEdit(a: Agreement) {
+    const base = prompt("Montant de base (€ / RDV signé) :", String(Number(a.base_amount)));
+    if (base === null) return;
+    const gest = prompt("Part gestionnaire (€) :", String(Number(a.gestionnaire_amount)));
+    if (gest === null) return;
+    const cc = prompt("Part call center (€) :", String(Number(a.call_center_amount)));
+    if (cc === null) return;
+    const res = await fetch("/api/pricing-agreements", {
+      method: "PATCH", headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ agreementId: a.id, baseAmount: Number(base), gestionnaireAmount: Number(gest), callCenterAmount: Number(cc) }),
+    });
+    const d = await res.json();
+    if (d.ok) { alert("Accord renégocié — repasse en attente de confirmation du commercial."); loadAgreements(); }
+    else alert(d.error ?? "Erreur");
+  }
+  async function handleDelete(a: Agreement) {
+    if (!confirm(`Supprimer l'accord ${a.call_center_name} × ${a.commercial_name} ?`)) return;
+    const res = await fetch(`/api/pricing-agreements?id=${a.id}`, { method: "DELETE", headers: authHeaders() });
+    const d = await res.json();
+    if (d.ok) loadAgreements(); else alert(d.error ?? "Erreur");
+  }
+
   async function handleCreate() {
     if (!selectedCC || !selectedCommercial || !baseAmount || gestionnaireAmount === "" || callCenterAmount === "") {
       alert("Tous les champs obligatoires");
@@ -238,6 +260,7 @@ export default function BaremesPage() {
                     <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Gest.</th>
                     <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>CC</th>
                     <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Statut</th>
+                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,6 +275,10 @@ export default function BaremesPage() {
                         <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: a.status === "active" ? "#dffcf0" : a.status === "pending_confirmation" ? "#fef3c7" : "#fee2e2", color: a.status === "active" ? GREEN : a.status === "pending_confirmation" ? "#92400e" : RED }}>
                           {a.status === "pending_confirmation" ? "En attente" : a.status === "active" ? "Actif" : "Rejeté"}
                         </span>
+                      </td>
+                      <td style={{ textAlign: "center", padding: "12px 0", whiteSpace: "nowrap" }}>
+                        <button onClick={() => handleEdit(a)} title="Renégocier les montants" style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid #e8ebef", background: "#fff", fontSize: 12, cursor: "pointer", marginRight: 6 }}>✏️ Modifier</button>
+                        <button onClick={() => handleDelete(a)} title="Supprimer l'accord" style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, cursor: "pointer" }}>Supprimer</button>
                       </td>
                     </tr>
                   ))}
