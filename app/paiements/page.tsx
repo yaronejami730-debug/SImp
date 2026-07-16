@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { StripeCardSetup } from "@/components/StripeCardSetup";
+import { PricingAgreement } from "@/components/PricingAgreement";
 import { authHeaders } from "@/lib/client";
 
 const NAVY = "var(--brand-dark)";
@@ -126,6 +127,9 @@ function PaiementsPage() {
 
         {/* Payment Method Setup */}
         <StripeCardSetup />
+
+        {/* Pricing Agreements */}
+        <PricingAgreement />
 
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
