@@ -33,6 +33,20 @@ export function StripeCardSetup() {
     }
   }
 
+  async function loadStatusWithRetry(retries = 3, delay = 500) {
+    for (let i = 0; i < retries; i++) {
+      await new Promise(r => setTimeout(r, delay));
+      try {
+        const res = await fetch("/api/stripe-setup", { headers: authHeaders() });
+        const data = await res.json();
+        if (data.ok && data.hasPaymentMethod) {
+          setStatus(data);
+          return; // Found card, stop retrying
+        }
+      } catch {}
+    }
+  }
+
   async function startStripeCheckout() {
     setCreating(true);
     try {
@@ -83,6 +97,16 @@ export function StripeCardSetup() {
       console.log("[Stripe Return] Setup success detected, reloading page");
       // Full page reload to restore session properly
       window.location.href = "/paiements";
+    }
+  }, []);
+
+  // Retry loading card status after webhook might have processed
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // After Stripe redirect removed from URL, retry to catch webhook update
+    if (!params.has("setup")) {
+      const timer = setTimeout(() => loadStatusWithRetry(3, 800), 1000);
+      return () => clearTimeout(timer);
     }
   }, []);
 
