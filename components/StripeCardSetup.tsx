@@ -80,8 +80,10 @@ export function StripeCardSetup() {
     // Check if returning from Stripe with setup=success
     const params = new URLSearchParams(window.location.search);
     if (params.get("setup") === "success") {
-      loadStatus();
+      // Clear the search param
       window.history.replaceState({}, "", window.location.pathname);
+      // Reload status to show updated card info
+      setTimeout(() => loadStatus(), 500);
     }
   }, []);
 
