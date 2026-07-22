@@ -12,6 +12,7 @@ const LINE = "#e8ebef";
 
 interface CallCenter { id: number; name: string; }
 interface Commercial { id: number; name: string; email: string; }
+interface DirectUser { id: number; name: string; email: string; commission_base: number; commission_pct: number; is_commercial: boolean; }
 interface Agreement {
   id: number;
   call_center_name: string;
@@ -39,11 +40,48 @@ export default function BaremesPage() {
   const [creating, setCreating] = useState(false);
   const [userRole, setUserRole] = useState<string>("");
   const [userCC, setUserCC] = useState<number>(0);
+  const [directUsers, setDirectUsers] = useState<DirectUser[]>([]);
+  const [directDraft, setDirectDraft] = useState<Record<number, { base: string; pct: string }>>({});
+  const [savingDirect, setSavingDirect] = useState<number | null>(null);
 
   useEffect(() => {
     loadUser();
     loadAgreements();
   }, []);
+
+  useEffect(() => {
+    if (userRole === "admin") loadDirectUsers();
+  }, [userRole]);
+
+  async function loadDirectUsers() {
+    try {
+      const res = await fetch("/api/users", { headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) {
+        const list = (data.users || []).filter((u: DirectUser) => u.is_commercial);
+        setDirectUsers(list);
+        setDirectDraft(Object.fromEntries(list.map((u: DirectUser) => [u.id, { base: String(Number(u.commission_base)), pct: String(Number(u.commission_pct)) }])));
+      }
+    } catch (e) {
+      console.error("Failed to load direct users:", e);
+    }
+  }
+
+  async function saveDirect(id: number) {
+    const d = directDraft[id];
+    if (!d) return;
+    setSavingDirect(id);
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH", headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ id, commissionBase: parseFloat(d.base) || 0, commissionPct: parseFloat(d.pct) || 0 }),
+      });
+      const data = await res.json();
+      if (data.ok) loadDirectUsers(); else alert(data.error ?? "Erreur");
+    } finally {
+      setSavingDirect(null);
+    }
+  }
 
   useEffect(() => {
     if (userRole && userCC) loadCallCenters();
@@ -176,8 +214,43 @@ export default function BaremesPage() {
   return (
     <Shell active="baremes" wide>
       <div style={{ maxWidth: 900 }}>
+        {userRole === "admin" && (
+          <div style={{ background: "#fff", borderRadius: 12, padding: 24, marginBottom: 24, border: `1px solid ${LINE}` }}>
+            <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Accord direct — commercial</h2>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: GRAY }}>
+              Pas de call center ni de gestionnaire ici : juste toi et le commercial, sur la base convenue entre vous.
+              Frais fixe (€) par RDV signé + % du négocié (le même barème qui sert dans le Bilan et la facturation Abby).
+            </p>
+            {directUsers.length === 0 ? (
+              <p style={{ color: GRAY, fontSize: 14 }}>Aucun commercial.</p>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {directUsers.map((u) => {
+                  const d = directDraft[u.id] ?? { base: "0", pct: "0" };
+                  return (
+                    <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${LINE}` }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
+                        <div style={{ fontSize: 12, color: GRAY }}>{u.email}</div>
+                      </div>
+                      <input type="number" step="0.01" value={d.base} onChange={(e) => setDirectDraft((m) => ({ ...m, [u.id]: { ...d, base: e.target.value } }))} style={{ width: 80, padding: "8px 10px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 13 }} title="€ par RDV signé" />
+                      <span style={{ fontSize: 12, color: GRAY }}>€ +</span>
+                      <input type="number" step="0.1" value={d.pct} onChange={(e) => setDirectDraft((m) => ({ ...m, [u.id]: { ...d, pct: e.target.value } }))} style={{ width: 70, padding: "8px 10px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 13 }} title="% du négocié" />
+                      <span style={{ fontSize: 12, color: GRAY }}>%</span>
+                      <button onClick={() => saveDirect(u.id)} disabled={savingDirect === u.id} style={{ padding: "8px 12px", borderRadius: 6, border: "none", background: PINK, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: savingDirect === u.id ? 0.6 : 1 }}>
+                        {savingDirect === u.id ? "…" : "Enregistrer"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ background: "#fff", borderRadius: 12, padding: 24, marginBottom: 24, border: `1px solid ${LINE}` }}>
-          <h2 style={{ margin: "0 0 20px", fontSize: 18, fontWeight: 700 }}>Créer un accord</h2>
+          <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Créer un accord — call center</h2>
+          <p style={{ margin: "0 0 20px", fontSize: 13, color: GRAY }}>Répartition call center / gestionnaire sur un commercial rattaché à un call center.</p>
 
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Call Center</label>

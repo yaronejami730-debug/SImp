@@ -40,7 +40,7 @@ function Comptes() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const [schemeKey, setSchemeKey] = useState("50+10");
+  const [schemeKey, setSchemeKey] = useState("60");
   const [attachCC, setAttachCC] = useState<number>(1); // rattachement du nouveau compte (agence / call center)
   // Call center
   const [ccName, setCcName] = useState("");

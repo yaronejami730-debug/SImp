@@ -8,15 +8,14 @@ import { authHeaders, getUser } from "@/lib/client";
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
 
-const BASE_COMMISSION = 50;
-const NEGO_RATE = 0.1;
+const DEFAULT_SCHEME = { base: 50, pct: 10 }; // repli si le commercial n'a pas de compte / barème
 
 type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
 type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
-  present: boolean; presence?: "present" | "absent" | "unknown"; note?: string; signStatus: Sign; negotiation: number; owner: string; commercial: string; teleprospector: string; immatriculation: string;
+  present: boolean; presence?: "present" | "absent" | "unknown"; note?: string; signStatus: Sign; negotiation: number; owner: string; commercial: string; commercialEmail?: string; teleprospector: string; immatriculation: string;
   relation?: "created" | "assigned" | "both" | "none";
   type?: "agence" | "deplacement" | "physique" | "visio" | "telephone";
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
@@ -34,7 +33,8 @@ const histLabel = (t: string) =>
 
 const parisDate = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
-const commission = (a: Appt) => (a.signStatus === "signed" ? BASE_COMMISSION + NEGO_RATE * (a.negotiation || 0) : 0);
+const nameKey = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).sort().join(" ");
+const commission = (a: Appt, scheme: { base: number; pct: number } = DEFAULT_SCHEME) => (a.signStatus === "signed" ? scheme.base + (scheme.pct / 100) * (a.negotiation || 0) : 0);
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const safeUrl = (u: string) => /^https?:\/\//i.test(u) ? u : `https://${u}`;
 
@@ -43,6 +43,8 @@ function Agenda() {
   const isAdmin = me?.role === "admin";
   const [appts, setAppts] = useState<Appt[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [schemeByEmail, setSchemeByEmail] = useState<Map<string, { base: number; pct: number }>>(new Map());
+  const [schemeByName, setSchemeByName] = useState<Map<string, { base: number; pct: number }>>(new Map());
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -69,7 +71,29 @@ function Agenda() {
       if (r2.ok) setReminders(r2.reminders);
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
+
+    // Barème perso par commercial (même source que Bilan/facturation) — admin seulement.
+    if (me?.role === "admin") {
+      try {
+        const u = await fetch("/api/users", { headers: authHeaders() }).then((r) => r.json());
+        if (u?.ok) {
+          const byEmail = new Map<string, { base: number; pct: number }>();
+          const byName = new Map<string, { base: number; pct: number }>();
+          for (const usr of u.users as { email: string; name: string; commission_base: number; commission_pct: number }[]) {
+            const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
+            if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
+            if (usr.name) byName.set(nameKey(usr.name), scheme);
+          }
+          setSchemeByEmail(byEmail); setSchemeByName(byName);
+        }
+      } catch { /* repli sur le barème par défaut */ }
+    }
   }
+
+  const schemeFor = (a: Appt) => {
+    const byEmail = a.commercialEmail ? schemeByEmail.get(a.commercialEmail.toLowerCase()) : undefined;
+    return byEmail ?? schemeByName.get(nameKey(a.commercial)) ?? DEFAULT_SCHEME;
+  };
 
   function setLocal(id: string, patch: Partial<Appt>) {
     setAppts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
@@ -280,7 +304,7 @@ function Agenda() {
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{a.startDateTime ? fmt(a.startDateTime) : "—"}</div>
-          {a.signStatus === "signed" && <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 14, marginTop: 2 }}>{eur(commission(a))}</div>}
+          {a.signStatus === "signed" && <div style={{ color: "#16a34a", fontWeight: 700, fontSize: 14, marginTop: 2 }}>{eur(commission(a, schemeFor(a)))}</div>}
           {!hideSale && a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#16a34a", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>🏁 VENDU</div>}
           {!hideSale && a.bcSigned && !a.vehicleSold && <div style={{ display: "inline-block", marginTop: 4, padding: "2px 7px", borderRadius: 5, background: "#2563eb", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>📝 BC SIGNÉ</div>}
         </div>
@@ -333,7 +357,7 @@ function Agenda() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
             <span style={{ fontSize: 13, color: "#6b7280" }}>Négo €</span>
             <input type="number" value={a.negotiation || ""} onChange={(e) => setLocal(a.id, { negotiation: Number(e.target.value) })} onBlur={(e) => save(a.id, { negotiation: Number(e.target.value) })} placeholder="0" style={{ width: 110, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }} />
-            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>= {eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(50€ + 10%)</span></span>
+            <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 600 }}>= {eur(commission(a, schemeFor(a)))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>({schemeFor(a).base}€{schemeFor(a).pct > 0 ? ` + ${schemeFor(a).pct}%` : ""})</span></span>
           </div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "8px 10px", borderRadius: 7, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 13, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer" }}>
             <input type="checkbox" checked={a.bcSigned} onChange={(e) => { setLocal(a.id, { bcSigned: e.target.checked }); save(a.id, { bcSigned: e.target.checked }); }} />

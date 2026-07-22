@@ -44,6 +44,7 @@ function Home() {
   const [rule, setRule] = useState<{ commercials: string[]; agenceOnly?: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [pastEntry, setPastEntry] = useState(false); // RDV déjà passé, saisi en retard -> pas de mail/SMS
 
   // Commercial pur (ni admin ni téléprospecteur) ne crée pas de RDV -> renvoyé vers son agenda.
   useEffect(() => {
@@ -238,11 +239,11 @@ function Home() {
       const res = await fetch("/api/appointment", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify(force ? { ...form, force: true } : form),
+        body: JSON.stringify({ ...form, ...(force ? { force: true } : {}), noNotify: pastEntry }),
       });
       const data = await res.json();
       setResult(data);
-      if (data.ok) setForm(EMPTY);
+      if (data.ok) { setForm(EMPTY); setPastEntry(false); }
     } catch (e) {
       setResult({ ok: false, error: e instanceof Error ? e.message : "Erreur" });
     } finally {
@@ -357,8 +358,21 @@ function Home() {
           </select>
         </div>
         <div>
-          <label style={labelStyle}>Créneau du rendez-vous {form.type === "deplacement" ? "(déplacement)" : "(agence)"}</label>
-          <SlotPicker type={form.type} commercial={form.commercial} value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#6b7280", cursor: "pointer", marginBottom: 8 }}>
+            <input type="checkbox" checked={pastEntry} onChange={(e) => setPastEntry(e.target.checked)} />
+            RDV déjà passé, saisi en retard — ne pas notifier le client (pas de mail/SMS)
+          </label>
+          {pastEntry ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+              <div><label style={labelStyle}>Date</label><input type="date" style={inputStyle} value={form.date} onChange={(e) => set("date", e.target.value)} /></div>
+              <div><label style={labelStyle}>Heure</label><input type="time" style={inputStyle} value={form.time} onChange={(e) => set("time", e.target.value)} /></div>
+            </div>
+          ) : (
+            <>
+              <label style={labelStyle}>Créneau du rendez-vous {form.type === "deplacement" ? "(déplacement)" : "(agence)"}</label>
+              <SlotPicker type={form.type} commercial={form.commercial} value={{ date: form.date, time: form.time }} onChange={(v) => setForm((f) => ({ ...f, date: v.date, time: v.time }))} />
+            </>
+          )}
         </div>
       </div>
 

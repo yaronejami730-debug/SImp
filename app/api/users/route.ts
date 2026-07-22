@@ -62,7 +62,10 @@ export async function PATCH(req: Request) {
   const s = requireManager(req);
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { id?: number; isCommercial?: boolean; isTeleprospector?: boolean; active?: boolean; phone?: string; schemeKey?: string };
+    const b = (await req.json()) as {
+      id?: number; isCommercial?: boolean; isTeleprospector?: boolean; active?: boolean; phone?: string;
+      schemeKey?: string; commissionBase?: number; commissionPct?: number;
+    };
     if (!b.id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
     if (s.role === "responsable" && !(await sameCallCenter(b.id, s.callCenterId))) {
       return NextResponse.json({ error: "Compte hors de votre call center." }, { status: 403 });
@@ -71,6 +74,11 @@ export async function PATCH(req: Request) {
       isCommercial: b.isCommercial, isTeleprospector: b.isTeleprospector, active: b.active, phone: b.phone,
     };
     if (b.schemeKey) { const sch = schemeByKey(b.schemeKey); patch.commissionBase = sch.base; patch.commissionPct = sch.pct; }
+    // Accord direct sur-mesure (montants libres, ex: 60€ négociés avec ce commercial précis) — admin uniquement.
+    if (s.role === "admin" && (b.commissionBase !== undefined || b.commissionPct !== undefined)) {
+      if (b.commissionBase !== undefined) patch.commissionBase = Number(b.commissionBase);
+      if (b.commissionPct !== undefined) patch.commissionPct = Number(b.commissionPct);
+    }
     await updateUserFlags(b.id, patch);
     return NextResponse.json({ ok: true });
   } catch (e) {

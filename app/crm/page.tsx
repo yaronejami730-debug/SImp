@@ -14,7 +14,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string;
   immatriculation: string; vehiclePhotoUrl: string;
   commercial: string; teleprospector: string; type: string; address: string;
-  present: boolean; signStatus: Sign; negotiation: number; owner: string;
+  present: boolean; signStatus: Sign; negotiation: number; owner: string; commercialEmail?: string;
   civility: string; cancelled: boolean; bcSigned: boolean; vehicleSold: boolean;
   photos: string[];
 };
@@ -32,10 +32,10 @@ type Client = {
 
 const onlyDigits = (s: string) => s.replace(/\D/g, "");
 const vehicleLabel = (a: Appt) => [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
-const BASE_COMMISSION = 50;
-const NEGO_RATE = 0.1;
+const DEFAULT_SCHEME = { base: 50, pct: 10 }; // repli si le commercial n'a pas de compte / barème
+const nameKey = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).sort().join(" ");
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-const commission = (a: Appt) => (a.signStatus === "signed" ? BASE_COMMISSION + NEGO_RATE * (a.negotiation || 0) : 0);
+const commission = (a: Appt, scheme: { base: number; pct: number } = DEFAULT_SCHEME) => (a.signStatus === "signed" ? scheme.base + (scheme.pct / 100) * (a.negotiation || 0) : 0);
 const monthKey = (iso: string | null) => iso ? iso.slice(0, 7) : "";
 const monthLabel = (key: string) => {
   if (!key) return "";
@@ -54,6 +54,8 @@ function CRM() {
   const [filter, setFilter] = useState<"all" | "signed" | "thinking" | "unsigned" | "sold" | "bc">("all");
   const [monthFilter, setMonthFilter] = useState<string>("");
   const [statFilter, setStatFilter] = useState<"" | "rdv" | "signed" | "bc" | "sold">("");
+  const [schemeByEmail, setSchemeByEmail] = useState<Map<string, { base: number; pct: number }>>(new Map());
+  const [schemeByName, setSchemeByName] = useState<Map<string, { base: number; pct: number }>>(new Map());
 
   useEffect(() => { load(); }, []);
 
@@ -66,7 +68,29 @@ function CRM() {
       else setErr(d.error ?? "Erreur");
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
+
+    // Barème perso par commercial (même source que Bilan/Agenda/facturation) — admin seulement.
+    if (isAdmin) {
+      try {
+        const u = await fetch("/api/users", { headers: authHeaders() }).then((r) => r.json());
+        if (u?.ok) {
+          const byEmail = new Map<string, { base: number; pct: number }>();
+          const byName = new Map<string, { base: number; pct: number }>();
+          for (const usr of u.users as { email: string; name: string; commission_base: number; commission_pct: number }[]) {
+            const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
+            if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
+            if (usr.name) byName.set(nameKey(usr.name), scheme);
+          }
+          setSchemeByEmail(byEmail); setSchemeByName(byName);
+        }
+      } catch { /* repli sur le barème par défaut */ }
+    }
   }
+
+  const schemeFor = (a: Appt) => {
+    const byEmail = a.commercialEmail ? schemeByEmail.get(a.commercialEmail.toLowerCase()) : undefined;
+    return byEmail ?? schemeByName.get(nameKey(a.commercial)) ?? DEFAULT_SCHEME;
+  };
 
   const clients: Client[] = useMemo(() => {
     const map = new Map<string, Client>();
@@ -134,14 +158,14 @@ function CRM() {
       if (!k) continue;
       const s = m.get(k) ?? { key: k, rdv: 0, signed: 0, bc: 0, sold: 0, comm: 0 };
       s.rdv++;
-      if (a.signStatus === "signed") { s.signed++; s.comm += commission(a); }
+      if (a.signStatus === "signed") { s.signed++; s.comm += commission(a, schemeFor(a)); }
       if (a.bcSigned) s.bc++;
       if (a.vehicleSold) s.sold++;
       m.set(k, s);
     }
     return [...m.values()].sort((a, b) => a.key < b.key ? 1 : -1);
-  }, [appts]);
-  const totalGain = useMemo(() => appts.reduce((s, a) => s + commission(a), 0), [appts]);
+  }, [appts, schemeByEmail, schemeByName]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totalGain = useMemo(() => appts.reduce((s, a) => s + commission(a, schemeFor(a)), 0), [appts, schemeByEmail, schemeByName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 

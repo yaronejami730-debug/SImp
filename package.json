@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@abby-inc/node": "^1.0.0",
     "@anthropic-ai/sdk": "^0.100.1",
     "@stripe/react-stripe-js": "^6.8.0",
     "@stripe/stripe-js": "^9.10.0",

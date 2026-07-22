@@ -259,11 +259,6 @@ function NotifMatrix({ msgs, startDateTime }: { msgs: MsgMeta[]; startDateTime?:
           </div>
         ))}
       </div>
-      {rows.some((r) => r.error) && (
-        <div style={{ marginTop: 8, fontSize: 11, color: "#dc2626" }}>
-          {rows.filter((r) => r.error).map((r) => <div key={r.label}>⚠️ {r.label} : {r.error}</div>)}
-        </div>
-      )}
     </div>
   );
 }

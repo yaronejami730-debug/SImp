@@ -100,7 +100,7 @@ export async function createUser(input: CreateUserInput): Promise<User> {
      returning ${USER_COLS}, created_at`,
     [
       email, hashPassword(input.password), input.name.trim(), input.role ?? "collab",
-      input.callCenterId ?? 1, input.commissionBase ?? 50, input.commissionPct ?? 10,
+      input.callCenterId ?? 1, input.commissionBase ?? 60, input.commissionPct ?? 0,
       input.isCommercial ?? false, input.isTeleprospector ?? false, (input.phone ?? "").trim(), username,
     ],
   );

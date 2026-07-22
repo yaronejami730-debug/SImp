@@ -22,8 +22,9 @@ export async function POST(req: Request) {
     const auth = getAuth(req);
     if (!auth) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
-    const body = (await req.json()) as Partial<AppointmentInput> & { force?: boolean };
+    const body = (await req.json()) as Partial<AppointmentInput> & { force?: boolean; noNotify?: boolean };
     const force = body.force === true; // "Créer quand même" : ignore conflits/demi-journée (avertit au lieu de bloquer)
+    const noNotify = body.noNotify === true; // RDV déjà passé, saisi en retard : pas de mail/SMS au client
     const required: (keyof AppointmentInput)[] = [
       "firstName",
       "lastName",
@@ -113,10 +114,10 @@ export async function POST(req: Request) {
     const commPhone = await commercialPhoneByName(appt.commercial);
     const isDeplacement = appt.type === "deplacement";
 
-    // 3. Mail de confirmation PAR TYPE (non-bloquant).
+    // 3. Mail de confirmation PAR TYPE (non-bloquant). Sauté si RDV déjà passé (noNotify).
     let emailSent = false;
     let emailError: string | undefined;
-    try {
+    if (!noNotify) try {
       const base = baseUrlFrom(req);
       const mail = isDeplacement
         ? mobileConfirmationEmail({
@@ -143,10 +144,10 @@ export async function POST(req: Request) {
       emailError = e instanceof Error ? e.message : "Erreur e-mail.";
     }
 
-    // 3b. SMS confirmation PAR TYPE (non-bloquant). Inclut le commercial + son tél.
+    // 3b. SMS confirmation PAR TYPE (non-bloquant). Inclut le commercial + son tél. Sauté si noNotify.
     let smsSent = false;
     let smsError: string | undefined;
-    try {
+    if (!noNotify) try {
       const d = new Date(appt.startDateTime);
       const date = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(d);
       const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(d).replace(":", "h");

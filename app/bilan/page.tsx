@@ -14,8 +14,7 @@ const GRAY = "#6b7280";
 const RED = "#dc2626";
 const CYAN = "#0891b2"; // annonce en ligne — mandat en cours
 
-const FRAIS_FIXE = 50;
-const COMM_RATE = 0.1;
+const DEFAULT_SCHEME = { base: 50, pct: 10 }; // repli si le commercial n'a pas de compte / barème
 const LATE_DAYS = 30; // une facture émise non payée depuis +30 j = retard
 
 type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
@@ -25,7 +24,7 @@ type Appt = {
   id: string; startDateTime: string | null; createdAt: string | null;
   firstName: string; lastName: string; email: string; phone: string;
   platform: string; carBrand: string; carModel: string; carFinish: string;
-  immatriculation: string; commercial: string; teleprospector: string;
+  immatriculation: string; commercial: string; commercialEmail: string; teleprospector: string;
   type: string; present: boolean; presence: "present" | "absent" | "unknown"; signStatus: Sign; signStatusAt: string | null;
   note: string; negotiation: number; owner: string; cancelled: boolean;
   bcSigned: boolean; bcSignedAt: string | null; vehicleSold: boolean; soldAt: string | null;
@@ -77,7 +76,7 @@ type Row = {
   absent: boolean;   // client absent au RDV -> état terminal, rien à faire
 };
 
-function derive(a: Appt): Row {
+function derive(a: Appt, scheme: { base: number; pct: number } = DEFAULT_SCHEME): Row {
   const cancelled = a.cancelled;
   const reschedEntries = (a.history || []).filter((h) => h.t === "rescheduled");
   const reprogrammed = reschedEntries.length > 0;
@@ -95,16 +94,16 @@ function derive(a: Appt): Row {
   // Frais fixes encore dus : mandat actif, OU déjà facturés/payés avant le retrait (on les garde).
   const ffBillable = mandatWasSigned && (!mandatRemoved || a.ffStatus === "invoiced" || a.ffStatus === "paid");
   const bc = !cancelled && a.bcSigned;
-  const ffAmount = ffBillable ? FRAIS_FIXE : 0;
-  const commAmount = bc ? Math.round(COMM_RATE * (a.negotiation || 0)) : 0;
+  const ffAmount = ffBillable ? scheme.base : 0;
+  const commAmount = bc ? Math.round((scheme.pct / 100) * (a.negotiation || 0)) : 0;
   const ffState: FFState = !ffBillable ? "none" : (a.ffStatus === "paid" ? "paid" : a.ffStatus === "invoiced" ? "invoiced" : "to_invoice");
   const commState: CommState = !bc ? "pending_bc" : (a.commStatus === "paid" ? "paid" : a.commStatus === "invoiced" ? "invoiced" : "to_invoice");
 
-  const ffToInvoice = ffState === "to_invoice" ? FRAIS_FIXE : 0;
+  const ffToInvoice = ffState === "to_invoice" ? scheme.base : 0;
   const commToInvoice = commState === "to_invoice" ? commAmount : 0;
-  const ffInvoiced = (ffState === "invoiced" || ffState === "paid") ? FRAIS_FIXE : 0;
+  const ffInvoiced = (ffState === "invoiced" || ffState === "paid") ? scheme.base : 0;
   const commInvoiced = (commState === "invoiced" || commState === "paid") ? commAmount : 0;
-  const ffPaid = ffState === "paid" ? FRAIS_FIXE : 0;
+  const ffPaid = ffState === "paid" ? scheme.base : 0;
   const commPaid = commState === "paid" ? commAmount : 0;
 
   let global: Row["global"];
@@ -171,6 +170,11 @@ function Bilan() {
   const [fRdv, setFRdv] = useState("");         // "", signed, thinking, unsigned, no_status, cancelled, reprogrammed, present, absent
   const [openId, setOpenId] = useState("");
   const [busyPay, setBusyPay] = useState(""); // id+kind en cours de maj paiement
+  const [role, setRole] = useState("");
+  const [schemeByEmail, setSchemeByEmail] = useState<Map<string, { base: number; pct: number }>>(new Map());
+  const [schemeByName, setSchemeByName] = useState<Map<string, { base: number; pct: number }>>(new Map());
+  const [busyInvoice, setBusyInvoice] = useState(false);
+  const [invoiceMsg, setInvoiceMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -191,16 +195,30 @@ function Bilan() {
   async function load() {
     setLoading(true); setErr("");
     try {
-      const [r1, r2] = await Promise.all([
+      const [r1, r2, r3] = await Promise.all([
         fetch("/api/appointments", { headers: authHeaders() }),
         fetch("/api/messages-stats", { headers: authHeaders() }).catch(() => null),
+        fetch("/api/users", { headers: authHeaders() }).catch(() => null), // barème perso (frais fixe / % nego) par commercial
       ]);
       const d = await r1.json();
-      if (d.ok) setAppts(d.appointments);
+      if (d.ok) { setAppts(d.appointments); setRole(d.role ?? ""); }
       else setErr(d.error ?? "Erreur");
       if (r2) {
         const m = await r2.json();
         if (m?.ok) setMsgStats(new Map((m.stats as MsgStat[]).map((s) => [s.event_id, s])));
+      }
+      if (r3) {
+        const u = await r3.json();
+        if (u?.ok) {
+          const byEmail = new Map<string, { base: number; pct: number }>();
+          const byName = new Map<string, { base: number; pct: number }>();
+          for (const usr of u.users as { email: string; name: string; commission_base: number; commission_pct: number }[]) {
+            const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
+            if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
+            if (usr.name) byName.set(nameKey(usr.name), scheme);
+          }
+          setSchemeByEmail(byEmail); setSchemeByName(byName);
+        }
       }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
@@ -235,6 +253,12 @@ function Bilan() {
   const teles = useMemo(() => [...new Set(appts.map((a) => a.teleprospector).filter(Boolean))].sort(), [appts]);
   const platforms = useMemo(() => [...new Set(appts.map((a) => a.platform).filter(Boolean))].sort(), [appts]);
 
+  // Barème d'un RDV : celui du compte du commercial (email, puis nom en repli), sinon le défaut.
+  const schemeFor = (a: Appt) => {
+    const byEmail = a.commercialEmail ? schemeByEmail.get(a.commercialEmail.toLowerCase()) : undefined;
+    return byEmail ?? schemeByName.get(nameKey(a.commercial)) ?? DEFAULT_SCHEME;
+  };
+
   // Dossiers de la période choisie.
   const periodRows: Row[] = useMemo(() => {
     return appts
@@ -247,9 +271,9 @@ function Bilan() {
         if (mo < lo || mo > hi) return false;
         return true;
       })
-      .map(derive)
+      .map((a) => derive(a, schemeFor(a)))
       .sort((x, y) => (x.a.startDateTime! < y.a.startDateTime! ? 1 : -1));
-  }, [appts, year, mFrom, mTo]);
+  }, [appts, year, mFrom, mTo, schemeByEmail, schemeByName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filtres + recherche cumulables.
   const rows: Row[] = useMemo(() => {
@@ -326,12 +350,38 @@ function Bilan() {
     setFMandat(""); setFBc(""); setFStatus(""); setFRdv("");
   }
 
+  // Dossiers filtrés à l'écran qui ont encore un montant à facturer (frais fixe et/ou commission).
+  const billableRows = useMemo(() => rows.filter((r) => r.ffToInvoice > 0 || r.commToInvoice > 0), [rows]);
+
+  // Génère une facture BROUILLON Abby pour le commercial sélectionné, à partir des dossiers
+  // actuellement filtrés/affichés (période + commercial + statut). Jamais finalisée automatiquement.
+  async function generateInvoice() {
+    if (!fCommercial || billableRows.length === 0) return;
+    setBusyInvoice(true); setInvoiceMsg(null);
+    try {
+      const r = await fetch("/api/abby/invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ commercial: fCommercial, apptIds: billableRows.map((r) => r.a.id) }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setInvoiceMsg({ ok: false, text: d.error ?? "Erreur." }); return; }
+      if (d.empty) { setInvoiceMsg({ ok: true, text: "Rien à facturer sur cette sélection." }); return; }
+      setInvoiceMsg({ ok: true, text: `${d.reused ? "Lignes ajoutées au brouillon Abby existant" : "Facture brouillon créée dans Abby"}${d.invoiceNumber ? ` (n° ${d.invoiceNumber})` : ""} — +${d.count} ligne(s), total ${eur(d.totalEur)}. À vérifier/finaliser dans Abby.` });
+      await load();
+    } catch (e) {
+      setInvoiceMsg({ ok: false, text: e instanceof Error ? e.message : "Erreur." });
+    } finally {
+      setBusyInvoice(false);
+    }
+  }
+
   // ───────── Exports ─────────
   const COLS = [
     "Nom", "Prénom", "Téléphone", "Véhicule", "Immatriculation", "Date RDV", "Créé le",
     "Commercial", "Téléprospecteur", "Société/Plateforme", "Mandat signé", "Date mandat",
     "BC signé", "Date BC", "Négociation", "Frais fixes", "Statut FF", "N° facture FF", "Date FF", "Payé FF le",
-    "Commission 10%", "Statut commission", "N° facture comm.", "Date comm.", "Payé comm. le",
+    "Commission", "Statut commission", "N° facture comm.", "Date comm.", "Payé comm. le",
     "Statut global", "Mails envoyés", "SMS envoyés", "Parking", "Note",
   ];
   function rowValues(r: Row): string[] {
@@ -341,7 +391,7 @@ function Bilan() {
       a.lastName, a.firstName, a.phone, vehicleLabel(a), a.immatriculation, fmtDate(a.startDateTime), fmtDate(a.createdAt),
       canonComm(a.commercial), a.teleprospector, a.platform, r.mandatRemoved ? "Retiré" : r.mandatSigned ? "Oui" : "Non", r.mandatSigned || r.mandatRemoved ? fmtDate(a.signStatusAt) : "",
       r.bc ? "Oui" : "Non", r.bc ? fmtDate(a.bcSignedAt) : "", a.negotiation ? String(a.negotiation) : "0",
-      r.ffBillable ? String(FRAIS_FIXE) : "0", ffLabel[r.ffState], a.ffNo, fmtDate(a.ffDate), fmtDate(a.ffPaidDate),
+      r.ffBillable ? String(r.ffAmount) : "0", ffLabel[r.ffState], a.ffNo, fmtDate(a.ffDate), fmtDate(a.ffPaidDate),
       r.bc ? String(r.commAmount) : "0", commLabel[r.commState], a.commNo, fmtDate(a.commDate), fmtDate(a.commPaidDate),
       r.global.label, ms ? String(ms.emails) : "0", ms ? String(ms.sms) : "0", parking, a.note,
     ];
@@ -383,8 +433,8 @@ function Bilan() {
           <tr><td>Mandat</td><td>${r.mandatSigned ? `✅ Signé${a.signStatusAt ? ` le ${esc(fmtDate(a.signStatusAt))}` : ""}` : a.signStatus === "listed" ? "📢 Annonce en ligne — mandat en cours" : a.signStatus === "thinking" ? "🤔 Réfléchit" : a.signStatus === "unsigned" ? "❌ Non signé" : "— En cours"}</td></tr>
           <tr><td>Bon de commande</td><td>${r.bc ? `✅ Signé${a.bcSignedAt ? ` le ${esc(fmtDate(a.bcSignedAt))}` : ""}` : "❌ Non signé (commission non facturable)"}</td></tr>
           <tr><td>Négociation</td><td>${esc(eur(a.negotiation))}</td></tr>
-          <tr><td>Frais fixes (50 €)</td><td>${esc(ffLabel[r.ffState])}${a.ffNo ? ` · n° ${esc(a.ffNo)}` : ""}${a.ffDate ? ` · ${esc(fmtDate(a.ffDate))}` : ""}${a.ffPaidDate ? ` · payé ${esc(fmtDate(a.ffPaidDate))}` : ""}${a.ffComment ? ` · ${esc(a.ffComment)}` : ""}</td></tr>
-          <tr><td>Commission 10%</td><td>${r.bc ? esc(eur(r.commAmount)) : "—"} · ${esc(commLabel[r.commState])}${a.commNo ? ` · n° ${esc(a.commNo)}` : ""}${a.commDate ? ` · ${esc(fmtDate(a.commDate))}` : ""}${a.commPaidDate ? ` · payé ${esc(fmtDate(a.commPaidDate))}` : ""}${a.commComment ? ` · ${esc(a.commComment)}` : ""}</td></tr>
+          <tr><td>Frais fixes${r.ffBillable ? ` (${esc(eur(r.ffAmount))})` : ""}</td><td>${esc(ffLabel[r.ffState])}${a.ffNo ? ` · n° ${esc(a.ffNo)}` : ""}${a.ffDate ? ` · ${esc(fmtDate(a.ffDate))}` : ""}${a.ffPaidDate ? ` · payé ${esc(fmtDate(a.ffPaidDate))}` : ""}${a.ffComment ? ` · ${esc(a.ffComment)}` : ""}</td></tr>
+          <tr><td>Commission</td><td>${r.bc ? esc(eur(r.commAmount)) : "—"} · ${esc(commLabel[r.commState])}${a.commNo ? ` · n° ${esc(a.commNo)}` : ""}${a.commDate ? ` · ${esc(fmtDate(a.commDate))}` : ""}${a.commPaidDate ? ` · payé ${esc(fmtDate(a.commPaidDate))}` : ""}${a.commComment ? ` · ${esc(a.commComment)}` : ""}</td></tr>
           <tr><td>Véhicule / parking</td><td>${esc(parking)}</td></tr>
           <tr><td>Relances envoyées</td><td>📧 ${ms?.emails ?? 0} mail(s) · 📱 ${ms?.sms ?? 0} SMS${ms?.last_sent ? ` · dernier ${esc(fmtDate(ms.last_sent))}` : ""}</td></tr>
           ${a.note ? `<tr><td>Note / raison</td><td>${esc(a.note)}</td></tr>` : ""}
@@ -451,7 +501,7 @@ function Bilan() {
         <td>${esc(fmtDate(a.startDateTime))}</td>
         <td>${esc(canonComm(a.commercial) || "—")}</td>
         <td>${mandatCell(r)}</td>
-        <td class="r">${r.mandatSigned ? esc(eur(FRAIS_FIXE)) : "—"}</td>
+        <td class="r">${r.mandatSigned ? esc(eur(r.ffAmount)) : "—"}</td>
         <td class="r">${r.bc ? esc(eur(r.commAmount)) : "—"}</td>
         <td class="c">📧 ${ms?.emails ?? 0}<br>📱 ${ms?.sms ?? 0}</td>
         <td>${statut(r)}</td>
@@ -617,12 +667,27 @@ function Bilan() {
             { v: "pending_bc", l: "En attente du BC" },
           ])}
           <button onClick={clearFilters} style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: "#fff", color: NAVY, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Effacer</button>
+          {role === "admin" && (
+            <button
+              onClick={generateInvoice}
+              disabled={!fCommercial || billableRows.length === 0 || busyInvoice}
+              title={!fCommercial ? "Sélectionne d'abord un commercial dans les filtres" : billableRows.length === 0 ? "Aucun montant à facturer sur cette sélection" : `Facture ${billableRows.length} ligne(s) pour ${fCommercial}`}
+              style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: !fCommercial || billableRows.length === 0 || busyInvoice ? "#cbd5e1" : "#7c3aed", color: "#fff", fontSize: 13, fontWeight: 700, cursor: !fCommercial || billableRows.length === 0 || busyInvoice ? "default" : "pointer" }}
+            >
+              {busyInvoice ? "Génération…" : `🧾 Facturer${fCommercial ? ` ${fCommercial}` : ""}${billableRows.length ? ` (${billableRows.length})` : ""}`}
+            </button>
+          )}
           <div style={{ flex: 1 }} />
           <button onClick={exportSimplePDF} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#475569", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📄 PDF simple</button>
           <button onClick={exportPDF} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: NAVY, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📄 PDF détaillé</button>
           <button onClick={exportExcel} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: GREEN, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📊 Excel</button>
           <button onClick={exportCSV} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>⬇️ CSV</button>
         </div>
+        {invoiceMsg && (
+          <div style={{ marginTop: 10, padding: 10, borderRadius: 8, fontSize: 13, background: invoiceMsg.ok ? "#f0fdf4" : "#fef2f2", color: invoiceMsg.ok ? GREEN_DARK : RED, border: `1px solid ${invoiceMsg.ok ? GREEN : RED}` }}>
+            {invoiceMsg.text}
+          </div>
+        )}
       </div>
 
       {/* Tableau */}
@@ -660,7 +725,7 @@ function Bilan() {
                   <td style={td}>{a.teleprospector || "—"}</td>
                   <td style={td}>{r.mandatRemoved ? <span title={`Mandat retiré${a.mandatRemovedAt ? ` le ${fmtDate(a.mandatRemovedAt)}` : ""}${a.mandatRemovedReason ? ` — ${a.mandatRemovedReason}` : ""}`}>{pill("#b91c1c", "⛔ Retiré")}</span> : r.mandatSigned ? pill(GREEN, "✅") : a.signStatus === "listed" ? pill(CYAN, "📢") : a.signStatus === "thinking" ? pill(YELLOW, "🤔") : a.signStatus === "unsigned" ? pill(RED, "❌") : pill(GRAY, "—")}</td>
                   <td style={td}>{r.bc ? pill("#2563eb", "✅") : pill(GRAY, "—")}</td>
-                  <td style={td}>{r.ffBillable ? <>{eur(FRAIS_FIXE)} {pill(ffColor[r.ffState], ffLabel[r.ffState])}{a.ffNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.ffNo}</div>}<div>{payBtn("ff", r)}</div></> : "—"}</td>
+                  <td style={td}>{r.ffBillable ? <>{eur(r.ffAmount)} {pill(ffColor[r.ffState], ffLabel[r.ffState])}{a.ffNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.ffNo}</div>}<div>{payBtn("ff", r)}</div></> : "—"}</td>
                   <td style={td}>{r.bc ? <>{eur(r.commAmount)} {pill(commColor[r.commState], commLabel[r.commState])}{a.commNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.commNo}</div>}<div>{payBtn("comm", r)}</div></> : pill(YELLOW, "Attente BC")}</td>
                   <td style={td}>{pill(r.global.color, r.global.label)}{r.late && <div style={{ marginTop: 3 }}>{pill(RED, "RETARD")}</div>}</td>
                   <td style={td}>📧 {ms?.emails ?? 0} · 📱 {ms?.sms ?? 0}</td>
@@ -776,7 +841,7 @@ function EditModal({ row, msg, onClose, onSaved }: { row: Row; msg?: MsgStat; on
           <div><b>Commercial :</b> {a.commercial || "—"} · <b>Téléprospecteur :</b> {a.teleprospector || "—"}</div>
           <div><b>Mandat :</b> {row.mandatSigned ? `✅ signé${a.signStatusAt ? ` le ${fmtDate(a.signStatusAt)}` : ""}` : a.signStatus === "listed" ? "📢 annonce en ligne — mandat en cours" : a.signStatus === "thinking" ? "🤔 réfléchit" : a.signStatus === "unsigned" ? "❌ non signé" : "— en cours"}</div>
           <div><b>Bon de commande :</b> {row.bc ? `✅ signé${a.bcSignedAt ? ` le ${fmtDate(a.bcSignedAt)}` : ""} → commission facturable` : "❌ non signé → commission en attente"}</div>
-          <div><b>Négociation :</b> {eur(a.negotiation)} · <b>Commission 10% :</b> {row.bc ? eur(row.commAmount) : "—"}</div>
+          <div><b>Négociation :</b> {eur(a.negotiation)} · <b>Commission :</b> {row.bc ? eur(row.commAmount) : "—"}</div>
           <div><b>Véhicule / parking :</b> {a.parkingRequested ? "🅿️ parking sécurisé demandé" : a.parkingSent ? "instructions envoyées" : "—"}</div>
           <div><b>Relances :</b> 📧 {msg?.emails ?? 0} mail(s) · 📱 {msg?.sms ?? 0} SMS{msg?.last_sent ? ` · dernier ${fmtDate(msg.last_sent)}` : ""}</div>
           {a.note && <div><b>Note :</b> {a.note}</div>}
@@ -784,7 +849,7 @@ function EditModal({ row, msg, onClose, onSaved }: { row: Row; msg?: MsgStat; on
 
         {/* Frais fixes */}
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, marginBottom: 12 }}>
-          <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>💶 Frais fixes — {eur(FRAIS_FIXE)} {!row.mandatSigned && <span style={{ color: ORANGE, fontWeight: 400, fontSize: 12 }}>(mandat non signé)</span>}</div>
+          <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>💶 Frais fixes — {eur(row.ffAmount)} {!row.mandatSigned && <span style={{ color: ORANGE, fontWeight: 400, fontSize: 12 }}>(mandat non signé)</span>}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div><label style={lbl}>Statut</label>{statusSel(ffStatus, setFfStatus)}</div>
             <div><label style={lbl}>N° de facture</label><input style={inp} value={ffNo} onChange={(e) => setFfNo(e.target.value)} /></div>
@@ -796,7 +861,7 @@ function EditModal({ row, msg, onClose, onSaved }: { row: Row; msg?: MsgStat; on
 
         {/* Commission */}
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, marginBottom: 12, opacity: row.bc ? 1 : 0.6 }}>
-          <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>📈 Commission 10% — {row.bc ? eur(row.commAmount) : "en attente du bon de commande"}</div>
+          <div style={{ fontWeight: 700, color: NAVY, marginBottom: 8 }}>📈 Commission — {row.bc ? eur(row.commAmount) : "en attente du bon de commande"}</div>
           {!row.bc && <p style={{ margin: "0 0 8px", fontSize: 12, color: YELLOW }}>⚠️ Le bon de commande n'est pas signé : la commission n'est pas encore facturable.</p>}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div><label style={lbl}>Statut</label>{statusSel(commStatus, setCommStatus)}</div>
