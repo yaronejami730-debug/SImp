@@ -51,21 +51,20 @@ export async function POST(req: Request) {
       const ffBillable = mandatWasSigned && (!a.mandatRemoved || a.ffStatus === "invoiced" || a.ffStatus === "paid");
       const ffToInvoice = ffBillable && a.ffStatus === "" ? scheme.base : 0;
       const commToInvoice = a.bcSigned && a.commStatus === "" ? Math.round((scheme.pct / 100) * (a.negotiation || 0)) : 0;
-      const clientName = `${a.firstName} ${a.lastName}`.trim();
-      const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
-      const dateStr = a.startDateTime ? new Date(a.startDateTime).toLocaleDateString("fr-FR") : "";
+      const clientName = `${a.lastName.toUpperCase()} ${a.firstName}`.trim();
+      const immat = a.immatriculation ? ` — ${a.immatriculation}` : "";
       if (ffToInvoice > 0) {
+        const signDate = a.signStatusAt ? new Date(a.signStatusAt).toLocaleDateString("fr-FR") : "";
         lines.push({
           apptId: a.id, kind: "ff", amountEur: ffToInvoice,
-          designation: `Frais fixe — ${clientName}`,
-          description: `${dateStr}${vehicle ? ` · ${vehicle}` : ""} · mandat signé`,
+          designation: `${clientName}${immat}${signDate ? ` — ${signDate}` : ""}`,
         });
       }
       if (commToInvoice > 0) {
+        const signDate = a.bcSignedAt ? new Date(a.bcSignedAt).toLocaleDateString("fr-FR") : "";
         lines.push({
           apptId: a.id, kind: "comm", amountEur: commToInvoice,
-          designation: `Commission ${scheme.pct} % — ${clientName}`,
-          description: `${dateStr}${vehicle ? ` · ${vehicle}` : ""} · négocié ${a.negotiation} €`,
+          designation: `${clientName}${immat}${signDate ? ` — ${signDate}` : ""}`,
         });
       }
     }

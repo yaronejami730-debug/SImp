@@ -14,7 +14,7 @@ export type AbbyInvoiceLine = {
 };
 
 type LinePayload = {
-  unitPrice: number; quantity: number; quantityUnit: null; designation: string;
+  generatedId?: string; unitPrice: number; quantity: number; quantityUnit: null; designation: string;
   description: string; type: "service_delivery"; vatCode: "FR_00HT";
 };
 
@@ -54,15 +54,18 @@ async function openDraftLines(invoiceId: string): Promise<LinePayload[] | null> 
     const res = await abby.invoice.getInvoice({ path: { invoiceId } });
     const inv = res.data;
     if (!inv || inv.state !== "draft") return null; // finalisé ou dans un autre état -> on n'y touche plus
-    return (inv.lines ?? []).map((l) => ({
-      unitPrice: l.unitPrice,
-      quantity: l.quantity ?? 1,
-      quantityUnit: null,
-      designation: l.designation,
-      description: l.description ?? "",
-      type: "service_delivery",
-      vatCode: "FR_00HT",
-    }));
+    return (inv.lines ?? [])
+      .filter((l) => l.unitPrice > 0) // ne jamais reconduire une ligne fantôme à 0 €
+      .map((l) => ({
+        generatedId: l.generatedId ?? l.id,
+        unitPrice: l.unitPrice,
+        quantity: l.quantity ?? 1,
+        quantityUnit: null,
+        designation: l.designation,
+        description: l.description ?? "",
+        type: "service_delivery",
+        vatCode: "FR_00HT",
+      }));
   } catch {
     return null; // supprimé dans Abby, ou introuvable -> on repart sur un nouveau brouillon
   }
@@ -93,7 +96,7 @@ export async function upsertDraftInvoice(
     invoiceNumber = invoice.data?.number;
   }
 
-  const payload = [...(existing ?? []), ...newLines.map(toPayload)];
+  const payload = [...(existing ?? []), ...newLines.map(toPayload)].filter((l) => l.unitPrice > 0); // jamais de ligne à 0 €
   const updated = await abby.billing.updateLines({ path: { billingId: invoiceId }, body: { lines: payload } });
   const totalCents = Number(updated.data?.total?.amountWithTaxAfterDiscount ?? payload.reduce((s, p) => s + p.unitPrice, 0));
   return { id: invoiceId, number: invoiceNumber ?? updated.data?.number, totalCents, reused: !!existing };
