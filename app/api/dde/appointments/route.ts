@@ -37,9 +37,16 @@ export async function PATCH(req: Request) {
   const s = getDdeAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
-    const b = (await req.json()) as { id?: number; statut?: string; notes?: string };
+    const b = (await req.json()) as { id?: number; statut?: string; notes?: string; whatsappSent?: boolean; invoiced?: boolean; callcenterPaid?: boolean };
     if (!b.id) return NextResponse.json({ error: "id requis." }, { status: 400 });
-    await updateDdeAppointment(s, Number(b.id), { statut: b.statut, notes: b.notes });
+    // Facturation et paiement du call center : réservés à l'admin.
+    if ((b.invoiced !== undefined || b.callcenterPaid !== undefined) && s.role !== "admin") {
+      return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
+    }
+    await updateDdeAppointment(s, Number(b.id), {
+      statut: b.statut, notes: b.notes,
+      whatsappSent: b.whatsappSent, invoiced: b.invoiced, callcenterPaid: b.callcenterPaid,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

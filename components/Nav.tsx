@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { getUser, getTheme, clearAuth } from "@/lib/client";
 import NotifBell from "./NotifBell";
 
@@ -73,7 +74,7 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
 
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         {tabs.map((t) => (
-          <a
+          <Link
             key={t.key}
             href={t.href}
             style={{
@@ -90,10 +91,10 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
             }}
           >
             {t.label}
-          </a>
+          </Link>
         ))}
         {user?.role === "admin" && (
-          <a
+          <Link
             href="/avis-admin"
             style={{
               flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
@@ -101,10 +102,10 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
             }}
           >
             ⭐ Avis
-          </a>
+          </Link>
         )}
         {user?.role === "admin" && (
-          <a
+          <Link
             href="/templates"
             style={{
               flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
@@ -112,11 +113,11 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
             }}
           >
             📧 Templates
-          </a>
+          </Link>
         )}
         {(user?.role === "admin" || user?.role === "responsable") && (
           <>
-            <a
+            <Link
               href="/baremes"
               style={{
                 flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
@@ -124,8 +125,8 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
               }}
             >
               Barèmes
-            </a>
-            <a
+            </Link>
+            <Link
               href="/comptes"
               style={{
                 flex: "1 1 auto", textAlign: "center", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 600, textDecoration: "none",
@@ -133,7 +134,7 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
               }}
             >
               Comptes
-            </a>
+            </Link>
           </>
         )}
       </div>

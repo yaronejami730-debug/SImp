@@ -88,9 +88,10 @@ export async function deleteDdeUser(id: number): Promise<void> {
 export type DdeAppointment = {
   id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string;
   telepro_email: string; telepro_name: string; statut: string; notes: string; created_at: string;
+  whatsapp_sent_at: string | null; invoiced_at: string | null; callcenter_paid_at: string | null;
 };
 
-const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, statut, notes, created_at`;
+const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at`;
 
 /** Admin -> tous les RDV ; téléprospectrice -> uniquement les siens. */
 export async function listDdeAppointments(s: DdeSession): Promise<DdeAppointment[]> {
@@ -116,8 +117,22 @@ export async function createDdeAppointment(s: DdeSession, input: {
   return rows[0] as DdeAppointment;
 }
 
-export async function updateDdeAppointment(s: DdeSession, id: number, patch: { statut?: string; notes?: string }): Promise<void> {
-  const map: Record<string, unknown> = { statut: patch.statut, notes: patch.notes };
+/** Marqueurs de suivi : un booléen -> horodatage (coché) ou null (décoché). */
+export type DdeAppointmentPatch = {
+  statut?: string; notes?: string;
+  whatsappSent?: boolean;   // message WhatsApp envoyé
+  invoiced?: boolean;       // client facturé
+  callcenterPaid?: boolean; // call center payé
+};
+
+export async function updateDdeAppointment(s: DdeSession, id: number, patch: DdeAppointmentPatch): Promise<void> {
+  const stamp = (v?: boolean) => (v === undefined ? undefined : v ? new Date().toISOString() : null);
+  const map: Record<string, unknown> = {
+    statut: patch.statut, notes: patch.notes,
+    whatsapp_sent_at: stamp(patch.whatsappSent),
+    invoiced_at: stamp(patch.invoiced),
+    callcenter_paid_at: stamp(patch.callcenterPaid),
+  };
   const sets: string[] = []; const params: unknown[] = [];
   for (const [col, val] of Object.entries(map)) if (val !== undefined) { params.push(val); sets.push(`${col} = $${params.length}`); }
   if (!sets.length) return;

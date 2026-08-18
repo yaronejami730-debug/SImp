@@ -27,3 +27,8 @@ create table if not exists dde_appointments (
 
 create index if not exists dde_appointments_date_idx on dde_appointments (rdv_date desc, rdv_time desc);
 create index if not exists dde_appointments_telepro_idx on dde_appointments (lower(telepro_email));
+
+-- Suivi opérationnel d'un rendez-vous : envoi WhatsApp, facturation, paiement du call center.
+alter table dde_appointments add column if not exists whatsapp_sent_at timestamptz;
+alter table dde_appointments add column if not exists invoiced_at timestamptz;
+alter table dde_appointments add column if not exists callcenter_paid_at timestamptz;

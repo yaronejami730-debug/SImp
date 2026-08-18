@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getCached, setCached } from "@/lib/cache";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 
@@ -193,7 +194,10 @@ function Bilan() {
   }
 
   async function load() {
-    setLoading(true); setErr("");
+    // Affichage immédiat des dernières données connues, puis rafraîchissement en fond.
+    const cached = getCached<Appt[]>("appointments");
+    if (cached) setAppts(cached);
+    setLoading(!cached); setErr("");
     try {
       const [r1, r2, r3] = await Promise.all([
         fetch("/api/appointments", { headers: authHeaders() }),
@@ -201,7 +205,7 @@ function Bilan() {
         fetch("/api/users", { headers: authHeaders() }).catch(() => null), // barème perso (frais fixe / % nego) par commercial
       ]);
       const d = await r1.json();
-      if (d.ok) { setAppts(d.appointments); setRole(d.role ?? ""); }
+      if (d.ok) { setAppts(d.appointments); setCached("appointments", d.appointments); setRole(d.role ?? ""); }
       else setErr(d.error ?? "Erreur");
       if (r2) {
         const m = await r2.json();

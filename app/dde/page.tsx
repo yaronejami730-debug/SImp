@@ -8,6 +8,7 @@ type Me = { email: string; name: string; role: "admin" | "telepro" };
 type Appointment = {
   id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string;
   telepro_email: string; telepro_name: string; statut: string; notes: string; created_at: string;
+  whatsapp_sent_at: string | null; invoiced_at: string | null; callcenter_paid_at: string | null;
 };
 type DdeUser = { id: number; email: string; name: string; role: "admin" | "telepro"; phone: string; active: boolean };
 
@@ -43,6 +44,25 @@ function waMessage(a: Appointment): string {
   if (a.notes.trim()) lignes.push(`Commentaire : ${a.notes.trim()}`);
   return lignes.join("\n");
 }
+
+/** Responsive : tableau classique sur écran large, fiches empilées sur mobile. */
+const CSS_RESPONSIVE = `
+  .dde-wrap { padding: 40px 24px 80px; }
+  .dde-card { padding: 20px 12px; }
+  @media (max-width: 860px) {
+    .dde-wrap { padding: 24px 14px 60px; }
+    .dde-card { padding: 12px; border: none !important; background: transparent !important; }
+    .dde-table thead { display: none; }
+    .dde-table, .dde-table tbody, .dde-table tr, .dde-table td { display: block; width: 100%; }
+    .dde-table tr { background: #fff; border: 1px solid ${LINE}; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+    .dde-table td { border-top: none !important; padding: 7px 0 !important; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .dde-table td + td { border-top: 1px solid ${SOFT} !important; }
+    .dde-table td::before {
+      content: attr(data-label);
+      font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: ${MUTED};
+    }
+  }
+`;
 
 export default function DdePage() {
   const [ready, setReady] = useState(false);
@@ -86,7 +106,7 @@ function Login({ onLogin }: { onLogin: (me: Me) => void }) {
   const canSubmit = email.trim() !== "" && password !== "" && !busy;
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, display: "flex", justifyContent: "center", padding: "80px 24px", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: BG, display: "flex", justifyContent: "center", padding: "clamp(32px, 10vw, 80px) 20px", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" }}>
       <form onSubmit={submit} style={{ width: "100%", maxWidth: 520, margin: "0 auto" }}>
         <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.01em", color: INK, margin: "0 0 56px" }}>Connexion</h1>
 
@@ -131,7 +151,8 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, padding: "40px 24px 80px", fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", color: INK }}>
+    <div className="dde-wrap" style={{ minHeight: "100vh", background: BG, fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", color: INK }}>
+      <style dangerouslySetInnerHTML={{ __html: CSS_RESPONSIVE }} />
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
           <div />
@@ -235,38 +256,52 @@ function Formulaire({ onSaved }: { onSaved: () => void }) {
 // ---------- Tableau des rendez-vous ----------
 
 const WA_GREEN = "#25D366";
-const WA_DARK = "#1da851";
 
-/** Bouton WhatsApp : ouvre WhatsApp avec les infos du rendez-vous pré-remplies. */
-function BoutonWhatsApp({ appointment }: { appointment: Appointment }) {
-  const [hover, setHover] = useState(false);
+/** Petit bouton d'état : à faire (contour) -> fait (plein, encre). */
+function Marqueur({ fait, libelleAFaire, libelleFait, onClick }: { fait: boolean; libelleAFaire: string; libelleFait: string; onClick: () => void }) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      title={fait ? "Cliquer pour annuler" : undefined}
+      style={{
+        height: 32, padding: "0 12px", borderRadius: 16, cursor: "pointer", fontSize: 13, fontWeight: 700,
+        whiteSpace: "nowrap",
+        border: fait ? "none" : `1px solid ${LINE}`,
+        background: fait ? INK : "#fff", color: fait ? "#fff" : MUTED,
+      }}
+    >{fait ? `✓ ${libelleFait}` : libelleAFaire}</button>
+  );
+}
+
+/** Bouton WhatsApp : ouvre WhatsApp avec les infos du RDV, puis marque la ligne « Envoyé ». */
+function BoutonWhatsApp({ appointment, onSent }: { appointment: Appointment; onSent: () => void }) {
+  const envoye = !!appointment.whatsapp_sent_at;
   return (
     <button
       type="button"
-      title="Envoyer ce rendez-vous sur WhatsApp"
-      onClick={() => window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(waMessage(appointment))}`, "_blank", "noopener")}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      title={envoye ? "Renvoyer sur WhatsApp" : "Envoyer sur WhatsApp"}
+      onClick={() => {
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(waMessage(appointment))}`, "_blank", "noopener");
+        onSent();
+      }}
       style={{
-        display: "inline-flex", alignItems: "center", gap: 8, height: 40, padding: "0 18px",
-        borderRadius: 20, border: "none", cursor: "pointer",
-        background: hover ? WA_DARK : WA_GREEN, color: "#fff", fontSize: 14, fontWeight: 700,
-        boxShadow: hover ? "0 6px 16px rgba(37,211,102,0.35)" : "0 2px 8px rgba(37,211,102,0.25)",
-        transform: hover ? "translateY(-1px)" : "none", transition: "background .15s, box-shadow .15s, transform .15s",
+        display: "inline-flex", alignItems: "center", gap: 6, height: 32, padding: "0 12px", borderRadius: 16,
+        border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
+        background: envoye ? INK : WA_GREEN, color: "#fff",
       }}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
         <path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.25-.46-2.39-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.22 3.08c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.23 1.36.19 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.42-.07-.13-.27-.2-.57-.35z"/>
         <path d="M12.04 2.5C6.79 2.5 2.53 6.76 2.53 12c0 1.68.44 3.32 1.28 4.77L2.5 21.5l4.86-1.27a9.45 9.45 0 0 0 4.68 1.22h.01c5.24 0 9.5-4.26 9.5-9.5 0-2.54-.99-4.92-2.78-6.71a9.42 9.42 0 0 0-6.73-2.74zm0 17.09h-.01a7.9 7.9 0 0 1-4.02-1.1l-.29-.17-2.88.75.77-2.81-.19-.29a7.86 7.86 0 0 1-1.21-4.2c0-4.36 3.55-7.9 7.91-7.9 2.11 0 4.1.83 5.59 2.32a7.85 7.85 0 0 1 2.31 5.59c0 4.36-3.55 7.9-7.98 7.9z"/>
       </svg>
-      WhatsApp
+      {envoye ? "Envoyé" : "WhatsApp"}
     </button>
   );
 }
 
 function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: () => void }) {
-  async function setStatut(id: number, statut: string) {
-    await fetch("/api/dde/appointments", { method: "PATCH", headers: headers(), body: JSON.stringify({ id, statut }) });
+  async function patch(id: number, body: Record<string, unknown>) {
+    await fetch("/api/dde/appointments", { method: "PATCH", headers: headers(), body: JSON.stringify({ id, ...body }) });
     reload();
   }
   async function remove(id: number) {
@@ -276,9 +311,8 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
 
   if (!rows.length) return <div style={{ fontSize: 17, color: MUTED }}>Aucun rendez-vous enregistré pour le moment.</div>;
 
-  // Fiches empilées : tout reste visible sans jamais défiler latéralement.
-  const cle: React.CSSProperties = { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: MUTED, marginBottom: 4 };
-  const val: React.CSSProperties = { fontSize: 16, wordBreak: "break-word" };
+  const th: React.CSSProperties = { textAlign: "left", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: MUTED, padding: "0 10px 12px" };
+  const td: React.CSSProperties = { fontSize: 14, padding: "12px 10px", borderTop: `1px solid ${SOFT}`, verticalAlign: "middle" };
 
   return (
     <div style={{ maxWidth: "100%" }}>
@@ -288,43 +322,57 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 16 }}>
-        {rows.map((a) => (
-          <div key={a.id} style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: 20, maxWidth: "100%", boxSizing: "border-box" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${SOFT}` }}>
-              <span style={{ fontSize: 20, fontWeight: 800 }}>{frDate(a.rdv_date)}</span>
-              <span style={{ fontSize: 20, fontWeight: 800 }}>{a.rdv_time}</span>
-              <span style={{ fontSize: 18, color: MUTED }}>{a.nom.toUpperCase()} {a.prenom}</span>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
-              <div>
-                <div style={cle}>Téléphone</div>
-                <div style={val}><a href={`tel:${a.telephone.replace(/\s/g, "")}`} style={{ color: INK }}>{a.telephone}</a></div>
-              </div>
-              {me.role === "admin" && (
-                <div>
-                  <div style={cle}>Téléprospectrice</div>
-                  <div style={val}>{a.telepro_name || a.telepro_email}</div>
-                </div>
-              )}
-              {a.notes.trim() && (
-                <div>
-                  <div style={cle}>Commentaire</div>
-                  <div style={{ ...val, color: MUTED }}>{a.notes}</div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <select value={a.statut} onChange={(e) => setStatut(a.id, e.target.value)} style={{ height: 40, padding: "0 12px", borderRadius: 20, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", maxWidth: "100%" }}>
-                {STATUTS.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
-              </select>
-              {me.role === "admin" && <BoutonWhatsApp appointment={a} />}
-              <button onClick={() => remove(a.id)} style={{ height: 40, padding: "0 16px", borderRadius: 20, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: "#b3261e" }}>Supprimer</button>
-            </div>
-          </div>
-        ))}
+      <div className="dde-card" style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, maxWidth: "100%", overflowX: "hidden" }}>
+        <table className="dde-table" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
+          <thead>
+            <tr>
+              <th style={th}>Date</th>
+              <th style={th}>Heure</th>
+              <th style={th}>Client</th>
+              <th style={th}>Téléphone</th>
+              {me.role === "admin" && <th style={th}>Téléprospectrice</th>}
+              <th style={th}>Statut</th>
+              {me.role === "admin" && <th style={th}>WhatsApp</th>}
+              {me.role === "admin" && <th style={th}>Facturation</th>}
+              {me.role === "admin" && <th style={th}>Call center</th>}
+              <th style={th} />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((a) => (
+              <tr key={a.id} title={a.notes || undefined}>
+                <td data-label="Date" style={{ ...td, fontWeight: 700, whiteSpace: "nowrap" }}>{frDate(a.rdv_date)}</td>
+                <td data-label="Heure" style={{ ...td, whiteSpace: "nowrap" }}>{a.rdv_time}</td>
+                <td data-label="Client" style={td}>{a.nom.toUpperCase()} {a.prenom}</td>
+                <td data-label="Téléphone" style={td}><a href={`tel:${a.telephone.replace(/\s/g, "")}`} style={{ color: INK, whiteSpace: "nowrap" }}>{a.telephone}</a></td>
+                {me.role === "admin" && <td data-label="Téléprospectrice" style={td}>{a.telepro_name || a.telepro_email}</td>}
+                <td data-label="Statut" style={td}>
+                  <select value={a.statut} onChange={(e) => patch(a.id, { statut: e.target.value })} style={{ height: 32, padding: "0 8px", borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", maxWidth: "100%" }}>
+                    {STATUTS.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
+                  </select>
+                </td>
+                {me.role === "admin" && (
+                  <td data-label="WhatsApp" style={td}>
+                    <BoutonWhatsApp appointment={a} onSent={() => patch(a.id, { whatsappSent: true })} />
+                  </td>
+                )}
+                {me.role === "admin" && (
+                  <td data-label="Facturation" style={td}>
+                    <Marqueur fait={!!a.invoiced_at} libelleAFaire="Facturer" libelleFait="Facturé" onClick={() => patch(a.id, { invoiced: !a.invoiced_at })} />
+                  </td>
+                )}
+                {me.role === "admin" && (
+                  <td data-label="Call center" style={td}>
+                    <Marqueur fait={!!a.callcenter_paid_at} libelleAFaire="À payer" libelleFait="Payé" onClick={() => patch(a.id, { callcenterPaid: !a.callcenter_paid_at })} />
+                  </td>
+                )}
+                <td data-label="" style={td}>
+                  <button onClick={() => remove(a.id)} title="Supprimer le rendez-vous" style={{ height: 32, width: 32, borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: MUTED }}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -407,19 +455,19 @@ function Comptes() {
         {err && <div style={{ marginTop: 20, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
       </form>
 
-      <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: "20px 8px", overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+      <div className="dde-card" style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, maxWidth: "100%", overflowX: "hidden" }}>
+        <table className="dde-table" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr><th style={th}>Nom</th><th style={th}>E-mail</th><th style={th}>Rôle</th><th style={th}>Statut</th><th style={th}></th></tr>
           </thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td style={{ ...td, fontWeight: 700 }}>{u.name}</td>
-                <td style={td}>{u.email}</td>
-                <td style={td}>{u.role === "admin" ? "Administrateur" : "Téléprospectrice"}</td>
-                <td style={{ ...td, color: u.active ? INK : MUTED }}>{u.active ? "Actif" : "Désactivé"}</td>
-                <td style={{ ...td, whiteSpace: "nowrap" }}>
+                <td data-label="Nom" style={{ ...td, fontWeight: 700 }}>{u.name}</td>
+                <td data-label="E-mail" style={{ ...td, wordBreak: "break-word" }}>{u.email}</td>
+                <td data-label="Rôle" style={td}>{u.role === "admin" ? "Administrateur" : "Téléprospectrice"}</td>
+                <td data-label="Statut" style={{ ...td, color: u.active ? INK : MUTED }}>{u.active ? "Actif" : "Désactivé"}</td>
+                <td data-label="" style={{ ...td, whiteSpace: "nowrap" }}>
                   <button onClick={() => resetPassword(u)} style={{ height: 34, padding: "0 12px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", marginRight: 8 }}>Mot de passe</button>
                   <button onClick={() => toggle(u)} style={{ height: 34, padding: "0 12px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", marginRight: 8 }}>{u.active ? "Désactiver" : "Activer"}</button>
                   {u.role !== "admin" && <button onClick={() => remove(u)} style={{ height: 34, padding: "0 12px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", color: "#b3261e" }}>Supprimer</button>}

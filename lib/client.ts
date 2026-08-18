@@ -1,5 +1,7 @@
 // Helpers d'auth côté client (localStorage). À n'utiliser que dans des composants client.
 
+import { clearCache } from "./cache";
+
 export type ClientUser = { email: string; name: string; role: "admin" | "responsable" | "collab"; callCenterId?: number; isCommercial?: boolean; isTeleprospector?: boolean };
 
 export function getToken(): string | null {
@@ -40,6 +42,7 @@ export function applyTheme() {
 }
 
 export function clearAuth() {
+  clearCache(); // les données en cache appartiennent au compte qui se déconnecte
   localStorage.removeItem("auth_token");
   localStorage.removeItem("auth_user");
   localStorage.removeItem("auth_theme");

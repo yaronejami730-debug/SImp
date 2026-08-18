@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getCached, setCached } from "@/lib/cache";
 import Shell from "@/components/Shell";
 import { authHeaders, getUser } from "@/lib/client";
 
@@ -60,11 +61,14 @@ function CRM() {
   useEffect(() => { load(); }, []);
 
   async function load() {
-    setLoading(true); setErr("");
+    // Affichage immédiat des dernières données connues, puis rafraîchissement en fond.
+    const cached = getCached<Appt[]>("appointments");
+    if (cached) setAppts(cached);
+    setLoading(!cached); setErr("");
     try {
       const res = await fetch("/api/appointments", { headers: authHeaders() });
       const d = await res.json();
-      if (d.ok) setAppts(d.appointments);
+      if (d.ok) { setAppts(d.appointments); setCached("appointments", d.appointments); }
       else setErr(d.error ?? "Erreur");
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }

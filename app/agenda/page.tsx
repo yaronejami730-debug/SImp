@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getCached, setCached } from "@/lib/cache";
 import Shell from "@/components/Shell";
 import GoogleCalendarCard from "@/components/GoogleCalendarCard";
 import { authHeaders, getUser } from "@/lib/client";
@@ -60,15 +61,20 @@ function Agenda() {
   useEffect(() => { load(); }, []);
 
   async function load() {
-    setLoading(true); setErr("");
+    // Affichage immédiat des dernières données connues, puis rafraîchissement en fond.
+    const cachedAppts = getCached<Appt[]>("appointments");
+    const cachedRem = getCached<Reminder[]>("reminders");
+    if (cachedAppts) setAppts(cachedAppts);
+    if (cachedRem) setReminders(cachedRem);
+    setLoading(!cachedAppts); setErr("");
     try {
       const [r1, r2] = await Promise.all([
         fetch("/api/appointments", { headers: authHeaders() }).then((r) => r.json()),
         fetch("/api/reminders", { headers: authHeaders() }).then((r) => r.json()).catch(() => ({ ok: false })),
       ]);
-      if (r1.ok) setAppts(r1.appointments);
+      if (r1.ok) { setAppts(r1.appointments); setCached("appointments", r1.appointments); }
       else setErr(r1.error ?? "Erreur");
-      if (r2.ok) setReminders(r2.reminders);
+      if (r2.ok) { setReminders(r2.reminders); setCached("reminders", r2.reminders); }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
 
@@ -77,6 +83,7 @@ function Agenda() {
       try {
         const u = await fetch("/api/users", { headers: authHeaders() }).then((r) => r.json());
         if (u?.ok) {
+          setCached("users", u.users);
           const byEmail = new Map<string, { base: number; pct: number }>();
           const byName = new Map<string, { base: number; pct: number }>();
           for (const usr of u.users as { email: string; name: string; commission_base: number; commission_pct: number }[]) {
