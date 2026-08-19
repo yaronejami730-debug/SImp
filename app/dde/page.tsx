@@ -7,18 +7,48 @@ import { INK, BG, LINE, MUTED, SOFT, WHATSAPP_GROUP, input as inputStyle, label 
 type Me = { email: string; name: string; role: "admin" | "telepro" };
 type Appointment = {
   id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string;
-  telepro_email: string; telepro_name: string; statut: string; notes: string; created_at: string;
+  telepro_email: string; telepro_name: string; saisi_par_email: string; saisi_par_name: string;
+  statut: string; facturation_statut: string; callcenter_statut: string; notes: string; created_at: string;
   whatsapp_sent_at: string | null; invoiced_at: string | null; callcenter_paid_at: string | null;
 };
 type DdeUser = { id: number; email: string; name: string; role: "admin" | "telepro"; phone: string; active: boolean };
 
+/** Statut unique du rendez-vous. Seul « honoré » ouvre la facturation et le paiement du call center. */
 const STATUTS: { key: string; label: string }[] = [
   { key: "a_venir", label: "À venir" },
-  { key: "confirme", label: "Confirmé" },
-  { key: "honore", label: "Honoré" },
-  { key: "absent", label: "Absent" },
-  { key: "annule", label: "Annulé" },
+  { key: "honore", label: "Rendez-vous honoré" },
+  { key: "absent", label: "Rendez-vous absent" },
+  { key: "annule", label: "Rendez-vous annulé" },
+  { key: "deplace", label: "Rendez-vous déplacé" },
+  { key: "non_eligible", label: "Pas éligible" },
 ];
+
+/** Facturation de l'entreprise cliente (argent entrant). Dernière étape = dossier clos. */
+const FACTURATION: { key: string; label: string }[] = [
+  { key: "a_facturer", label: "À facturer" },
+  { key: "edition", label: "Édition de la facture" },
+  { key: "facturee", label: "Facture envoyée" },
+  { key: "encaissee", label: "Encaissée" },
+];
+
+/** Facture du call center puis son paiement (argent sortant). Dernière étape = dossier clos. */
+const CALLCENTER: { key: string; label: string }[] = [
+  { key: "appel_facture", label: "Appel à facturation" },
+  { key: "facture_recue", label: "Facture reçue" },
+  { key: "paye", label: "Payé" },
+];
+
+/** Comparaison souple : sans accents, sans casse, sans espaces parasites. */
+function normalise(v: string): string {
+  return v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+const libelle = (liste: { key: string; label: string }[], key: string) => liste.find((x) => x.key === key)?.label ?? key;
+const estClos = (liste: { key: string; label: string }[], key: string) => liste[liste.length - 1].key === key;
+
+function libelleStatut(key: string): string {
+  return STATUTS.find((st) => st.key === key)?.label ?? key;
+}
 
 function token(): string | null {
   return typeof window === "undefined" ? null : localStorage.getItem("dde_token");
@@ -54,6 +84,8 @@ const CSS_RESPONSIVE = `
     .dde-card { padding: 12px; border: none !important; background: transparent !important; }
     .dde-table thead { display: none; }
     .dde-table, .dde-table tbody, .dde-table tr, .dde-table td { display: block; width: 100%; }
+    .dde-table { min-width: 0 !important; }
+    .dde-card { overflow-x: visible !important; }
     .dde-table tr { background: #fff; border: 1px solid ${LINE}; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
     .dde-table td { border-top: none !important; padding: 7px 0 !important; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
     .dde-table td + td { border-top: 1px solid ${SOFT} !important; }
@@ -153,7 +185,7 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className="dde-wrap" style={{ minHeight: "100vh", background: BG, fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", color: INK }}>
       <style dangerouslySetInnerHTML={{ __html: CSS_RESPONSIVE }} />
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ maxWidth: tab === "table" ? 1500 : 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
           <div />
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -177,7 +209,7 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
         {err && <div style={{ marginBottom: 24, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
 
-        {tab === "form" && <Formulaire onSaved={() => { load(); }} />}
+        {tab === "form" && <Formulaire me={me} onSaved={() => { load(); }} />}
         {tab === "table" && <Tableau me={me} rows={appointments} reload={load} />}
         {tab === "comptes" && me.role === "admin" && <Comptes />}
       </div>
@@ -187,7 +219,7 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
 // ---------- Formulaire de rendez-vous ----------
 
-function Formulaire({ onSaved }: { onSaved: () => void }) {
+function Formulaire({ me, onSaved }: { me: Me; onSaved: () => void }) {
   const [nom, setNom] = useState("");
   const [prenom, setPrenom] = useState("");
   const [date, setDate] = useState("");
@@ -198,6 +230,18 @@ function Formulaire({ onSaved }: { onSaved: () => void }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // L'admin peut saisir un RDV à la place d'une téléprospectrice : le RDV lui est alors rattaché.
+  const [teleproEmail, setTeleproEmail] = useState(me.email);
+  const [teleproOptions, setTeleproOptions] = useState<DdeUser[]>([]);
+  useEffect(() => {
+    if (me.role !== "admin") return;
+    (async () => {
+      const r = await fetch("/api/dde/users", { headers: headers() });
+      const j = await r.json();
+      if (r.ok) setTeleproOptions((j.users as DdeUser[]).filter((u) => u.active));
+    })();
+  }, [me.role]);
+
   const canSubmit = nom.trim() !== "" && prenom.trim() !== "" && date !== "" && heure !== "" && telephone.trim() !== "" && !busy;
 
   async function submit(e: React.FormEvent) {
@@ -207,11 +251,11 @@ function Formulaire({ onSaved }: { onSaved: () => void }) {
     try {
       const r = await fetch("/api/dde/appointments", {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ nom, prenom, date, heure, telephone, notes }),
+        body: JSON.stringify({ nom, prenom, date, heure, telephone, notes, teleproEmail }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Erreur.");
-      setNom(""); setPrenom(""); setDate(""); setHeure(""); setTelephone(""); setNotes("");
+      setNom(""); setPrenom(""); setDate(""); setHeure(""); setTelephone(""); setNotes(""); setTeleproEmail(me.email);
       setConfirm(true);
       setTimeout(() => setConfirm(false), 2500);
       onSaved();
@@ -241,6 +285,21 @@ function Formulaire({ onSaved }: { onSaved: () => void }) {
       <label htmlFor="tel" style={labelStyle}>Numéro de téléphone</label>
       <input id="tel" type="tel" placeholder="06 12 34 56 78" value={telephone} onChange={(e) => setTelephone(e.target.value)} style={{ ...inputStyle, marginBottom: 32 }} />
 
+      {me.role === "admin" && (
+        <>
+          <label htmlFor="telepro" style={labelStyle}>Rendez-vous pris par</label>
+          <select
+            id="telepro" value={teleproEmail} onChange={(e) => setTeleproEmail(e.target.value)}
+            style={{ ...inputStyle, marginBottom: 32, cursor: "pointer" }}
+          >
+            <option value={me.email}>{me.name} (moi)</option>
+            {teleproOptions
+              .filter((u) => u.email.toLowerCase() !== me.email.toLowerCase())
+              .map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
+          </select>
+        </>
+      )}
+
       <label htmlFor="notes" style={labelStyle}>Commentaire <span style={{ fontWeight: 400, color: MUTED, fontSize: 15 }}>(facultatif)</span></label>
       <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inputStyle, height: "auto", padding: "16px 18px", marginBottom: 40, fontFamily: "inherit", resize: "vertical" }} />
 
@@ -257,19 +316,50 @@ function Formulaire({ onSaved }: { onSaved: () => void }) {
 
 const WA_GREEN = "#25D366";
 
-/** Petit bouton d'état : à faire (contour) -> fait (plein, encre). */
-function Marqueur({ fait, libelleAFaire, libelleFait, onClick }: { fait: boolean; libelleAFaire: string; libelleFait: string; onClick: () => void }) {
+/** Pastille en lecture seule (vue téléprospectrice) : étape atteinte. */
+function Badge({ liste, valeur }: { liste: { key: string; label: string }[]; valeur: string }) {
+  const clos = estClos(liste, valeur);
   return (
-    <button
-      type="button" onClick={onClick}
-      title={fait ? "Cliquer pour annuler" : undefined}
+    <span
       style={{
-        height: 32, padding: "0 12px", borderRadius: 16, cursor: "pointer", fontSize: 13, fontWeight: 700,
+        display: "inline-block", padding: "6px 14px", borderRadius: 16, fontSize: 13, fontWeight: 700,
         whiteSpace: "nowrap",
-        border: fait ? "none" : `1px solid ${LINE}`,
-        background: fait ? INK : "#fff", color: fait ? "#fff" : MUTED,
+        border: clos ? "none" : `1px solid ${LINE}`,
+        background: clos ? INK : "#fff", color: clos ? "#fff" : MUTED,
       }}
-    >{fait ? `✓ ${libelleFait}` : libelleAFaire}</button>
+    >{clos ? `✓ ${libelle(liste, valeur)}` : libelle(liste, valeur)}</span>
+  );
+}
+
+/** Sélecteur d'étape (admin) : l'étape finale passe en plein pour montrer que le dossier est clos. */
+function Etape({ liste, valeur, onChange }: { liste: { key: string; label: string }[]; valeur: string; onChange: (v: string) => void }) {
+  const clos = estClos(liste, valeur);
+  return (
+    <select
+      value={valeur} onChange={(e) => onChange(e.target.value)}
+      style={{
+        height: 34, padding: "0 10px", borderRadius: 17, fontSize: 13, fontWeight: 700, cursor: "pointer",
+        minWidth: 190, maxWidth: "100%",
+        border: clos ? "none" : `1px solid ${LINE}`,
+        background: clos ? INK : "#fff", color: clos ? "#fff" : INK,
+      }}
+    >
+      {liste.map((x) => <option key={x.key} value={x.key} style={{ background: "#fff", color: INK }}>{x.label}</option>)}
+    </select>
+  );
+}
+
+/** Petit « ? » d'aide : explique la colonne au survol. */
+function Aide({ texte }: { texte: string }) {
+  return (
+    <span
+      title={texte}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center", width: 16, height: 16,
+        marginLeft: 6, borderRadius: 8, border: `1px solid ${LINE}`, color: MUTED,
+        fontSize: 11, fontWeight: 700, cursor: "help", verticalAlign: "middle",
+      }}
+    >?</span>
   );
 }
 
@@ -300,8 +390,29 @@ function BoutonWhatsApp({ appointment, onSent }: { appointment: Appointment; onS
 }
 
 function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: () => void }) {
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+
+  // Recherche sur tout ce qui est lisible dans la ligne : client, téléphone, date, téléprospectrice, statuts, commentaire.
+  const termes = normalise(q).split(" ").filter(Boolean);
+  const visibles = termes.length === 0 ? rows : rows.filter((a) => {
+    const foin = normalise([
+      a.nom, a.prenom, a.telephone, a.telephone.replace(/\s/g, ""), a.rdv_date, frDate(a.rdv_date), a.rdv_time,
+      a.telepro_name, a.telepro_email, a.saisi_par_name,
+      libelleStatut(a.statut), libelle(FACTURATION, a.facturation_statut), libelle(CALLCENTER, a.callcenter_statut),
+      a.notes,
+    ].join(" "));
+    return termes.every((t) => foin.includes(t));
+  });
+
   async function patch(id: number, body: Record<string, unknown>) {
-    await fetch("/api/dde/appointments", { method: "PATCH", headers: headers(), body: JSON.stringify({ id, ...body }) });
+    const r = await fetch("/api/dde/appointments", { method: "PATCH", headers: headers(), body: JSON.stringify({ id, ...body }) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error || "Modification impossible.");
+    } else {
+      setErr("");
+    }
     reload();
   }
   async function remove(id: number) {
@@ -311,8 +422,30 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
 
   if (!rows.length) return <div style={{ fontSize: 17, color: MUTED }}>Aucun rendez-vous enregistré pour le moment.</div>;
 
-  const th: React.CSSProperties = { textAlign: "left", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: MUTED, padding: "0 10px 12px" };
-  const td: React.CSSProperties = { fontSize: 14, padding: "12px 10px", borderTop: `1px solid ${SOFT}`, verticalAlign: "middle" };
+  const champRecherche = (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
+      <div style={{ position: "relative", flex: "1 1 280px", maxWidth: 420 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2.4" strokeLinecap="round"
+             style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} aria-hidden="true">
+          <circle cx="11" cy="11" r="7" /><path d="M20 20l-4.2-4.2" />
+        </svg>
+        <input
+          type="search" value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="Rechercher un client, un téléphone, une date…"
+          aria-label="Rechercher un rendez-vous"
+          style={{ width: "100%", boxSizing: "border-box", height: 44, padding: "0 16px 0 42px", fontSize: 15, border: `1px solid ${LINE}`, borderRadius: 22, background: "#fff", color: INK }}
+        />
+      </div>
+      <span style={{ fontSize: 14, color: MUTED }}>
+        {termes.length === 0
+          ? `${rows.length} rendez-vous`
+          : `${visibles.length} résultat${visibles.length > 1 ? "s" : ""} sur ${rows.length}`}
+      </span>
+    </div>
+  );
+
+  const th: React.CSSProperties = { textAlign: "left", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: MUTED, padding: "0 14px 12px", whiteSpace: "nowrap" };
+  const td: React.CSSProperties = { fontSize: 14, padding: "14px", borderTop: `1px solid ${SOFT}`, verticalAlign: "middle" };
 
   return (
     <div style={{ maxWidth: "100%" }}>
@@ -322,57 +455,94 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
         </div>
       )}
 
-      <div className="dde-card" style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, maxWidth: "100%", overflowX: "hidden" }}>
-        <table className="dde-table" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "auto" }}>
+      {champRecherche}
+
+      {err && <div style={{ marginBottom: 16, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
+
+      <div className="dde-card" style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, maxWidth: "100%", overflowX: "auto" }}>
+        <table className="dde-table" style={{ width: "100%", minWidth: 1180, borderCollapse: "collapse", tableLayout: "auto" }}>
           <thead>
             <tr>
               <th style={th}>Date</th>
               <th style={th}>Heure</th>
               <th style={th}>Client</th>
               <th style={th}>Téléphone</th>
-              {me.role === "admin" && <th style={th}>Téléprospectrice</th>}
+              <th style={th}>Téléprospectrice</th>
               <th style={th}>Statut</th>
               {me.role === "admin" && <th style={th}>WhatsApp</th>}
-              {me.role === "admin" && <th style={th}>Facturation</th>}
-              {me.role === "admin" && <th style={th}>Call center</th>}
-              <th style={th} />
+              <th style={th}>
+                Facturation client
+                <Aide texte="Facture envoyée à l'entreprise pour laquelle nous travaillons (argent qui entre) : à facturer, édition de la facture, facture envoyée, encaissée." />
+              </th>
+              <th style={th}>
+                {me.role === "admin" ? "Rémunération call center" : "Ma rémunération"}
+                <Aide texte="Facture du call center puis son paiement (argent qui sort) : appel à facturation, facture reçue, payé." />
+              </th>
+              {me.role === "admin" && <th style={th} />}
             </tr>
           </thead>
           <tbody>
-            {rows.map((a) => (
+            {visibles.map((a) => (
               <tr key={a.id} title={a.notes || undefined}>
                 <td data-label="Date" style={{ ...td, fontWeight: 700, whiteSpace: "nowrap" }}>{frDate(a.rdv_date)}</td>
                 <td data-label="Heure" style={{ ...td, whiteSpace: "nowrap" }}>{a.rdv_time}</td>
                 <td data-label="Client" style={td}>{a.nom.toUpperCase()} {a.prenom}</td>
                 <td data-label="Téléphone" style={td}><a href={`tel:${a.telephone.replace(/\s/g, "")}`} style={{ color: INK, whiteSpace: "nowrap" }}>{a.telephone}</a></td>
-                {me.role === "admin" && <td data-label="Téléprospectrice" style={td}>{a.telepro_name || a.telepro_email}</td>}
+                <td data-label="Téléprospectrice" style={td}>
+                  <div style={{ textAlign: "right" }}>
+                    {a.telepro_name || a.telepro_email}
+                    {a.saisi_par_email && a.saisi_par_email.toLowerCase() !== a.telepro_email.toLowerCase() && (
+                      <div style={{ fontSize: 12, color: MUTED }}>saisi par {a.saisi_par_name || a.saisi_par_email}</div>
+                    )}
+                  </div>
+                </td>
                 <td data-label="Statut" style={td}>
-                  <select value={a.statut} onChange={(e) => patch(a.id, { statut: e.target.value })} style={{ height: 32, padding: "0 8px", borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", maxWidth: "100%" }}>
-                    {STATUTS.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
-                  </select>
+                  {me.role === "admin" ? (
+                    <select value={a.statut} onChange={(e) => patch(a.id, { statut: e.target.value })} style={{ height: 34, padding: "0 10px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", minWidth: 190, maxWidth: "100%" }}>
+                      {STATUTS.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{ fontWeight: 700 }}>{libelleStatut(a.statut)}</span>
+                  )}
                 </td>
                 {me.role === "admin" && (
                   <td data-label="WhatsApp" style={td}>
                     <BoutonWhatsApp appointment={a} onSent={() => patch(a.id, { whatsappSent: true })} />
                   </td>
                 )}
-                {me.role === "admin" && (
-                  <td data-label="Facturation" style={td}>
-                    <Marqueur fait={!!a.invoiced_at} libelleAFaire="Facturer" libelleFait="Facturé" onClick={() => patch(a.id, { invoiced: !a.invoiced_at })} />
-                  </td>
-                )}
-                {me.role === "admin" && (
-                  <td data-label="Call center" style={td}>
-                    <Marqueur fait={!!a.callcenter_paid_at} libelleAFaire="À payer" libelleFait="Payé" onClick={() => patch(a.id, { callcenterPaid: !a.callcenter_paid_at })} />
-                  </td>
-                )}
-                <td data-label="" style={td}>
-                  <button onClick={() => remove(a.id)} title="Supprimer le rendez-vous" style={{ height: 32, width: 32, borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: MUTED }}>✕</button>
+                <td data-label="Facturation client" style={td}>
+                  {a.statut !== "honore" ? (
+                    <span style={{ color: MUTED }} title="Seul un rendez-vous honoré se facture.">Sans objet</span>
+                  ) : me.role === "admin" ? (
+                    <Etape liste={FACTURATION} valeur={a.facturation_statut} onChange={(v) => patch(a.id, { facturationStatut: v })} />
+                  ) : (
+                    <Badge liste={FACTURATION} valeur={a.facturation_statut} />
+                  )}
                 </td>
+                <td data-label={me.role === "admin" ? "Rémunération call center" : "Ma rémunération"} style={td}>
+                  {a.statut !== "honore" ? (
+                    <span style={{ color: MUTED }} title="Rien à payer : le rendez-vous n'a pas été honoré.">Sans objet</span>
+                  ) : me.role === "admin" ? (
+                    <Etape liste={CALLCENTER} valeur={a.callcenter_statut} onChange={(v) => patch(a.id, { callcenterStatut: v })} />
+                  ) : (
+                    <Badge liste={CALLCENTER} valeur={a.callcenter_statut} />
+                  )}
+                </td>
+                {me.role === "admin" && (
+                  <td data-label="" style={td}>
+                    <button onClick={() => remove(a.id)} title="Supprimer le rendez-vous" style={{ height: 32, width: 32, borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: MUTED }}>✕</button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
+
+        {visibles.length === 0 && (
+          <div style={{ padding: "28px 14px", textAlign: "center", fontSize: 15, color: MUTED }}>
+            Aucun rendez-vous ne correspond à « {q.trim()} ».
+          </div>
+        )}
       </div>
     </div>
   );

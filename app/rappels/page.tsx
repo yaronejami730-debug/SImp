@@ -164,12 +164,12 @@ function Rappels() {
   }
   function goToRdv(r: Reminder) {
     prefill(r);
-    window.location.href = "/";
+    window.location.href = "/simplicicar";
   }
   function goToDeplacement(r: Reminder) {
     prefill(r);
     sessionStorage.setItem("prefillType", "deplacement");
-    window.location.href = "/";
+    window.location.href = "/simplicicar";
   }
 
   // ---------- Group reminders ----------

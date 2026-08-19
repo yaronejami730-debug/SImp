@@ -111,7 +111,7 @@ function LeadDetail() {
           onClick={() => {
             sessionStorage.setItem("prefillPhone", lead.phone);
             if (lead.listing_url) sessionStorage.setItem("prefillListingUrl", lead.listing_url);
-            window.location.href = "/";
+            window.location.href = "/simplicicar";
           }}
           style={{ flex: "1 1 auto", padding: "13px 16px", borderRadius: 10, background: PINK, color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 600 }}
         >

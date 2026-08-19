@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getDdeAuth, listDdeAppointments, createDdeAppointment, updateDdeAppointment, deleteDdeAppointment } from "@/lib/dde";
+import {
+  getDdeAuth, listDdeAppointments, createDdeAppointment, updateDdeAppointment, deleteDdeAppointment,
+  DDE_STATUTS, DDE_FACTURATION, DDE_CALLCENTER,
+  type DdeStatut, type DdeFacturation, type DdeCallcenter,
+} from "@/lib/dde";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +23,13 @@ export async function POST(req: Request) {
   const s = getDdeAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
-    const b = (await req.json()) as { nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; notes?: string };
+    const b = (await req.json()) as { nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; notes?: string; teleproEmail?: string };
     if (!b.nom?.trim() || !b.prenom?.trim() || !b.date || !b.heure?.trim() || !b.telephone?.trim()) {
       return NextResponse.json({ error: "Nom, prénom, date, heure et téléphone sont obligatoires." }, { status: 400 });
     }
     const appointment = await createDdeAppointment(s, {
       nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone: b.telephone, notes: b.notes,
+      teleproEmail: b.teleproEmail,
     });
     return NextResponse.json({ ok: true, appointment });
   } catch (e) {
@@ -37,15 +42,30 @@ export async function PATCH(req: Request) {
   const s = getDdeAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
-    const b = (await req.json()) as { id?: number; statut?: string; notes?: string; whatsappSent?: boolean; invoiced?: boolean; callcenterPaid?: boolean };
+    const b = (await req.json()) as {
+      id?: number; statut?: string; notes?: string; whatsappSent?: boolean;
+      facturationStatut?: string; callcenterStatut?: string;
+    };
     if (!b.id) return NextResponse.json({ error: "id requis." }, { status: 400 });
-    // Facturation et paiement du call center : réservés à l'admin.
-    if ((b.invoiced !== undefined || b.callcenterPaid !== undefined) && s.role !== "admin") {
+    if (b.statut !== undefined && !DDE_STATUTS.includes(b.statut as DdeStatut)) {
+      return NextResponse.json({ error: "Statut inconnu." }, { status: 400 });
+    }
+    if (b.facturationStatut !== undefined && !DDE_FACTURATION.includes(b.facturationStatut as DdeFacturation)) {
+      return NextResponse.json({ error: "Statut de facturation inconnu." }, { status: 400 });
+    }
+    if (b.callcenterStatut !== undefined && !DDE_CALLCENTER.includes(b.callcenterStatut as DdeCallcenter)) {
+      return NextResponse.json({ error: "Statut call center inconnu." }, { status: 400 });
+    }
+    // Une téléprospectrice consulte ses RDV en lecture seule : statut, WhatsApp,
+    // facturation et rémunération sont pilotés par l'admin seul.
+    const reserveAdmin = b.statut !== undefined || b.whatsappSent !== undefined
+      || b.facturationStatut !== undefined || b.callcenterStatut !== undefined;
+    if (reserveAdmin && s.role !== "admin") {
       return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
     }
     await updateDdeAppointment(s, Number(b.id), {
-      statut: b.statut, notes: b.notes,
-      whatsappSent: b.whatsappSent, invoiced: b.invoiced, callcenterPaid: b.callcenterPaid,
+      statut: b.statut, notes: b.notes, whatsappSent: b.whatsappSent,
+      facturationStatut: b.facturationStatut, callcenterStatut: b.callcenterStatut,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {
@@ -53,10 +73,11 @@ export async function PATCH(req: Request) {
   }
 }
 
-/** DELETE ?id= -> supprime un RDV (le sien, ou n'importe lequel pour l'admin). */
+/** DELETE ?id= -> supprime un RDV. Réservé à l'admin (les téléprospectrices sont en lecture seule). */
 export async function DELETE(req: Request) {
   const s = getDdeAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
+  if (s.role !== "admin") return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
   try {
     const id = Number(new URL(req.url).searchParams.get("id") ?? 0);
     if (!id) return NextResponse.json({ error: "id requis." }, { status: 400 });

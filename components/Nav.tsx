@@ -10,7 +10,7 @@ const LOGO = "/logo.png";
 
 // teleOnly = réservé aux téléprospecteurs (et admin) : créer des RDV / gérer les prospects.
 const TABS = [
-  { key: "rdv", label: "Prise de RDV", href: "/", teleOnly: true },
+  { key: "rdv", label: "Prise de RDV", href: "/simplicicar", teleOnly: true },
   { key: "agenda", label: "Agenda", href: "/agenda" },
   { key: "crm", label: "CRM", href: "/crm" },
   { key: "bilan", label: "Bilan", href: "/bilan" },
@@ -47,7 +47,7 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
 
   function logout() {
     clearAuth();
-    window.location.href = "/";
+    window.location.href = "/simplicicar";
   }
 
   return (

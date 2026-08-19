@@ -85,13 +85,25 @@ export async function deleteDdeUser(id: number): Promise<void> {
 
 // ---------- Rendez-vous ----------
 
+/** Statuts d'un rendez-vous DDE. Seul « honoré » ouvre la facturation et le paiement du call center. */
+export const DDE_STATUTS = ["a_venir", "honore", "absent", "annule", "deplace", "non_eligible"] as const;
+export type DdeStatut = (typeof DDE_STATUTS)[number];
+
+/** Facturation de l'entreprise cliente (argent entrant), dans l'ordre. */
+export const DDE_FACTURATION = ["a_facturer", "edition", "facturee", "encaissee"] as const;
+/** Facture du call center puis son paiement (argent sortant), dans l'ordre. */
+export const DDE_CALLCENTER = ["appel_facture", "facture_recue", "paye"] as const;
+export type DdeFacturation = (typeof DDE_FACTURATION)[number];
+export type DdeCallcenter = (typeof DDE_CALLCENTER)[number];
+
 export type DdeAppointment = {
   id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string;
-  telepro_email: string; telepro_name: string; statut: string; notes: string; created_at: string;
+  telepro_email: string; telepro_name: string; saisi_par_email: string; saisi_par_name: string;
+  statut: string; facturation_statut: string; callcenter_statut: string; notes: string; created_at: string;
   whatsapp_sent_at: string | null; invoiced_at: string | null; callcenter_paid_at: string | null;
 };
 
-const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at`;
+const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, saisi_par_email, saisi_par_name, statut, facturation_statut, callcenter_statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at`;
 
 /** Admin -> tous les RDV ; téléprospectrice -> uniquement les siens. */
 export async function listDdeAppointments(s: DdeSession): Promise<DdeAppointment[]> {
@@ -106,13 +118,25 @@ export async function listDdeAppointments(s: DdeSession): Promise<DdeAppointment
   return rows as DdeAppointment[];
 }
 
+/**
+ * Enregistre un RDV. Le RDV est rattaché à une téléprospectrice (`teleproEmail`) ;
+ * l'admin peut saisir à la place de quelqu'un d'autre, on garde alors qui a rempli le formulaire.
+ */
 export async function createDdeAppointment(s: DdeSession, input: {
-  nom: string; prenom: string; date: string; heure: string; telephone: string; notes?: string;
+  nom: string; prenom: string; date: string; heure: string; telephone: string; notes?: string; teleproEmail?: string;
 }): Promise<DdeAppointment> {
+  let telepro = { email: s.email, name: s.name };
+  const cible = input.teleproEmail?.trim().toLowerCase();
+  if (s.role === "admin" && cible && cible !== s.email.toLowerCase()) {
+    const { rows } = await getPool().query(`select email, name from dde_users where lower(email) = $1`, [cible]);
+    if (!rows[0]) throw new Error("Téléprospectrice introuvable.");
+    telepro = { email: rows[0].email as string, name: rows[0].name as string };
+  }
   const { rows } = await getPool().query(
-    `insert into dde_appointments (nom, prenom, rdv_date, rdv_time, telephone, telepro_email, telepro_name, notes)
-     values ($1,$2,$3,$4,$5,$6,$7,$8) returning ${A_COLS}`,
-    [input.nom.trim(), input.prenom.trim(), input.date, input.heure.trim(), input.telephone.trim(), s.email, s.name, (input.notes ?? "").trim()],
+    `insert into dde_appointments (nom, prenom, rdv_date, rdv_time, telephone, telepro_email, telepro_name, saisi_par_email, saisi_par_name, notes)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning ${A_COLS}`,
+    [input.nom.trim(), input.prenom.trim(), input.date, input.heure.trim(), input.telephone.trim(),
+     telepro.email, telepro.name, s.email, s.name, (input.notes ?? "").trim()],
   );
   return rows[0] as DdeAppointment;
 }
@@ -120,19 +144,46 @@ export async function createDdeAppointment(s: DdeSession, input: {
 /** Marqueurs de suivi : un booléen -> horodatage (coché) ou null (décoché). */
 export type DdeAppointmentPatch = {
   statut?: string; notes?: string;
-  whatsappSent?: boolean;   // message WhatsApp envoyé
-  invoiced?: boolean;       // client facturé
-  callcenterPaid?: boolean; // call center payé
+  whatsappSent?: boolean;          // message WhatsApp envoyé
+  facturationStatut?: string;      // avancement de la facture envoyée à l'entreprise cliente
+  callcenterStatut?: string;       // avancement de la facture du call center
 };
 
 export async function updateDdeAppointment(s: DdeSession, id: number, patch: DdeAppointmentPatch): Promise<void> {
   const stamp = (v?: boolean) => (v === undefined ? undefined : v ? new Date().toISOString() : null);
+  const now = new Date().toISOString();
+
+  // Facturation / rémunération du call center : uniquement sur un RDV honoré.
+  const suivi = patch.facturationStatut !== undefined || patch.callcenterStatut !== undefined;
+  if (suivi) {
+    const { rows } = await getPool().query(`select statut from dde_appointments where id = $1`, [id]);
+    const statutFinal = patch.statut ?? (rows[0]?.statut as string | undefined);
+    if (statutFinal !== "honore") throw new Error("Suivi de facturation possible uniquement sur un rendez-vous honoré.");
+  }
+
   const map: Record<string, unknown> = {
     statut: patch.statut, notes: patch.notes,
     whatsapp_sent_at: stamp(patch.whatsappSent),
-    invoiced_at: stamp(patch.invoiced),
-    callcenter_paid_at: stamp(patch.callcenterPaid),
+    facturation_statut: patch.facturationStatut,
+    callcenter_statut: patch.callcenterStatut,
   };
+
+  // Horodatages conservés pour l'historique : facture envoyée, call center payé.
+  if (patch.facturationStatut !== undefined) {
+    map.invoiced_at = ["facturee", "encaissee"].includes(patch.facturationStatut) ? now : null;
+  }
+  if (patch.callcenterStatut !== undefined) {
+    map.callcenter_paid_at = patch.callcenterStatut === "paye" ? now : null;
+  }
+
+  // Un RDV qui quitte « honoré » repart de zéro côté facturation.
+  if (patch.statut !== undefined && patch.statut !== "honore") {
+    map.facturation_statut = "a_facturer";
+    map.callcenter_statut = "appel_facture";
+    map.invoiced_at = null;
+    map.callcenter_paid_at = null;
+  }
+
   const sets: string[] = []; const params: unknown[] = [];
   for (const [col, val] of Object.entries(map)) if (val !== undefined) { params.push(val); sets.push(`${col} = $${params.length}`); }
   if (!sets.length) return;
