@@ -33,10 +33,17 @@ export async function PATCH(req: Request) {
   const s = getDdeAuth(req);
   if (s?.role !== "admin") return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
   try {
-    const b = (await req.json()) as { id?: number; password?: string; active?: boolean; name?: string; phone?: string };
+    const b = (await req.json()) as {
+      id?: number; password?: string; active?: boolean; name?: string; phone?: string;
+      ascLogin?: string; ascPassword?: string; ringoverLogin?: string; ringoverPassword?: string;
+    };
     if (!b.id) return NextResponse.json({ error: "id requis." }, { status: 400 });
     if (b.password && b.password.length < 8) return NextResponse.json({ error: "Mot de passe : 8 caractères minimum." }, { status: 400 });
-    await updateDdeUser(Number(b.id), { password: b.password, active: b.active, name: b.name, phone: b.phone });
+    await updateDdeUser(Number(b.id), {
+      password: b.password, active: b.active, name: b.name, phone: b.phone,
+      ascLogin: b.ascLogin, ascPassword: b.ascPassword,
+      ringoverLogin: b.ringoverLogin, ringoverPassword: b.ringoverPassword,
+    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

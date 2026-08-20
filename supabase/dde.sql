@@ -55,3 +55,29 @@ update dde_appointments set callcenter_statut = 'paye' where callcenter_paid_at 
 
 -- Ces suivis n'ont de sens que sur un RDV honoré.
 update dde_appointments set facturation_statut = 'a_facturer', callcenter_statut = 'appel_facture' where statut <> 'honore';
+
+-- Critères d'éligibilité posés à la prise de rendez-vous (null = ancien RDV, non renseigné).
+alter table dde_appointments add column if not exists crit_titre_sejour boolean;
+alter table dde_appointments add column if not exists crit_sans_diplome boolean;
+alter table dde_appointments add column if not exists crit_carte_vitale boolean;
+alter table dde_appointments add column if not exists crit_sans_dossier_prefecture boolean;
+alter table dde_appointments add column if not exists crit_moins_60_ans boolean;
+
+-- Quand la cadence d'une téléprospectrice passe au rouge, on lui demande pourquoi.
+create table if not exists dde_cadence_raisons (
+  id bigserial primary key,
+  telepro_email text not null,
+  telepro_name text not null default '',
+  jour date not null,
+  heure int not null,
+  raison text not null,
+  created_at timestamptz default now()
+);
+
+create index if not exists dde_cadence_raisons_idx on dde_cadence_raisons (jour desc, lower(telepro_email));
+
+-- Accès aux outils d'appel, propres à chaque compte (chiffrés en base, saisis par l'admin).
+alter table dde_users add column if not exists asc_login text not null default '';
+alter table dde_users add column if not exists asc_password text not null default '';
+alter table dde_users add column if not exists ringover_login text not null default '';
+alter table dde_users add column if not exists ringover_password text not null default '';

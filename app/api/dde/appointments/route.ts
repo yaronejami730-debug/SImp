@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import {
   getDdeAuth, listDdeAppointments, createDdeAppointment, updateDdeAppointment, deleteDdeAppointment,
-  DDE_STATUTS, DDE_FACTURATION, DDE_CALLCENTER,
-  type DdeStatut, type DdeFacturation, type DdeCallcenter,
+  DDE_STATUTS, DDE_FACTURATION, DDE_CALLCENTER, DDE_CRITERES,
+  type DdeStatut, type DdeFacturation, type DdeCallcenter, type DdeCriteres,
 } from "@/lib/dde";
+import { estJourOuvre, estCreneauValide, HORAIRES_TEXTE } from "@/lib/dde-horaires";
+import { formatMobileFR } from "@/lib/telephone-fr";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +25,35 @@ export async function POST(req: Request) {
   const s = getDdeAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
-    const b = (await req.json()) as { nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; notes?: string; teleproEmail?: string };
+    const b = (await req.json()) as {
+      nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; notes?: string;
+      teleproEmail?: string; criteres?: Record<string, unknown>;
+    };
     if (!b.nom?.trim() || !b.prenom?.trim() || !b.date || !b.heure?.trim() || !b.telephone?.trim()) {
       return NextResponse.json({ error: "Nom, prénom, date, heure et téléphone sont obligatoires." }, { status: 400 });
     }
+    const telephone = formatMobileFR(b.telephone);
+    if (!telephone) {
+      return NextResponse.json({ error: "Numéro de mobile invalide : 10 chiffres commençant par 06 ou 07." }, { status: 400 });
+    }
+    if (!estJourOuvre(b.date)) {
+      return NextResponse.json({ error: `Jour fermé. ${HORAIRES_TEXTE}` }, { status: 400 });
+    }
+    if (!estCreneauValide(b.date, b.heure)) {
+      return NextResponse.json({ error: `Créneau hors horaires. ${HORAIRES_TEXTE}` }, { status: 400 });
+    }
+    // Les cinq critères d'éligibilité doivent tous être renseignés (oui/non).
+    const criteres: DdeCriteres = {};
+    for (const c of DDE_CRITERES) {
+      const v = b.criteres?.[c.key];
+      if (typeof v !== "boolean") {
+        return NextResponse.json({ error: `Critère non renseigné : ${c.question}.` }, { status: 400 });
+      }
+      criteres[c.key] = v;
+    }
     const appointment = await createDdeAppointment(s, {
-      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone: b.telephone, notes: b.notes,
-      teleproEmail: b.teleproEmail,
+      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone, notes: b.notes,
+      teleproEmail: b.teleproEmail, criteres,
     });
     return NextResponse.json({ ok: true, appointment });
   } catch (e) {

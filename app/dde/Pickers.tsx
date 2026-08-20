@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { INK, LINE, MUTED, SOFT, WEEKDAYS, MONTHS } from "./theme";
+import { creneauxDde, estJourOuvre } from "@/lib/dde-horaires";
 
 const trigger: React.CSSProperties = {
   width: "100%", boxSizing: "border-box", height: 56, padding: "0 18px", fontSize: 16, textAlign: "left",
@@ -49,13 +50,17 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (iso:
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
             {cells.map((c, i) => {
               const selected = c.iso != null && c.iso === value;
+              const ouvert = c.iso != null && estJourOuvre(c.iso); // fermé le week-end
               return (
                 <button
-                  key={i} type="button" disabled={!c.iso}
-                  onClick={() => { if (c.iso) { onChange(c.iso); setOpen(false); } }}
+                  key={i} type="button" disabled={!ouvert}
+                  title={c.iso && !ouvert ? "Fermé le week-end" : undefined}
+                  onClick={() => { if (ouvert && c.iso) { onChange(c.iso); setOpen(false); } }}
                   style={{
-                    height: 36, border: "none", borderRadius: 8, fontSize: 14, cursor: c.iso ? "pointer" : "default",
-                    background: selected ? INK : "transparent", color: selected ? "#fff" : c.iso ? INK : "transparent",
+                    height: 36, border: "none", borderRadius: 8, fontSize: 14, cursor: ouvert ? "pointer" : "default",
+                    background: selected ? INK : "transparent",
+                    color: selected ? "#fff" : !c.iso ? "transparent" : ouvert ? INK : MUTED,
+                    opacity: c.iso && !ouvert ? 0.45 : 1,
                     fontWeight: selected ? 700 : 400,
                   }}
                 >{c.label}</button>
@@ -68,23 +73,22 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (iso:
   );
 }
 
-/** Sélecteur d'heure : créneaux de 30 min, 08h00 -> 19h00. */
-export function TimePicker({ value, onChange }: { value: string; onChange: (label: string) => void }) {
+/** Sélecteur d'heure : créneaux de 30 min, bornés par les horaires d'ouverture du jour choisi. */
+export function TimePicker({ value, onChange, date }: { value: string; onChange: (label: string) => void; date: string }) {
   const [open, setOpen] = useState(false);
-  const options: string[] = [];
-  for (let h = 8; h <= 19; h++) {
-    for (const min of [0, 30]) {
-      if (h === 19 && min === 30) continue;
-      options.push(`${String(h).padStart(2, "0")}h${String(min).padStart(2, "0")}`);
-    }
-  }
+  const options = date ? creneauxDde(date).map((t) => t.replace(":", "h")) : [];
+  const actif = options.length > 0;
+
   return (
     <div style={{ position: "relative" }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} style={{ ...trigger, color: value ? INK : MUTED }}>
-        <span>{value || "Sélectionner une heure"}</span>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
+      <button
+        type="button" disabled={!actif} onClick={() => setOpen((o) => !o)}
+        style={{ ...trigger, color: value ? INK : MUTED, cursor: actif ? "pointer" : "not-allowed", background: actif ? "#fff" : SOFT }}
+      >
+        <span>{value || (date ? "Sélectionner une heure" : "Choisissez d’abord une date")}</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={actif ? INK : MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></svg>
       </button>
-      {open && (
+      {open && actif && (
         <div style={{ ...popover, padding: 8, width: 160, maxHeight: 260, overflowY: "auto" }}>
           {options.map((t) => {
             const selected = t === value;

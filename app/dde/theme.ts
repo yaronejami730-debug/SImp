@@ -23,5 +23,23 @@ export const pill = (enabled: boolean): React.CSSProperties => ({
 export const WEEKDAYS = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"];
 export const MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
+/** Nom prononcé au téléphone : c'est cette société qui offre la démarche, jamais « nous ». */
+export const SOCIETE = "Alos Démarches";
+
+/** Tous les rendez-vous se tiennent à la même adresse. */
+export const ADRESSE_RDV = "221 boulevard Davout, 75020 Paris — 11e étage";
+
+/** Réponses à donner au client s'il pose la question. Ajouter une ligne ici suffit à l'afficher. */
+export const INFOS_CLIENT: { titre: string; valeur: string }[] = [
+  {
+    titre: "Où se passe le rendez-vous ?",
+    valeur: `Le rendez-vous d'inscription à l'examen du B2 se tient au ${ADRESSE_RDV}.`,
+  },
+  {
+    titre: "Combien de temps dure la formation ?",
+    valeur: "30 heures maximum. La durée exacte dépend du dossier du client.",
+  },
+];
+
 /** Groupe WhatsApp DDE (lien d'invitation fourni par l'admin). */
 export const WHATSAPP_GROUP = "https://chat.whatsapp.com/KvI9SeS2MBT49rogGHa8ma?s=cl&p=i&ilr=0";
