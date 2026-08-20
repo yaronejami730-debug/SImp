@@ -117,6 +117,7 @@ function waMessage(a: Appointment): string {
 const CSS_RESPONSIVE = `
   .dde-wrap { padding: 40px 24px 80px; }
   .dde-table tr.dde-encours td { background: #fdf6e3; }
+  .dde-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
   .dde-table tr.dde-encours td:first-child { box-shadow: inset 3px 0 0 ${INK}; }
   @keyframes dde-respire { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
   .dde-badge-encours { animation: dde-respire 2s ease-in-out infinite; }
@@ -135,6 +136,14 @@ const CSS_RESPONSIVE = `
     .dde-table tr.dde-encours td { background: transparent; }
     .dde-table tr.dde-encours td:first-child { box-shadow: none; }
     .dde-date-cell { justify-content: flex-end !important; }
+    /* Onglet Comptes : les actions passent en pleine largeur, le bloc d'accès aussi. */
+    .dde-table td.dde-td-actions { display: block !important; }
+    .dde-table td.dde-td-actions::before { display: none; }
+    .dde-actions { justify-content: stretch; }
+    .dde-actions button { flex: 1 1 132px; }
+    .dde-table tr.dde-tr-acces { border: none; background: transparent; padding: 0; margin: -8px 0 14px; }
+    .dde-table td.dde-td-full { display: block !important; padding: 0 !important; border-top: none !important; }
+    .dde-table td.dde-td-full::before { display: none; }
     .dde-table td { border-top: none !important; padding: 7px 0 !important; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
     .dde-table td + td { border-top: 1px solid ${SOFT} !important; }
     .dde-table td::before {
@@ -848,7 +857,7 @@ function Comptes() {
 
   const td: React.CSSProperties = { fontSize: 15, padding: 14, borderTop: `1px solid ${SOFT}` };
   const th: React.CSSProperties = { textAlign: "left", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: MUTED, padding: "0 14px 12px" };
-  const bouton: React.CSSProperties = { height: 34, padding: "0 12px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", marginRight: 8 };
+  const bouton: React.CSSProperties = { height: 34, padding: "0 12px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" };
 
   return (
     <div style={{ display: "grid", gap: 48 }}>
@@ -883,16 +892,18 @@ function Comptes() {
                 <td data-label="E-mail" style={{ ...td, wordBreak: "break-word" }}>{u.email}</td>
                 <td data-label="Rôle" style={td}>{u.role === "admin" ? "Administrateur" : "Téléprospectrice"}</td>
                 <td data-label="Statut" style={{ ...td, color: u.active ? INK : MUTED }}>{u.active ? "Actif" : "Désactivé"}</td>
-                <td data-label="" style={{ ...td, whiteSpace: "nowrap" }}>
-                  <button onClick={() => setAccesOuvert((v) => (v === u.id ? null : u.id))} style={{ ...bouton, background: accesOuvert === u.id ? INK : "#fff", color: accesOuvert === u.id ? "#fff" : INK, borderColor: accesOuvert === u.id ? INK : LINE }}>Accès outils</button>
-                  <button onClick={() => resetPassword(u)} style={bouton}>Mot de passe</button>
-                  <button onClick={() => toggle(u)} style={bouton}>{u.active ? "Désactiver" : "Activer"}</button>
-                  {u.role !== "admin" && <button onClick={() => remove(u)} style={{ ...bouton, marginRight: 0, color: "#b3261e" }}>Supprimer</button>}
+                <td data-label="" className="dde-td-actions" style={td}>
+                  <div className="dde-actions">
+                    <button onClick={() => setAccesOuvert((v) => (v === u.id ? null : u.id))} style={{ ...bouton, background: accesOuvert === u.id ? INK : "#fff", color: accesOuvert === u.id ? "#fff" : INK, borderColor: accesOuvert === u.id ? INK : LINE }}>Accès outils</button>
+                    <button onClick={() => resetPassword(u)} style={bouton}>Mot de passe</button>
+                    <button onClick={() => toggle(u)} style={bouton}>{u.active ? "Désactiver" : "Activer"}</button>
+                    {u.role !== "admin" && <button onClick={() => remove(u)} style={{ ...bouton, color: "#b3261e" }}>Supprimer</button>}
+                  </div>
                 </td>
               </tr>,
               accesOuvert === u.id && (
-                <tr key={`${u.id}-acces`}>
-                  <td colSpan={5} style={{ ...td, padding: "0 14px 14px" }}>
+                <tr key={`${u.id}-acces`} className="dde-tr-acces">
+                  <td colSpan={5} className="dde-td-full" style={{ ...td, padding: "0 14px 14px" }}>
                     <EditeurAcces user={u} onSaved={load} />
                   </td>
                 </tr>
