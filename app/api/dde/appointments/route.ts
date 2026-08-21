@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  getDdeAuth, listDdeAppointments, createDdeAppointment, updateDdeAppointment, deleteDdeAppointment,
+  getDdeAuth, listDdeAppointments, createDdeAppointment, updateDdeAppointment, deleteDdeAppointment, getDdeAppointment,
   DDE_STATUTS, DDE_FACTURATION, DDE_CALLCENTER, DDE_CRITERES,
   type DdeStatut, type DdeFacturation, type DdeCallcenter, type DdeCriteres,
 } from "@/lib/dde";
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   }
 }
 
-/** PATCH -> statut / notes d'un RDV. */
+/** PATCH -> statut, suivi, ou correction des informations d'un RDV. */
 export async function PATCH(req: Request) {
   const s = getDdeAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
@@ -69,6 +69,8 @@ export async function PATCH(req: Request) {
     const b = (await req.json()) as {
       id?: number; statut?: string; notes?: string; whatsappSent?: boolean;
       facturationStatut?: string; callcenterStatut?: string;
+      nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string;
+      dateInitiale?: string | null; heureInitiale?: string | null;
     };
     if (!b.id) return NextResponse.json({ error: "id requis." }, { status: 400 });
     if (b.statut !== undefined && !DDE_STATUTS.includes(b.statut as DdeStatut)) {
@@ -81,15 +83,39 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Statut call center inconnu." }, { status: 400 });
     }
     // Une téléprospectrice consulte ses RDV en lecture seule : statut, WhatsApp,
-    // facturation et rémunération sont pilotés par l'admin seul.
-    const reserveAdmin = b.statut !== undefined || b.whatsappSent !== undefined
+    // facturation, rémunération et correction des informations sont pilotés par l'admin seul.
+    const correction = b.nom !== undefined || b.prenom !== undefined || b.date !== undefined
+      || b.heure !== undefined || b.telephone !== undefined || b.notes !== undefined
+      || b.dateInitiale !== undefined;
+    const reserveAdmin = correction || b.statut !== undefined || b.whatsappSent !== undefined
       || b.facturationStatut !== undefined || b.callcenterStatut !== undefined;
     if (reserveAdmin && s.role !== "admin") {
       return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
     }
+
+    // Correction d'un RDV : mêmes règles qu'à la création (nom, mobile FR, jour ouvré, créneau).
+    let telephone: string | undefined;
+    if (b.nom !== undefined && !b.nom.trim()) return NextResponse.json({ error: "Le nom est obligatoire." }, { status: 400 });
+    if (b.prenom !== undefined && !b.prenom.trim()) return NextResponse.json({ error: "Le prénom est obligatoire." }, { status: 400 });
+    if (b.telephone !== undefined) {
+      const tel = formatMobileFR(b.telephone);
+      if (!tel) return NextResponse.json({ error: "Numéro de mobile invalide : 10 chiffres commençant par 06 ou 07." }, { status: 400 });
+      telephone = tel;
+    }
+    if (b.date !== undefined || b.heure !== undefined) {
+      const actuel = await getDdeAppointment(Number(b.id));
+      if (!actuel) return NextResponse.json({ error: "Rendez-vous introuvable." }, { status: 404 });
+      const date = b.date ?? actuel.rdv_date;
+      const heure = b.heure ?? actuel.rdv_time;
+      if (!estJourOuvre(date)) return NextResponse.json({ error: `Jour fermé. ${HORAIRES_TEXTE}` }, { status: 400 });
+      if (!estCreneauValide(date, heure)) return NextResponse.json({ error: `Créneau hors horaires. ${HORAIRES_TEXTE}` }, { status: 400 });
+    }
+
     await updateDdeAppointment(s, Number(b.id), {
       statut: b.statut, notes: b.notes, whatsappSent: b.whatsappSent,
       facturationStatut: b.facturationStatut, callcenterStatut: b.callcenterStatut,
+      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone,
+      dateInitiale: b.dateInitiale, heureInitiale: b.heureInitiale,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

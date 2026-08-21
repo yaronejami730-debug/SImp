@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
+import PlaqueLookup from "@/components/PlaqueLookup";
 import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders, getUser } from "@/lib/client";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
@@ -1031,6 +1032,28 @@ function ClientPage({ id }: { id: string }) {
         <h2 style={sectionTitle}>📨 Notifications</h2>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Suivi des envois attendus (confirmation + rappel 24h, mail &amp; SMS) et historique détaillé avec statut, date et erreur éventuelle.</p>
         <MessageTimeline id={a.id} refreshKey={msgKey} startDateTime={a.startDateTime} />
+      </div>
+
+      {/* === IDENTIFICATION DU VÉHICULE PAR LA PLAQUE === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>🔎 Identifier le véhicule</h2>
+        <PlaqueLookup
+          immatriculation={a.immatriculation}
+          onReprendre={async (v) => {
+            await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+              method: "PATCH",
+              headers: authHeaders({ "content-type": "application/json" }),
+              body: JSON.stringify({
+                carBrand: v.marque || a.carBrand,
+                carModel: v.modele || a.carModel,
+                carFinish: v.finition || a.carFinish,
+                immatriculation: (v.plaque || a.immatriculation || "").replace(/-/g, ""),
+              }),
+            }).catch(() => {});
+            setA({ ...a, carBrand: v.marque || a.carBrand, carModel: v.modele || a.carModel, carFinish: v.finition || a.carFinish });
+            setFlash({ kind: "ok", msg: "Véhicule mis à jour depuis la plaque" });
+          }}
+        />
       </div>
 
       {/* === LOGISTIQUE === */}

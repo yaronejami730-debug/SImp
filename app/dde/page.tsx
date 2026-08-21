@@ -17,17 +17,23 @@ type Appointment = {
   crit_titre_sejour: boolean | null; crit_sans_diplome: boolean | null; crit_carte_vitale: boolean | null;
   crit_sans_dossier_prefecture: boolean | null; crit_moins_60_ans: boolean | null;
   whatsapp_sent_at: string | null; invoiced_at: string | null; callcenter_paid_at: string | null;
+  rdv_date_initiale: string | null; rdv_time_initiale: string | null; deplace_le: string | null;
 };
 type DdeAcces = { ascLogin: string; ascPassword: string; ringoverLogin: string; ringoverPassword: string };
 type DdeUser = { id: number; email: string; name: string; role: "admin" | "telepro"; phone: string; active: boolean; acces?: DdeAcces };
 
-/** Statut unique du rendez-vous. Seul « honoré » ouvre la facturation et le paiement du call center. */
+/** Issues possibles d'un rendez-vous, posées par un bouton. Seul « honoré » ouvre la facturation.
+ *  « À venir » n'est pas une issue (c'est l'état par défaut) et « déplacé » se constate tout seul
+ *  quand la date ou l'heure change. */
+const ISSUES: { key: string; label: string; court: string }[] = [
+  { key: "honore", label: "Rendez-vous honoré", court: "Honoré" },
+  { key: "absent", label: "Rendez-vous absent", court: "Absent" },
+  { key: "annule", label: "Rendez-vous annulé", court: "Annulé" },
+];
+
 const STATUTS: { key: string; label: string }[] = [
   { key: "a_venir", label: "À venir" },
-  { key: "honore", label: "Rendez-vous honoré" },
-  { key: "absent", label: "Rendez-vous absent" },
-  { key: "annule", label: "Rendez-vous annulé" },
-  { key: "deplace", label: "Rendez-vous déplacé" },
+  ...ISSUES.map(({ key, label }) => ({ key, label })),
   { key: "non_eligible", label: "Pas éligible" },
 ];
 
@@ -75,6 +81,20 @@ function moment(a: Appointment, maintenant: number): "avenir" | "encours" | "pas
 }
 
 const MOMENT_LABEL: Record<string, string> = { avenir: "À venir", encours: "En cours", passe: "Passé" };
+
+/** Date locale au format YYYY-MM-DD, décalée de n jours. */
+function isoJour(decalage = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + decalage);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Sous-parties du tableau : hier, aujourd'hui, demain. */
+const JOURS: { key: string; label: string; decalage: number }[] = [
+  { key: "hier", label: "Hier", decalage: -1 },
+  { key: "aujourdhui", label: "Aujourd'hui", decalage: 0 },
+  { key: "demain", label: "Demain", decalage: 1 },
+];
 
 /** Comparaison souple : sans accents, sans casse, sans espaces parasites. */
 function normalise(v: string): string {
@@ -452,6 +472,195 @@ function Formulaire({ me, onSaved }: { me: Me; onSaved: () => void }) {
   );
 }
 
+/** Issue du rendez-vous en un clic : honoré, absent, annulé. Recliquer remet « à venir ». */
+function Issues({ statut, onChange }: { statut: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      {ISSUES.map((i) => {
+        const actif = statut === i.key;
+        return (
+          <button
+            key={i.key} onClick={() => onChange(actif ? "a_venir" : i.key)}
+            title={actif ? "Cliquer pour revenir à « à venir »" : i.label}
+            style={{
+              height: 32, padding: "0 14px", borderRadius: 16, fontSize: 13, fontWeight: 700, cursor: "pointer",
+              whiteSpace: "nowrap",
+              border: actif ? "none" : `1px solid ${LINE}`,
+              background: actif ? INK : "#fff", color: actif ? "#fff" : MUTED,
+            }}
+          >{actif ? `✓ ${i.court}` : i.court}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Rendez-vous déplacé : constaté quand la date ou l'heure a changé après la prise. */
+function BadgeDeplace({ appointment }: { appointment: Appointment }) {
+  const origine = appointment.rdv_date_initiale
+    ? `${frDate(appointment.rdv_date_initiale)}${appointment.rdv_time_initiale ? ` à ${appointment.rdv_time_initiale}` : ""}`
+    : "";
+  return (
+    <span
+      title={origine ? `Rendez-vous déplacé — pris à l'origine le ${origine}` : "Rendez-vous déplacé (date d'origine non renseignée)"}
+      style={{
+        display: "inline-block", padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+        textTransform: "uppercase", letterSpacing: "0.03em", whiteSpace: "nowrap",
+        border: `1px solid ${LINE}`, background: "#fff", color: MUTED,
+      }}
+    >Déplacé</span>
+  );
+}
+
+/** Rappel de la date d'origine, affiché sous la date courante. */
+function OrigineDeplacement({ appointment }: { appointment: Appointment }) {
+  if (!appointment.rdv_date_initiale) return null;
+  return (
+    <div style={{ fontSize: 12, fontWeight: 400, color: MUTED, whiteSpace: "nowrap" }}>
+      au lieu du {frDate(appointment.rdv_date_initiale)}{appointment.rdv_time_initiale ? ` à ${appointment.rdv_time_initiale}` : ""}
+    </div>
+  );
+}
+
+// ---------- Correction d'un rendez-vous (admin) ----------
+
+/** Modification des informations d'un RDV : mêmes règles que la saisie initiale. */
+function ModaleEdition({ appointment, motif, onClose, onSaved }: { appointment: Appointment; motif?: "absent"; onClose: () => void; onSaved: () => void }) {
+  const [nom, setNom] = useState(appointment.nom);
+  const [prenom, setPrenom] = useState(appointment.prenom);
+  const [date, setDate] = useState(appointment.rdv_date);
+  const [heure, setHeure] = useState(appointment.rdv_time);
+  const [telephone, setTelephone] = useState(appointment.telephone);
+  const [notes, setNotes] = useState(appointment.notes);
+  const [dateInitiale, setDateInitiale] = useState(appointment.rdv_date_initiale ?? "");
+  const [heureInitiale, setHeureInitiale] = useState(appointment.rdv_time_initiale ?? "");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Échap ferme la fenêtre, comme partout ailleurs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const telephoneValide = mobileFR(telephone) !== null;
+  const canSubmit = nom.trim() !== "" && prenom.trim() !== "" && date !== "" && heure !== "" && telephoneValide && !busy;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/dde/appointments", {
+        method: "PATCH", headers: headers(),
+        body: JSON.stringify({
+          id: appointment.id, nom, prenom, date, heure, telephone, notes,
+          // Date d'origine : renseignée à la main pour les rendez-vous déplacés avant ce suivi.
+          ...(dateInitiale !== (appointment.rdv_date_initiale ?? "") || heureInitiale !== (appointment.rdv_time_initiale ?? "")
+            ? { dateInitiale: dateInitiale || null, heureInitiale: heureInitiale || null }
+            : {}),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Modification impossible.");
+      onSaved();
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Erreur.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(26,26,26,0.35)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "5vh 16px", overflowY: "auto" }}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()} onSubmit={submit}
+        style={{ width: "100%", maxWidth: 520, background: BG, borderRadius: 18, padding: 28, boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 28 }}>
+          <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.01em", margin: 0 }}>
+            {motif === "absent" ? "Replacer le rendez-vous" : "Modifier le rendez-vous"}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Fermer" style={{ height: 34, width: 34, borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 15, cursor: "pointer", color: MUTED }}>✕</button>
+        </div>
+
+        {motif === "absent" && (
+          <div style={{ marginBottom: 28, padding: "14px 18px", borderRadius: 12, background: SOFT, fontSize: 15, lineHeight: 1.5 }}>
+            <strong>Rendez-vous marqué absent.</strong> Choisis une nouvelle date pour le replacer — il repassera
+            automatiquement « à venir » et sera marqué déplacé. Sinon, ferme cette fenêtre : il reste absent.
+          </div>
+        )}
+
+        <label htmlFor="e-nom" style={labelStyle}>Nom</label>
+        <input id="e-nom" value={nom} onChange={(e) => setNom(e.target.value)} style={{ ...inputStyle, marginBottom: 24 }} />
+
+        <label htmlFor="e-prenom" style={labelStyle}>Prénom</label>
+        <input id="e-prenom" value={prenom} onChange={(e) => setPrenom(e.target.value)} style={{ ...inputStyle, marginBottom: 24 }} />
+
+        <div style={labelStyle}>Date de rendez-vous</div>
+        <div style={{ marginBottom: 24 }}>
+          <DatePicker
+            value={date}
+            onChange={(iso) => {
+              setDate(iso);
+              if (heure && !estCreneauValide(iso, heure)) setHeure("");
+            }}
+          />
+        </div>
+
+        <div style={labelStyle}>Heure de rendez-vous</div>
+        <div style={{ marginBottom: 24 }}>
+          <TimePicker value={heure} onChange={setHeure} date={date} />
+          <div style={{ marginTop: 10, fontSize: 14, color: MUTED }}>{HORAIRES_TEXTE}</div>
+        </div>
+
+        <label htmlFor="e-tel" style={labelStyle}>Numéro de téléphone</label>
+        <input
+          id="e-tel" type="tel" inputMode="tel" value={telephone}
+          onChange={(e) => setTelephone(formatMobileEnCours(e.target.value))}
+          style={{ ...inputStyle, marginBottom: telephone && !telephoneValide ? 10 : 24 }}
+        />
+        {telephone && !telephoneValide && (
+          <div style={{ fontSize: 14, color: MUTED, marginBottom: 24 }}>Mobile français attendu : 10 chiffres commençant par 06 ou 07.</div>
+        )}
+
+        <label htmlFor="e-notes" style={labelStyle}>Commentaire</label>
+        <textarea id="e-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inputStyle, height: "auto", padding: "16px 18px", marginBottom: 28, fontFamily: "inherit", resize: "vertical" }} />
+
+        <div style={labelStyle}>
+          Rendez-vous déplacé <span style={{ fontWeight: 400, color: MUTED, fontSize: 15 }}>(date d&apos;origine, facultatif)</span>
+        </div>
+        <div style={{ border: `1px solid ${LINE}`, borderRadius: 14, background: "#fff", padding: 16, marginBottom: 28, display: "grid", gap: 14 }}>
+          <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.5 }}>
+            À remplir seulement pour un rendez-vous déplacé avant la mise en place du suivi : le tableau affichera
+            « au lieu du … ». Les déplacements faits ici sont enregistrés tout seuls.
+          </div>
+          <DatePicker value={dateInitiale} onChange={setDateInitiale} />
+          <TimePicker value={heureInitiale} onChange={setHeureInitiale} date={dateInitiale || date} />
+          {(dateInitiale || heureInitiale) && (
+            <button
+              type="button" onClick={() => { setDateInitiale(""); setHeureInitiale(""); }}
+              style={{ height: 40, padding: "0 16px", borderRadius: 20, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: MUTED, justifySelf: "start" }}
+            >Effacer la date d&apos;origine</button>
+          )}
+        </div>
+
+        {err && <div style={{ marginBottom: 20, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <button type="submit" disabled={!canSubmit} style={pill(canSubmit)}>{busy ? "Enregistrement…" : "Enregistrer"}</button>
+          <button type="button" onClick={onClose} style={{ height: 56, padding: "0 24px", borderRadius: 28, border: `1px solid ${LINE}`, background: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", color: MUTED }}>Annuler</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ---------- Tableau des rendez-vous ----------
 
 const WA_GREEN = "#25D366";
@@ -548,6 +757,8 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [filtreTelepro, setFiltreTelepro] = useState("");
+  const [filtreJour, setFiltreJour] = useState("");
+  const [edite, setEdite] = useState<{ rdv: Appointment; motif?: "absent" } | null>(null);
   const [maintenant, setMaintenant] = useState(() => Date.now());
 
   // « En cours » ne dure qu'une demi-heure : l'affichage doit suivre tout seul.
@@ -562,7 +773,9 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
 
   // Recherche sur tout ce qui est lisible dans la ligne : client, téléphone, date, telepro, statuts, commentaire.
   const termes = normalise(q).split(" ").filter(Boolean);
-  const filtrees = filtreTelepro ? rows.filter((a) => a.telepro_email.toLowerCase() === filtreTelepro) : rows;
+  const parTelepro = filtreTelepro ? rows.filter((a) => a.telepro_email.toLowerCase() === filtreTelepro) : rows;
+  const jourChoisi = JOURS.find((j) => j.key === filtreJour);
+  const filtrees = jourChoisi ? parTelepro.filter((a) => a.rdv_date === isoJour(jourChoisi.decalage)) : parTelepro;
   const visibles = termes.length === 0 ? filtrees : filtrees.filter((a) => {
     const foin = normalise([
       a.nom, a.prenom, a.telephone, a.telephone.replace(/\s/g, ""), a.rdv_date, frDate(a.rdv_date), a.rdv_time,
@@ -570,6 +783,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
       libelleStatut(a.statut), libelle(FACTURATION, a.facturation_statut), libelle(CALLCENTER, a.callcenter_statut),
       critereRates(a).length === 0 ? "eligible" : `non eligible ${critereRates(a).join(" ")}`,
       MOMENT_LABEL[moment(a, maintenant)],
+      a.deplace_le ? "deplace" : "",
       a.notes,
     ].join(" "));
     return termes.every((t) => foin.includes(t));
@@ -591,6 +805,28 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
   }
 
   if (!rows.length) return <div style={{ fontSize: 17, color: MUTED }}>Aucun rendez-vous enregistré pour le moment.</div>;
+
+  // Compteurs par jour, calculés sur le périmètre visible (filtre telepro inclus).
+  const compteJour = (decalage: number) => parTelepro.filter((a) => a.rdv_date === isoJour(decalage)).length;
+
+  const sousParties = (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+      {[{ key: "", label: "Tous", n: parTelepro.length }, ...JOURS.map((j) => ({ key: j.key, label: j.label, n: compteJour(j.decalage) }))].map((b) => {
+        const actif = filtreJour === b.key;
+        return (
+          <button
+            key={b.key || "tous"} onClick={() => setFiltreJour(b.key)}
+            style={{
+              height: 40, padding: "0 18px", borderRadius: 20, fontSize: 14, fontWeight: 700, cursor: "pointer",
+              whiteSpace: "nowrap",
+              border: actif ? "none" : `1px solid ${LINE}`,
+              background: actif ? INK : "#fff", color: actif ? "#fff" : b.n === 0 ? MUTED : INK,
+            }}
+          >{b.label} ({b.n})</button>
+        );
+      })}
+    </div>
+  );
 
   const champRecherche = (
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
@@ -618,7 +854,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
       )}
 
       <span style={{ fontSize: 14, color: MUTED }}>
-        {termes.length === 0 && !filtreTelepro
+        {termes.length === 0 && !filtreTelepro && !filtreJour
           ? `${rows.length} rendez-vous`
           : `${visibles.length} résultat${visibles.length > 1 ? "s" : ""} sur ${rows.length}`}
       </span>
@@ -636,6 +872,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
         </div>
       )}
 
+      {sousParties}
       {champRecherche}
 
       {err && <div style={{ marginBottom: 16, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
@@ -653,7 +890,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
                 Éligibilité
                 <Aide texte="Réponses données pendant l'appel : titre de séjour valide, pas de diplôme, carte Vitale, pas de dossier en préfecture, moins de 60 ans." />
               </th>
-              <th style={th}>Statut</th>
+              <th style={th}>Issue</th>
               {me.role === "admin" && <th style={th}>WhatsApp</th>}
               <th style={{ ...th, textAlign: "center" }}>
                 Facturation client
@@ -672,8 +909,10 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
                 <td data-label="Date" style={{ ...td, fontWeight: 700, whiteSpace: "nowrap" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }} className="dde-date-cell">
                     <span>{frDate(a.rdv_date)}</span>
+                    {a.deplace_le && <BadgeDeplace appointment={a} />}
                     <MomentRdv etat={moment(a, maintenant)} />
                   </div>
+                  {a.deplace_le && <OrigineDeplacement appointment={a} />}
                 </td>
                 <td data-label="Heure" style={{ ...td, whiteSpace: "nowrap" }}>{a.rdv_time}</td>
                 <td data-label="Client" style={td}>{a.nom.toUpperCase()} {a.prenom}</td>
@@ -699,11 +938,18 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
                         >{5 - rates.length}/5</span>;
                   })()}
                 </td>
-                <td data-label="Statut" style={td}>
-                  {me.role === "admin" ? (
-                    <select value={a.statut} onChange={(e) => patch(a.id, { statut: e.target.value })} style={{ height: 34, padding: "0 10px", borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", minWidth: 190, maxWidth: "100%" }}>
-                      {STATUTS.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
-                    </select>
+                <td data-label="Issue" style={td}>
+                  {a.statut === "non_eligible" ? (
+                    <span style={{ fontWeight: 700, color: MUTED }} title="Profil non éligible d'après les critères de l'appel.">Pas éligible</span>
+                  ) : me.role === "admin" ? (
+                    <Issues
+                      statut={a.statut}
+                      onChange={async (v) => {
+                        await patch(a.id, { statut: v });
+                        // Un client absent se replace la plupart du temps : on ouvre directement le choix de date.
+                        if (v === "absent") setEdite({ rdv: { ...a, statut: "absent" }, motif: "absent" });
+                      }}
+                    />
                   ) : (
                     <span style={{ fontWeight: 700 }}>{libelleStatut(a.statut)}</span>
                   )}
@@ -733,7 +979,10 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
                 </td>
                 {me.role === "admin" && (
                   <td data-label="" style={td}>
-                    <button onClick={() => remove(a.id)} title="Supprimer le rendez-vous" style={{ height: 32, width: 32, borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: MUTED }}>✕</button>
+                    <div className="dde-actions">
+                      <button onClick={() => setEdite({ rdv: a })} title="Modifier le rendez-vous" aria-label="Modifier le rendez-vous" style={{ height: 32, width: 32, borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: INK }}>✎</button>
+                      <button onClick={() => remove(a.id)} title="Supprimer le rendez-vous" aria-label="Supprimer le rendez-vous" style={{ height: 32, width: 32, borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer", color: MUTED }}>✕</button>
+                    </div>
                   </td>
                 )}
               </tr>
@@ -741,9 +990,19 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
           </tbody>
         </table>
 
+        {edite && (
+          <ModaleEdition
+            appointment={edite.rdv}
+            motif={edite.motif}
+            onClose={() => setEdite(null)}
+            onSaved={reload}
+          />
+        )}
+
         {visibles.length === 0 && (
           <div style={{ padding: "28px 14px", textAlign: "center", fontSize: 15, color: MUTED }}>
             Aucun rendez-vous ne correspond{q.trim() ? ` à « ${q.trim()} »` : ""}
+            {jourChoisi ? ` pour ${jourChoisi.label.toLowerCase()}` : ""}
             {filtreTelepro ? " pour cette telepro" : ""}.
           </div>
         )}

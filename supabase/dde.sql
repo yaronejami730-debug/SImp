@@ -81,3 +81,12 @@ alter table dde_users add column if not exists asc_login text not null default '
 alter table dde_users add column if not exists asc_password text not null default '';
 alter table dde_users add column if not exists ringover_login text not null default '';
 alter table dde_users add column if not exists ringover_password text not null default '';
+
+-- Déplacement d'un rendez-vous : trace automatique de la date/heure d'origine.
+-- « Déplacé » n'est plus un statut : c'est un fait constaté quand la date ou l'heure change.
+alter table dde_appointments add column if not exists rdv_date_initiale date;
+alter table dde_appointments add column if not exists rdv_time_initiale text;
+alter table dde_appointments add column if not exists deplace_le timestamptz;
+
+update dde_appointments set deplace_le = coalesce(deplace_le, now()) where statut = 'deplace';
+update dde_appointments set statut = 'a_venir' where statut = 'deplace';

@@ -143,8 +143,9 @@ export async function deleteDdeUser(id: number): Promise<void> {
 
 // ---------- Rendez-vous ----------
 
-/** Statuts d'un rendez-vous DDE. Seul « honoré » ouvre la facturation et le paiement du call center. */
-export const DDE_STATUTS = ["a_venir", "honore", "absent", "annule", "deplace", "non_eligible"] as const;
+/** Statuts d'un rendez-vous DDE. Seul « honoré » ouvre la facturation et le paiement du call center.
+ *  « Déplacé » n'est pas un statut : c'est un fait constaté quand la date ou l'heure change. */
+export const DDE_STATUTS = ["a_venir", "honore", "absent", "annule", "non_eligible"] as const;
 export type DdeStatut = (typeof DDE_STATUTS)[number];
 
 /** Critères posés au client pendant l'appel. Éligible = chaque réponse égale la réponse attendue. */
@@ -172,9 +173,10 @@ export type DdeAppointment = {
   crit_titre_sejour: boolean | null; crit_sans_diplome: boolean | null; crit_carte_vitale: boolean | null;
   crit_sans_dossier_prefecture: boolean | null; crit_moins_60_ans: boolean | null;
   whatsapp_sent_at: string | null; invoiced_at: string | null; callcenter_paid_at: string | null;
+  rdv_date_initiale: string | null; rdv_time_initiale: string | null; deplace_le: string | null;
 };
 
-const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, saisi_par_email, saisi_par_name, statut, facturation_statut, callcenter_statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at, ${DDE_CRITERES.map((c) => c.key).join(", ")}`;
+const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, saisi_par_email, saisi_par_name, statut, facturation_statut, callcenter_statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at, to_char(rdv_date_initiale,'YYYY-MM-DD') as rdv_date_initiale, rdv_time_initiale, deplace_le, ${DDE_CRITERES.map((c) => c.key).join(", ")}`;
 
 /** Admin -> tous les RDV ; téléprospectrice -> uniquement les siens. */
 export async function listDdeAppointments(s: DdeSession): Promise<DdeAppointment[]> {
@@ -220,10 +222,18 @@ export async function createDdeAppointment(s: DdeSession, input: {
 /** Marqueurs de suivi : un booléen -> horodatage (coché) ou null (décoché). */
 export type DdeAppointmentPatch = {
   statut?: string; notes?: string;
+  nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; // correction d'un RDV saisi
+  dateInitiale?: string | null; heureInitiale?: string | null; // déplacement saisi à la main (RDV antérieurs au suivi)
   whatsappSent?: boolean;          // message WhatsApp envoyé
   facturationStatut?: string;      // avancement de la facture envoyée à l'entreprise cliente
   callcenterStatut?: string;       // avancement de la facture du call center
 };
+
+/** Un rendez-vous par son identifiant (contrôles serveur avant correction). */
+export async function getDdeAppointment(id: number): Promise<DdeAppointment | null> {
+  const { rows } = await getPool().query(`select ${A_COLS} from dde_appointments where id = $1`, [id]);
+  return (rows[0] as DdeAppointment | undefined) ?? null;
+}
 
 export async function updateDdeAppointment(s: DdeSession, id: number, patch: DdeAppointmentPatch): Promise<void> {
   const stamp = (v?: boolean) => (v === undefined ? undefined : v ? new Date().toISOString() : null);
@@ -237,12 +247,49 @@ export async function updateDdeAppointment(s: DdeSession, id: number, patch: Dde
     if (statutFinal !== "honore") throw new Error("Suivi de facturation possible uniquement sur un rendez-vous honoré.");
   }
 
+  // Déplacement : dès que la date ou l'heure change réellement, on garde la date d'origine
+  // (celle du tout premier rendez-vous, jamais écrasée) et on horodate le déplacement.
+  let deplacement: { date: string | null; heure: string | null } | null = null;
+  if (patch.date !== undefined || patch.heure !== undefined) {
+    const { rows } = await getPool().query(
+      `select to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, rdv_date_initiale from dde_appointments where id = $1`,
+      [id],
+    );
+    const avant = rows[0] as { rdv_date: string; rdv_time: string; rdv_date_initiale: string | null } | undefined;
+    if (avant) {
+      const change = (patch.date !== undefined && patch.date !== avant.rdv_date)
+        || (patch.heure !== undefined && patch.heure.trim() !== avant.rdv_time);
+      // La date d'origine ne se fixe qu'au premier déplacement.
+      if (change && !avant.rdv_date_initiale) deplacement = { date: avant.rdv_date, heure: avant.rdv_time };
+      else if (change) deplacement = { date: null, heure: null };
+    }
+  }
+
   const map: Record<string, unknown> = {
     statut: patch.statut, notes: patch.notes,
+    nom: patch.nom?.trim(), prenom: patch.prenom?.trim(),
+    rdv_date: patch.date, rdv_time: patch.heure?.trim(), telephone: patch.telephone?.trim(),
     whatsapp_sent_at: stamp(patch.whatsappSent),
     facturation_statut: patch.facturationStatut,
     callcenter_statut: patch.callcenterStatut,
   };
+
+  if (deplacement) {
+    map.deplace_le = now;
+    if (deplacement.date) { map.rdv_date_initiale = deplacement.date; map.rdv_time_initiale = deplacement.heure; }
+    // Un rendez-vous absent ou annulé qu'on replace redevient un rendez-vous à venir.
+    if (patch.statut === undefined) {
+      const { rows } = await getPool().query(`select statut from dde_appointments where id = $1`, [id]);
+      if (["absent", "annule"].includes(rows[0]?.statut as string)) map.statut = "a_venir";
+    }
+  }
+
+  // Déplacement renseigné à la main : utile pour les rendez-vous déplacés avant ce suivi.
+  if (patch.dateInitiale !== undefined) {
+    map.rdv_date_initiale = patch.dateInitiale || null;
+    map.rdv_time_initiale = patch.heureInitiale ?? null;
+    map.deplace_le = patch.dateInitiale ? now : null;
+  }
 
   // Horodatages conservés pour l'historique : facture envoyée, call center payé.
   if (patch.facturationStatut !== undefined) {
