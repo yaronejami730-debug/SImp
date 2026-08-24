@@ -46,12 +46,35 @@ export default function Nav({ active }: { active: string; callCenterId?: number 
   });
 
   function logout() {
+    localStorage.removeItem("auth_backup");
     clearAuth();
     window.location.href = "/simplicicar";
   }
 
+  // Prise en main d'un compte par l'admin : bandeau de retour tant que la session d'origine existe.
+  let backup: { token?: string; user?: string; name?: string } | null = null;
+  try { backup = JSON.parse(localStorage.getItem("auth_backup") || "null"); } catch { backup = null; }
+
+  function revenirAdmin() {
+    if (!backup?.token || !backup?.user) return;
+    localStorage.setItem("auth_token", backup.token);
+    localStorage.setItem("auth_user", backup.user);
+    localStorage.removeItem("auth_backup");
+    window.location.href = "/comptes";
+  }
+
   return (
     <div style={{ maxWidth: 720, margin: "0 auto 16px" }}>
+      {backup?.token && (
+        <div style={{ background: "#eff6ff", border: "1.5px solid #bfdbfe", borderRadius: 12, padding: "10px 14px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, color: "#1d4ed8", fontWeight: 600 }}>
+            👁 Tu es connecté en tant que {user?.name ?? "un autre compte"} — vue de support.
+          </span>
+          <button onClick={revenirAdmin} style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #2563eb", background: "#fff", color: "#1d4ed8", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            Revenir à mon compte
+          </button>
+        </div>
+      )}
       <div style={{ background: headerBg, border: `1px solid ${headerDark ? "transparent" : "#e5e7eb"}`, borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logoSrc} alt={brandName} width={150} style={{ width: 150, maxWidth: "42%", height: "auto", maxHeight: 48, objectFit: "contain" }} />

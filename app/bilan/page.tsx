@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { setCached } from "@/lib/cache";
+import { PageHeader, Card, StatCard, StatRow, Badge, T, S, R } from "@/components/ui";
 import Shell from "@/components/Shell";
-import { authHeaders } from "@/lib/client";
+import { authHeaders, getUser } from "@/lib/client";
 
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
@@ -19,7 +20,7 @@ const DEFAULT_SCHEME = { base: 50, pct: 10 }; // repli si le commercial n'a pas 
 const LATE_DAYS = 30; // une facture émise non payée depuis +30 j = retard
 
 type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
-type InvStatus = "" | "invoiced" | "paid";
+type InvStatus = "" | "requested" | "invoiced" | "paid";
 
 type Appt = {
   id: string; startDateTime: string | null; createdAt: string | null;
@@ -56,8 +57,8 @@ const fmtDateTime = (iso: string | null) => iso ? new Date(iso).toLocaleString("
 const daysSince = (iso: string | null) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : 0;
 
 // ───────── Logique métier : dérive l'état de facturation d'un dossier ─────────
-type FFState = "none" | "to_invoice" | "invoiced" | "paid";
-type CommState = "pending_bc" | "to_invoice" | "invoiced" | "paid";
+type FFState = "none" | "to_invoice" | "requested" | "invoiced" | "paid";
+type CommState = "pending_bc" | "to_invoice" | "requested" | "invoiced" | "paid";
 type Row = {
   a: Appt;
   mandatSigned: boolean;
@@ -69,7 +70,7 @@ type Row = {
   ffToInvoice: number; commToInvoice: number;
   ffInvoiced: number; commInvoiced: number;
   ffPaid: number; commPaid: number;
-  global: { key: string; label: string; color: string };
+  global: { key: string; label: string; ton: string };
   late: boolean;
   cancelled: boolean;
   reprogrammed: boolean; reprogrammedAt: string | null;
@@ -97,11 +98,14 @@ function derive(a: Appt, scheme: { base: number; pct: number } = DEFAULT_SCHEME)
   const bc = !cancelled && a.bcSigned;
   const ffAmount = ffBillable ? scheme.base : 0;
   const commAmount = bc ? Math.round((scheme.pct / 100) * (a.negotiation || 0)) : 0;
-  const ffState: FFState = !ffBillable ? "none" : (a.ffStatus === "paid" ? "paid" : a.ffStatus === "invoiced" ? "invoiced" : "to_invoice");
-  const commState: CommState = !bc ? "pending_bc" : (a.commStatus === "paid" ? "paid" : a.commStatus === "invoiced" ? "invoiced" : "to_invoice");
+  // « requested » = le commercial a demandé la facture ; elle n'est pas encore émise.
+  const ffState: FFState = !ffBillable ? "none"
+    : a.ffStatus === "paid" ? "paid" : a.ffStatus === "invoiced" ? "invoiced" : a.ffStatus === "requested" ? "requested" : "to_invoice";
+  const commState: CommState = !bc ? "pending_bc"
+    : a.commStatus === "paid" ? "paid" : a.commStatus === "invoiced" ? "invoiced" : a.commStatus === "requested" ? "requested" : "to_invoice";
 
-  const ffToInvoice = ffState === "to_invoice" ? scheme.base : 0;
-  const commToInvoice = commState === "to_invoice" ? commAmount : 0;
+  const ffToInvoice = ffState === "to_invoice" || ffState === "requested" ? scheme.base : 0;
+  const commToInvoice = commState === "to_invoice" || commState === "requested" ? commAmount : 0;
   const ffInvoiced = (ffState === "invoiced" || ffState === "paid") ? scheme.base : 0;
   const commInvoiced = (commState === "invoiced" || commState === "paid") ? commAmount : 0;
   const ffPaid = ffState === "paid" ? scheme.base : 0;
@@ -109,31 +113,31 @@ function derive(a: Appt, scheme: { base: number; pct: number } = DEFAULT_SCHEME)
 
   let global: Row["global"];
   if (cancelled) {
-    global = { key: "cancelled", label: reprogrammed ? "Annulé (reprogrammé)" : "Annulé", color: RED };
+    global = { key: "cancelled", label: reprogrammed ? "Annulé (reprogrammé)" : "Annulé", ton: "danger" };
   } else if (absent) {
-    global = { key: "absent", label: "Client absent", color: "#78716c" };
+    global = { key: "absent", label: "Client absent", ton: "danger" };
   } else if (noStatus) {
-    global = { key: "no_status", label: "⚠️ Sans statut — à statuer", color: "#9333ea" };
+    global = { key: "no_status", label: "Sans statut — à statuer", ton: "attente" };
   } else if (mandatRemoved) {
     global = ffState === "paid" || ffState === "invoiced"
-      ? { key: "mandat_removed", label: "⛔ Mandat retiré (frais gardés)", color: "#b91c1c" }
-      : { key: "mandat_removed", label: "⛔ Mandat retiré", color: "#b91c1c" };
+      ? { key: "mandat_removed", label: "Mandat retiré (frais gardés)", ton: "danger" }
+      : { key: "mandat_removed", label: "Mandat retiré", ton: "danger" };
   } else if (!mandatSigned) {
     global = a.signStatus === "listed"
-      ? { key: "listed", label: "📢 Annonce en ligne — mandat en cours", color: CYAN }
-      : { key: "open", label: a.signStatus === "thinking" ? "Réfléchit" : a.signStatus === "unsigned" ? "Non signé" : "Mandat non signé / en cours", color: GRAY };
+      ? { key: "listed", label: "Annonce en ligne — mandat en cours", ton: "info" }
+      : { key: "open", label: a.signStatus === "thinking" ? "Réfléchit" : a.signStatus === "unsigned" ? "Non signé" : "Mandat non signé / en cours", ton: "neutre" };
   } else if (!bc) {
     global = (ffState === "invoiced" || ffState === "paid")
-      ? { key: "wait_bc", label: "En attente du bon de commande", color: YELLOW }
-      : { key: "wait_sale", label: "En attente de vente", color: GRAY };
+      ? { key: "wait_bc", label: "En attente du bon de commande", ton: "attente" }
+      : { key: "wait_sale", label: "En attente de vente", ton: "neutre" };
   } else if (ffState === "paid" && commState === "paid") {
-    global = { key: "closed", label: "Clôturé", color: GREEN_DARK };
+    global = { key: "closed", label: "Clôturé", ton: "succes" };
   } else if (commState === "to_invoice") {
-    global = { key: "comm_todo", label: "Commission à facturer", color: ORANGE };
+    global = { key: "comm_todo", label: "Part variable à facturer", ton: "danger" };
   } else if (ffState === "to_invoice") {
-    global = { key: "ff_todo", label: "Frais fixes à facturer", color: ORANGE };
+    global = { key: "ff_todo", label: "Frais fixe à facturer", ton: "danger" };
   } else {
-    global = { key: "invoiced", label: "Facturé", color: GREEN };
+    global = { key: "invoiced", label: "Facturé", ton: "info" };
   }
 
   // Retard : une facture émise (non payée) depuis +30 j.
@@ -144,10 +148,15 @@ function derive(a: Appt, scheme: { base: number; pct: number } = DEFAULT_SCHEME)
   return { a, mandatSigned, mandatRemoved, ffBillable, bc, ffAmount, ffState, commAmount, commState, ffToInvoice, commToInvoice, ffInvoiced, commInvoiced, ffPaid, commPaid, global, late, cancelled, reprogrammed, reprogrammedAt, noStatus, absent };
 }
 
-const ffLabel: Record<FFState, string> = { none: "—", to_invoice: "À facturer", invoiced: "Facturée", paid: "Payée" };
-const commLabel: Record<CommState, string> = { pending_bc: "En attente du BC", to_invoice: "À facturer", invoiced: "Facturée", paid: "Payée" };
-const ffColor: Record<FFState, string> = { none: GRAY, to_invoice: ORANGE, invoiced: GREEN, paid: GREEN_DARK };
-const commColor: Record<CommState, string> = { pending_bc: YELLOW, to_invoice: ORANGE, invoiced: GREEN, paid: GREEN_DARK };
+const ffLabel: Record<FFState, string> = { none: "—", to_invoice: "À facturer", requested: "Appel à facturation", invoiced: "Facturée", paid: "Payée" };
+const commLabel: Record<CommState, string> = { pending_bc: "En attente du BC", to_invoice: "À facturer", requested: "Appel à facturation", invoiced: "Facturée", paid: "Payée" };
+const ffTon: Record<FFState, string> = { none: "neutre", to_invoice: "danger", requested: "attente", invoiced: "info", paid: "succes" };
+const commTon: Record<CommState, string> = { pending_bc: "neutre", to_invoice: "danger", requested: "attente", invoiced: "info", paid: "succes" };
+
+/** Couleur d'impression associée à un ton (les PDF n'ont pas nos jetons CSS). */
+const TON_IMPRESSION: Record<string, string> = {
+  neutre: "#6f6a62", succes: "#4c7551", attente: "#a8722a", danger: "#a94436", info: "#4a6b82",
+};
 
 function Bilan() {
   const [appts, setAppts] = useState<Appt[]>([]);
@@ -319,6 +328,15 @@ function Bilan() {
   }, [periodRows, fCommercial, fTele, fPlatform, fMandat, fBc, fStatus, fRdv, search]);
 
   // Totaux automatiques (sur les lignes filtrées).
+  const [filtresAvances, setFiltresAvances] = useState(false);
+
+  // Même page pour tous : seul le sens de l'argent change.
+  const moi = getUser();
+  const recoit = moi?.role !== "admin" && !moi?.isCommercial && !!moi?.isTeleprospector;
+  const MOT = recoit
+    ? { reste: "Reste à percevoir", facture: "Facturé, en attente", regle: "Déjà encaissé", ffCol: "Mon frais fixe", commCol: "Ma part variable", titre: "Ma rémunération" }
+    : { reste: "Reste à facturer", facture: "Déjà facturé", regle: "Déjà encaissé", ffCol: "Frais fixes", commCol: "Part variable", titre: "Bilan de facturation" };
+
   const totals = useMemo(() => {
     const t = {
       n: rows.length, mandat: 0, bc: 0, fully: 0, partial: 0, none: 0,
@@ -427,7 +445,7 @@ function Bilan() {
       const hist = (a.history || []).slice().reverse().map((h) => `<li>${esc(fmtDateTime(h.at))} — ${esc(h.t)}${h.info ? ` : ${esc(h.info)}` : ""}</li>`).join("");
       const parking = a.parkingRequested ? "🅿️ Parking sécurisé demandé" : a.parkingSent ? "Instructions parking envoyées" : "Aucun parking";
       return `<div class="doc">
-        <div class="doc-h"><b>${esc(a.lastName.toUpperCase())} ${esc(a.firstName)}</b> <span class="pill" style="background:${r.global.color}">${esc(r.global.label)}</span>${r.late ? '<span class="pill" style="background:#dc2626">PAIEMENT EN RETARD</span>' : ""}</div>
+        <div class="doc-h"><b>${esc(a.lastName.toUpperCase())} ${esc(a.firstName)}</b> <span class="pill" style="background:${TON_IMPRESSION[r.global.ton] ?? "#6f6a62"}">${esc(r.global.label)}</span>${r.late ? '<span class="pill" style="background:#dc2626">PAIEMENT EN RETARD</span>' : ""}</div>
         <table class="kv-tbl"><tbody>
           <tr><td>Véhicule</td><td>${esc(vehicleLabel(a) || "—")} ${a.immatriculation ? `(${esc(a.immatriculation)})` : ""}</td></tr>
           <tr><td>Téléphone</td><td>${esc(a.phone || "—")}</td></tr>
@@ -486,7 +504,7 @@ function Bilan() {
     const card = (label: string, val: string, color = NAVY) =>
       `<div class="kpi"><div class="kv" style="color:${color}">${esc(val)}</div><div class="kl">${esc(label)}</div></div>`;
     const statut = (r: Row) =>
-      `<span class="pill" style="background:${r.global.color}">${esc(r.global.label)}</span>`
+      `<span class="pill" style="background:${TON_IMPRESSION[r.global.ton] ?? "#6f6a62"}">${esc(r.global.label)}</span>`
       + `${r.reprogrammed && !r.cancelled ? ' <span class="pill" style="background:#2563eb">🔁 Reprogrammé</span>' : ""}`
       + `${r.late ? ' <span class="pill" style="background:#dc2626">RETARD</span>' : ""}`;
     const mandatCell = (r: Row) => {
@@ -568,9 +586,20 @@ function Bilan() {
       <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, marginTop: 2 }}>{label}</div>
     </div>
   );
-  const pill = (color: string, label: string) => (
-    <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: 5, background: color, color: "#fff", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{label}</span>
-  );
+  // Une seule façon d'afficher un état : fond doux, texte lisible, pas d'aplat de couleur vive.
+  const TONS: Record<string, { bg: string; fg: string }> = {
+    neutre: { bg: T.surface3, fg: T.ink2 },
+    succes: { bg: T.successSoft, fg: T.success },
+    attente: { bg: T.warningSoft, fg: T.warning },
+    danger: { bg: T.dangerSoft, fg: T.danger },
+    info: { bg: T.infoSoft, fg: T.info },
+  };
+  const pill = (ton: string, label: string) => {
+    const c = TONS[ton] ?? TONS.neutre;
+    return (
+      <span style={{ display: "inline-block", padding: "3px 9px", borderRadius: 999, background: c.bg, color: c.fg, fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap" }}>{label}</span>
+    );
+  };
   // Bouton paiement rapide (dans le tableau, sans ouvrir la modale).
   const payBtn = (kind: "ff" | "comm", r: Row) => {
     const state = kind === "ff" ? r.ffState : r.commState;
@@ -591,111 +620,143 @@ function Bilan() {
       </button>
     );
   };
+  const boutonSecondaire: React.CSSProperties = {
+    height: 36, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`,
+    background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+  };
   const sel = (val: string, set: (v: string) => void, opts: { v: string; l: string }[], width = "auto") => (
-    <select value={val} onChange={(e) => set(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fff", minWidth: width }}>
+    <select value={val} onChange={(e) => set(e.target.value)} style={{ height: 38, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13.5, background: T.surface, color: T.ink, minWidth: width, cursor: "pointer" }}>
       {opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
     </select>
   );
-  const th: React.CSSProperties = { textAlign: "left", padding: "8px 8px", fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap", borderBottom: "2px solid #e5e7eb", position: "sticky", top: 0, background: "#f8fafc" };
-  const td: React.CSSProperties = { padding: "8px 8px", fontSize: 12, borderBottom: "1px solid #f0f1f3", whiteSpace: "nowrap" };
+  const th: React.CSSProperties = { textAlign: "left", padding: "10px 10px", fontSize: 11.5, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap", borderBottom: `1px solid ${T.line}`, position: "sticky", top: 0, background: T.surface2 };
+  const td: React.CSSProperties = { padding: "11px 10px", fontSize: 13, borderBottom: `1px solid ${T.line}`, whiteSpace: "nowrap", color: T.ink };
 
   return (
     <>
-      {/* En-tête + période */}
-      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 22, color: NAVY, textTransform: "uppercase" }}>📊 Bilan de facturation</h1>
-            <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 13 }}>{periodLabel} · {totals.n} dossier{totals.n > 1 ? "s" : ""}</p>
+      <PageHeader
+        title={MOT.titre}
+        subtitle={`${periodLabel} · ${totals.n} dossier${totals.n > 1 ? "s" : ""} · ${recoit ? "ce qui t'est dû, de la demande de facture jusqu'à l'encaissement" : "frais fixe et part variable, de ce qui reste à facturer jusqu'à l'encaissement"}.`}
+        actions={
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={exportSimplePDF} style={boutonSecondaire}>PDF simple</button>
+            <button onClick={exportPDF} style={boutonSecondaire}>PDF détaillé</button>
+            <button onClick={exportExcel} style={boutonSecondaire}>Excel</button>
+            <button onClick={exportCSV} style={boutonSecondaire}>CSV</button>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "#6b7280" }}>De</span>
-            {sel(String(mFrom), (v) => setMFrom(Number(v)), MONTHS.map((m, i) => ({ v: String(i), l: m })))}
-            <span style={{ fontSize: 12, color: "#6b7280" }}>à</span>
-            {sel(String(mTo), (v) => setMTo(Number(v)), MONTHS.map((m, i) => ({ v: String(i), l: m })))}
-            <button onClick={() => { setMFrom(0); setMTo(11); }} title="Toute l'année" style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: (_lo === 0 && _hi === 11) ? NAVY : "#fff", color: (_lo === 0 && _hi === 11) ? "#fff" : NAVY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Année</button>
-            {sel(String(year), (v) => setYear(Number(v)), years.map((y) => ({ v: String(y), l: String(y) })))}
-            <a href="/crm" style={{ fontSize: 12, color: NAVY, textDecoration: "none", border: "1px solid #e5e7eb", padding: "8px 10px", borderRadius: 8 }}>← CRM</a>
-          </div>
+        }
+      />
+
+      <Card title="Période" description="Le bilan porte sur les rendez-vous de la période choisie.">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 13.5, color: T.ink2 }}>De</span>
+          {sel(String(mFrom), (v) => setMFrom(Number(v)), MONTHS.map((m, i) => ({ v: String(i), l: m })))}
+          <span style={{ fontSize: 13.5, color: T.ink2 }}>à</span>
+          {sel(String(mTo), (v) => setMTo(Number(v)), MONTHS.map((m, i) => ({ v: String(i), l: m })))}
+          {sel(String(year), (v) => setYear(Number(v)), years.map((y) => ({ v: String(y), l: String(y) })))}
+          <button
+            onClick={() => { setMFrom(0); setMTo(11); }}
+            style={{ ...boutonSecondaire, background: _lo === 0 && _hi === 11 ? T.brand : T.surface, color: _lo === 0 && _hi === 11 ? "#fff" : T.ink, border: _lo === 0 && _hi === 11 ? "none" : `1px solid ${T.line}` }}
+          >
+            Toute l&apos;année
+          </button>
         </div>
-      </div>
+      </Card>
 
-      {err && <p style={{ color: RED }}>❌ {err}</p>}
-      {loading && <p style={{ color: "#6b7280" }}>Chargement…</p>}
+      {err && <Card><div style={{ color: T.danger, fontWeight: 700 }}>{err}</div></Card>}
+      {loading && <div style={{ padding: S.md, color: T.ink2 }}>Chargement…</div>}
 
-      {/* Cartes récap */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        {card("Dossiers", String(totals.n))}
-        {card("Mandats signés", String(totals.mandat), GREEN)}
-        {card("BC signés", String(totals.bc), "#2563eb")}
-        {card("⚠️ Sans statut", String(totals.noStatus), "#9333ea", totals.noStatus > 0 ? "#faf5ff" : "#fff")}
-        {card("Client absent", String(totals.absent), "#78716c")}
-        {card("🗑️ Annulés", String(totals.cancelled), RED, totals.cancelled > 0 ? "#fff1f2" : "#fff")}
-        {card("🔁 Reprogrammés", String(totals.reprogrammed), "#2563eb")}
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, margin: `${S.md}px 0 8px` }}>
+        Argent
       </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        {card("Frais fixes à facturer", eur(totals.ffRemaining), ORANGE, "#fff7ed")}
-        {card("Commissions à facturer", eur(totals.commRemaining), ORANGE, "#fff7ed")}
-        {card("Total à encaisser", eur(totals.totalRemaining), RED, "#fef2f2")}
-        {card("Déjà facturé", eur(totals.invoiced), GREEN, "#f0fdf4")}
-        {card("Déjà payé", eur(totals.paid), GREEN_DARK, "#f0fdf4")}
-      </div>
+      <StatRow>
+        <StatCard label={MOT.reste} value={eur(totals.totalRemaining)} hint={`${eur(totals.ffRemaining)} de frais fixe · ${eur(totals.commRemaining)} de part variable`} onClick={() => setFStatus("to_invoice")} actif={fStatus === "to_invoice"} />
+        <StatCard label={MOT.facture} value={eur(totals.invoiced)} hint="factures émises, en attente de règlement" onClick={() => setFStatus("invoiced")} actif={fStatus === "invoiced"} />
+        <StatCard label={MOT.regle} value={eur(totals.paid)} hint="règlements constatés" onClick={() => setFStatus("paid")} actif={fStatus === "paid"} />
+      </StatRow>
 
-      {/* Filtres + recherche + export */}
-      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Nom, prénom, téléphone, véhicule, immatriculation, n° de facture…" style={{ width: "100%", padding: 11, fontSize: 14, borderRadius: 9, border: "1.5px solid #e5e7eb", boxSizing: "border-box", marginBottom: 10 }} />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {sel(fCommercial, setFCommercial, [{ v: "", l: "Tous commerciaux" }, ...commercials.map((c) => ({ v: c, l: c }))])}
-          {sel(fTele, setFTele, [{ v: "", l: "Tous téléprospecteurs" }, ...teles.map((c) => ({ v: c, l: c }))])}
-          {sel(fPlatform, setFPlatform, [{ v: "", l: "Toutes plateformes" }, ...platforms.map((c) => ({ v: c, l: c }))])}
-          {sel(fMandat, setFMandat, [{ v: "", l: "Mandat : tous" }, { v: "yes", l: "Mandat signé" }, { v: "no", l: "Mandat non signé" }])}
-          {sel(fBc, setFBc, [{ v: "", l: "BC : tous" }, { v: "yes", l: "BC signé" }, { v: "no", l: "BC non signé" }])}
-          {sel(fRdv, setFRdv, [
-            { v: "", l: "Statut RDV : tous" },
-            { v: "signed", l: "✅ Signés" },
-            { v: "listed", l: "📢 Annonce en ligne" },
-            { v: "thinking", l: "🤔 Réfléchit" },
-            { v: "unsigned", l: "❌ Non signés" },
-            { v: "no_status", l: "⚠️ Sans statut" },
-            { v: "present", l: "Présent au RDV" },
-            { v: "absent", l: "Absent (no-show)" },
-            { v: "cancelled", l: "🗑️ Annulés" },
-            { v: "reprogrammed", l: "🔁 Reprogrammés" },
-          ])}
-          {sel(fStatus, setFStatus, [
-            { v: "", l: "Statut : tous" },
-            { v: "to_invoice", l: "À facturer" },
-            { v: "non_invoiced", l: "Non facturés" },
-            { v: "invoiced", l: "Facturés" },
-            { v: "paid", l: "Payés" },
-            { v: "pending_bc", l: "En attente du BC" },
-          ])}
-          <button onClick={clearFilters} style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: "#fff", color: NAVY, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Effacer</button>
-          {role === "admin" && (
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, margin: `${S.md}px 0 8px` }}>
+        Dossiers
+      </div>
+      <StatRow>
+        <StatCard label="Dossiers" value={totals.n} hint="sur la période" onClick={clearFilters} actif={!fStatus && !fRdv} />
+        <StatCard label="Mandats signés" value={totals.mandat} onClick={() => setFRdv("signed")} actif={fRdv === "signed"} />
+        <StatCard label="Bons de commande" value={totals.bc} onClick={() => setFBc("yes")} actif={fBc === "yes"} />
+        <StatCard label="Sans statut" value={totals.noStatus} hint="à qualifier après le RDV" onClick={() => setFRdv("no_status")} actif={fRdv === "no_status"} />
+        <StatCard label="Clients absents" value={totals.absent} onClick={() => setFRdv("absent")} actif={fRdv === "absent"} />
+        <StatCard label="Annulés" value={totals.cancelled} onClick={() => setFRdv("cancelled")} actif={fRdv === "cancelled"} />
+      </StatRow>
+
+      <Card
+        title="Rechercher et filtrer"
+        actions={
+          role === "admin" ? (
             <button
               onClick={generateInvoice}
               disabled={!fCommercial || billableRows.length === 0 || busyInvoice}
-              title={!fCommercial ? "Sélectionne d'abord un commercial dans les filtres" : billableRows.length === 0 ? "Aucun montant à facturer sur cette sélection" : `Facture ${billableRows.length} ligne(s) pour ${fCommercial}`}
-              style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: !fCommercial || billableRows.length === 0 || busyInvoice ? "#cbd5e1" : "#7c3aed", color: "#fff", fontSize: 13, fontWeight: 700, cursor: !fCommercial || billableRows.length === 0 || busyInvoice ? "default" : "pointer" }}
+              title={!fCommercial ? "Choisis d'abord un commercial" : billableRows.length === 0 ? "Rien à facturer dans cette sélection" : `Facturer ${billableRows.length} ligne(s)`}
+              style={{
+                height: 36, padding: "0 14px", borderRadius: R.sm, border: "none", fontSize: 13.5, fontWeight: 700,
+                background: !fCommercial || billableRows.length === 0 || busyInvoice ? T.surface3 : T.brand,
+                color: !fCommercial || billableRows.length === 0 || busyInvoice ? T.ink3 : "#fff",
+                cursor: !fCommercial || billableRows.length === 0 || busyInvoice ? "not-allowed" : "pointer",
+              }}
             >
-              {busyInvoice ? "Génération…" : `🧾 Facturer${fCommercial ? ` ${fCommercial}` : ""}${billableRows.length ? ` (${billableRows.length})` : ""}`}
+              {busyInvoice ? "Génération…" : `Facturer${fCommercial ? ` ${fCommercial}` : ""}${billableRows.length ? ` (${billableRows.length})` : ""}`}
             </button>
-          )}
-          <div style={{ flex: 1 }} />
-          <button onClick={exportSimplePDF} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#475569", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📄 PDF simple</button>
-          <button onClick={exportPDF} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: NAVY, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📄 PDF détaillé</button>
-          <button onClick={exportExcel} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: GREEN, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📊 Excel</button>
-          <button onClick={exportCSV} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>⬇️ CSV</button>
+          ) : undefined
+        }
+      >
+        <input
+          value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Nom, téléphone, véhicule, immatriculation, numéro de facture…"
+          style={{ width: "100%", boxSizing: "border-box", height: 46, padding: "0 16px", fontSize: 15, borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, marginBottom: S.md }}
+        />
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {sel(fCommercial, setFCommercial, [{ v: "", l: "Tous les commerciaux" }, ...commercials.map((c) => ({ v: c, l: c }))])}
+          {sel(fStatus, setFStatus, [
+            { v: "", l: "Facturation : tout" },
+            { v: "to_invoice", l: "À facturer" },
+            { v: "invoiced", l: "Facturé, non payé" },
+            { v: "paid", l: "Payé" },
+            { v: "pending_bc", l: "En attente du bon de commande" },
+          ])}
+          {sel(fRdv, setFRdv, [
+            { v: "", l: "Rendez-vous : tout" },
+            { v: "signed", l: "Mandat signé" },
+            { v: "thinking", l: "En réflexion" },
+            { v: "unsigned", l: "Non signé" },
+            { v: "no_status", l: "Sans statut" },
+            { v: "present", l: "Client venu" },
+            { v: "absent", l: "Absent" },
+            { v: "cancelled", l: "Annulé" },
+            { v: "reprogrammed", l: "Reprogrammé" },
+          ])}
+          <button onClick={() => setFiltresAvances((v) => !v)} style={boutonSecondaire}>
+            {filtresAvances ? "Moins de filtres" : "Plus de filtres"}
+          </button>
+          <button onClick={clearFilters} style={{ ...boutonSecondaire, color: T.ink2 }}>Tout effacer</button>
         </div>
+
+        {filtresAvances && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
+            {sel(fTele, setFTele, [{ v: "", l: "Tous les téléprospecteurs" }, ...teles.map((c) => ({ v: c, l: c }))])}
+            {sel(fPlatform, setFPlatform, [{ v: "", l: "Toutes les plateformes" }, ...platforms.map((c) => ({ v: c, l: c }))])}
+            {sel(fMandat, setFMandat, [{ v: "", l: "Mandat : tous" }, { v: "yes", l: "Mandat signé" }, { v: "no", l: "Mandat non signé" }])}
+            {sel(fBc, setFBc, [{ v: "", l: "Bon de commande : tous" }, { v: "yes", l: "BC signé" }, { v: "no", l: "BC non signé" }])}
+          </div>
+        )}
+
         {invoiceMsg && (
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 8, fontSize: 13, background: invoiceMsg.ok ? "#f0fdf4" : "#fef2f2", color: invoiceMsg.ok ? GREEN_DARK : RED, border: `1px solid ${invoiceMsg.ok ? GREEN : RED}` }}>
+          <div style={{ marginTop: S.md, padding: "12px 14px", borderRadius: R.sm, fontSize: 14, background: invoiceMsg.ok ? T.successSoft : T.dangerSoft, color: invoiceMsg.ok ? T.success : T.danger }}>
             {invoiceMsg.text}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Tableau */}
-      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, overflowX: "auto" }}>
+      <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: R.lg, overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1100 }}>
           <thead>
             <tr>
@@ -706,10 +767,9 @@ function Bilan() {
               <th style={th}>Télépros.</th>
               <th style={th}>Mandat</th>
               <th style={th}>BC</th>
-              <th style={th}>Frais fixes</th>
-              <th style={th}>Commission</th>
+              <th style={th}>{MOT.ffCol}</th>
+              <th style={th}>{MOT.commCol}</th>
               <th style={th}>Statut global</th>
-              <th style={th}>Relances</th>
             </tr>
           </thead>
           <tbody>
@@ -727,12 +787,11 @@ function Bilan() {
                   <td style={td}>{fmtDate(a.startDateTime)}</td>
                   <td style={td}>{canonComm(a.commercial) || "—"}</td>
                   <td style={td}>{a.teleprospector || "—"}</td>
-                  <td style={td}>{r.mandatRemoved ? <span title={`Mandat retiré${a.mandatRemovedAt ? ` le ${fmtDate(a.mandatRemovedAt)}` : ""}${a.mandatRemovedReason ? ` — ${a.mandatRemovedReason}` : ""}`}>{pill("#b91c1c", "⛔ Retiré")}</span> : r.mandatSigned ? pill(GREEN, "✅") : a.signStatus === "listed" ? pill(CYAN, "📢") : a.signStatus === "thinking" ? pill(YELLOW, "🤔") : a.signStatus === "unsigned" ? pill(RED, "❌") : pill(GRAY, "—")}</td>
-                  <td style={td}>{r.bc ? pill("#2563eb", "✅") : pill(GRAY, "—")}</td>
-                  <td style={td}>{r.ffBillable ? <>{eur(r.ffAmount)} {pill(ffColor[r.ffState], ffLabel[r.ffState])}{a.ffNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.ffNo}</div>}<div>{payBtn("ff", r)}</div></> : "—"}</td>
-                  <td style={td}>{r.bc ? <>{eur(r.commAmount)} {pill(commColor[r.commState], commLabel[r.commState])}{a.commNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.commNo}</div>}<div>{payBtn("comm", r)}</div></> : pill(YELLOW, "Attente BC")}</td>
-                  <td style={td}>{pill(r.global.color, r.global.label)}{r.late && <div style={{ marginTop: 3 }}>{pill(RED, "RETARD")}</div>}</td>
-                  <td style={td}>📧 {ms?.emails ?? 0} · 📱 {ms?.sms ?? 0}</td>
+                  <td style={td}>{r.mandatRemoved ? <span title={`Mandat retiré${a.mandatRemovedAt ? ` le ${fmtDate(a.mandatRemovedAt)}` : ""}${a.mandatRemovedReason ? ` — ${a.mandatRemovedReason}` : ""}`}>{pill("danger", "Retiré")}</span> : r.mandatSigned ? pill("succes", "Signé") : a.signStatus === "listed" ? pill("info", "En ligne") : a.signStatus === "thinking" ? pill("attente", "Réflexion") : a.signStatus === "unsigned" ? pill("neutre", "Non signé") : pill("neutre", "—")}</td>
+                  <td style={td}>{r.bc ? pill("info", "Signé") : pill("neutre", "—")}</td>
+                  <td style={td}>{r.ffBillable ? <>{eur(r.ffAmount)} {pill(ffTon[r.ffState], ffLabel[r.ffState])}{a.ffNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.ffNo}</div>}<div>{payBtn("ff", r)}</div></> : "—"}</td>
+                  <td style={td}>{r.bc ? <>{eur(r.commAmount)} {pill(commTon[r.commState], commLabel[r.commState])}{a.commNo && <div style={{ color: "#9aa6b8", fontSize: 10 }}>n° {a.commNo}</div>}<div>{payBtn("comm", r)}</div></> : pill("attente", "Attente BC")}</td>
+                  <td style={td}>{pill(r.global.ton, r.global.label)}{r.late && <div style={{ marginTop: 3 }}>{pill("danger", "En retard")}</div>}</td>
                 </tr>
               );
             })}

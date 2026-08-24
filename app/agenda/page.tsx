@@ -212,6 +212,22 @@ function Agenda() {
   }, [appts, search, relFilter, teleFilter]);
 
   // Couleur dominante d'un jour selon priorité : annulé > signé > réfléchit > pris
+  /** Couleur du rectangle d'un rendez-vous dans le calendrier, selon son état. */
+  const chipColor = (a: Appt): { bg: string; fg: string } => {
+    if (a.presence === "absent") return { bg: "#fee2e2", fg: "#b91c1c" };
+    if (a.signStatus === "signed" || a.bcSigned || a.vehicleSold) return { bg: "#dcfce7", fg: "#15803d" };
+    if (a.signStatus === "listed") return { bg: "#cffafe", fg: "#0e7490" };
+    if (a.signStatus === "thinking") return { bg: "#fef3c7", fg: "#a16207" };
+    if (a.signStatus === "unsigned") return { bg: "#f1f5f9", fg: "#475569" };
+    return { bg: "#dbeafe", fg: "#1d4ed8" }; // RDV pris, pas encore qualifié
+  };
+
+  /** Heure courte « 14h30 » pour tenir dans une case de calendrier. */
+  const heureCourte = (iso: string | null): string => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).replace(":", "h");
+  };
+
   const dayColor = (list: Appt[]): string => {
     if (list.length === 0) return "transparent";
     if (list.some((a) => a.cancelled)) return "#dc2626"; // rouge
@@ -562,7 +578,7 @@ function Agenda() {
             const rems = remindersByDay.get(c.date) ?? [];
             const isToday = c.date === today;
             const isSel = c.date === selectedDay;
-            const dotColor = dayColor(list);
+            const couleurJour = dayColor(list);
             const hasReminder = rems.length > 0;
             const totalCount = list.length + rems.length;
             return (
@@ -570,10 +586,10 @@ function Agenda() {
                 key={c.date}
                 onClick={() => setSelectedDay(c.date)}
                 style={{
-                  aspectRatio: "1 / 1.1",
+                  minHeight: 78,
                   padding: 2,
                   borderRadius: 7,
-                  border: isSel ? `2px solid ${PINK}` : isToday ? "1.5px solid " + NAVY : "1px solid #f0f1f3",
+                  border: isSel ? `2px solid ${PINK}` : isToday ? "1.5px solid " + NAVY : `1px solid ${couleurJour !== "transparent" ? "#e5e7eb" : "#f0f1f3"}`,
                   background: !c.inMonth ? "#fafafa" : isSel ? "#fff5f9" : "#fff",
                   color: !c.inMonth ? "#cbd5e1" : NAVY,
                   cursor: "pointer",
@@ -588,13 +604,37 @@ function Agenda() {
                 }}
               >
                 <span>{c.day}</span>
-                {totalCount > 0 && (
-                  <span style={{ marginTop: "auto", marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
-                    {list.length > 0 && <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor }} />}
-                    {hasReminder && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#8b5cf6" }} />}
-                    <span style={{ fontSize: 10, fontWeight: 700, color: dotColor !== "transparent" ? dotColor : "#8b5cf6" }}>{totalCount}</span>
-                  </span>
-                )}
+
+                {/* Rendez-vous du jour en petits rectangles, comme un vrai agenda :
+                    l'heure et le client se lisent sans ouvrir la journée. */}
+                <span style={{ width: "100%", display: "flex", flexDirection: "column", gap: 1, marginTop: 2, padding: "0 2px", overflow: "hidden" }}>
+                  {list.slice(0, 3).map((r) => (
+                    <span
+                      key={r.id}
+                      title={`${heureCourte(r.startDateTime)} · ${`${r.firstName} ${r.lastName}`.trim()}`}
+                      style={{
+                        display: "block", textAlign: "left", borderRadius: 3, padding: "1px 3px",
+                        fontSize: 9, fontWeight: 700, lineHeight: 1.35,
+                        background: r.cancelled ? "#f1f5f9" : chipColor(r).bg,
+                        color: r.cancelled ? "#94a3b8" : chipColor(r).fg,
+                        textDecoration: r.cancelled ? "line-through" : "none",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}
+                    >
+                      {heureCourte(r.startDateTime)} {r.lastName || r.firstName}
+                    </span>
+                  ))}
+                  {hasReminder && (
+                    <span style={{ display: "block", textAlign: "left", borderRadius: 3, padding: "1px 3px", fontSize: 9, fontWeight: 700, background: "#f3e8ff", color: "#7c3aed", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {rems.length} rappel{rems.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {list.length > 3 && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: "#6b7280", textAlign: "left", padding: "0 3px" }}>
+                      +{list.length - 3}
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })}

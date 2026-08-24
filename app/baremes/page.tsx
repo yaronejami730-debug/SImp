@@ -3,16 +3,22 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
+import {
+  PageHeader, Card, StatCard, StatRow, Badge, Button, Field, FormGrid, DataTable, Euro, champ, T, S,
+  type Colonne,
+} from "@/components/ui";
 
-const PINK = "var(--brand-primary)";
-const GRAY = "#64748b";
-const GREEN = "#16a34a";
-const RED = "#dc2626";
-const LINE = "#e8ebef";
 
-interface CallCenter { id: number; name: string; }
+interface CallCenter { id: number; name: string; responsable_email?: string; gestionnaire_email?: string; }
 interface Commercial { id: number; name: string; email: string; }
 interface DirectUser { id: number; name: string; email: string; commission_base: number; commission_pct: number; is_commercial: boolean; }
+interface AccordIndep {
+  id: number;
+  commercial_email: string; commercial_name: string | null;
+  payee_email: string; telepro_name: string | null;
+  base_eur: string; pct_nego: string; trigger_kind: string;
+}
+
 interface Agreement {
   id: number;
   call_center_name: string;
@@ -43,11 +49,55 @@ export default function BaremesPage() {
   const [directUsers, setDirectUsers] = useState<DirectUser[]>([]);
   const [directDraft, setDirectDraft] = useState<Record<number, { base: string; pct: string }>>({});
   const [savingDirect, setSavingDirect] = useState<number | null>(null);
+  const [vue, setVue] = useState<"direct" | "callcenter">("direct");
+  const [formOuvert, setFormOuvert] = useState(false);
+  const [typeAccord, setTypeAccord] = useState<"callcenter" | "independant">("callcenter");
+  const [accordsIndep, setAccordsIndep] = useState<AccordIndep[]>([]);
+  const [telepros, setTelepros] = useState<{ email: string; name: string }[]>([]);
+  const [indepCommercial, setIndepCommercial] = useState("");
+  const [indepTelepro, setIndepTelepro] = useState("");
+  const [indepBase, setIndepBase] = useState("");
+  const [indepPct, setIndepPct] = useState("");
 
   useEffect(() => {
     loadUser();
     loadAgreements();
   }, []);
+
+  useEffect(() => {
+    if (userRole !== "admin") return;
+    // Accords passés en direct avec des téléprospecteurs indépendants.
+    fetch("/api/accords-telepro", { headers: authHeaders() })
+      .then((r) => r.json()).then((d) => { if (d.ok) setAccordsIndep(d.accords); }).catch(() => {});
+    fetch("/api/users", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) setTelepros((d.users as { email: string; name: string; is_teleprospector?: boolean }[])
+          .filter((u) => u.is_teleprospector).map((u) => ({ email: u.email, name: u.name })));
+      }).catch(() => {});
+  }, [userRole]);
+
+  async function creerAccordIndep() {
+    const res = await fetch("/api/accords-telepro", {
+      method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({
+        commercialEmail: indepCommercial, teleproEmail: indepTelepro,
+        baseEur: parseFloat(indepBase) || 0, pctNego: parseFloat(indepPct) || 0, trigger,
+      }),
+    });
+    const d = await res.json();
+    if (!d.ok) { alert(d.error ?? "Erreur"); return; }
+    setIndepBase(""); setIndepPct(""); setIndepTelepro("");
+    const r = await fetch("/api/accords-telepro", { headers: authHeaders() });
+    const j = await r.json();
+    if (j.ok) setAccordsIndep(j.accords);
+  }
+
+  async function supprimerAccordIndep(id: number) {
+    if (!confirm("Désactiver cet accord ? La trace est conservée.")) return;
+    await fetch(`/api/accords-telepro?id=${id}`, { method: "DELETE", headers: authHeaders() });
+    setAccordsIndep((l) => l.filter((x) => x.id !== id));
+  }
 
   useEffect(() => {
     if (userRole === "admin") loadDirectUsers();
@@ -209,168 +259,308 @@ export default function BaremesPage() {
     }
   }
 
-  if (loading) return <Shell active="baremes"><div style={{ padding: 40, textAlign: "center" }}>Chargement...</div></Shell>;
+  if (loading) {
+    return (
+      <Shell active="baremes" wide>
+        <div style={{ padding: 60, textAlign: "center", color: T.ink2 }}>Chargement…</div>
+      </Shell>
+    );
+  }
+
+  const actifs = agreements.filter((a) => a.status === "active").length;
+  const enAttente = agreements.filter((a) => a.status === "pending_confirmation").length;
+  const avecBareme = directUsers.filter((u) => Number(u.commission_base) > 0 || Number(u.commission_pct) > 0).length;
+
+  const statutBadge = (a: Agreement) =>
+    a.status === "active" ? <Badge ton="succes">Actif</Badge>
+      : a.status === "pending_confirmation" ? <Badge ton="attente">En attente</Badge>
+      : <Badge ton="danger">Rejeté</Badge>;
+
+  const colonnes: Colonne<Agreement>[] = [
+    { cle: "cc", titre: "Call center", rendu: (a) => <strong>{a.call_center_name}</strong> },
+    { cle: "com", titre: "Commercial", rendu: (a) => a.commercial_name },
+    {
+      cle: "decl", titre: "Payé quand", rendu: (a) =>
+        <Badge ton="info">{(a as unknown as { trigger_kind?: string }).trigger_kind === "honored" ? "RDV honoré" : "Mandat signé"}</Badge>,
+    },
+    { cle: "base", titre: "Commercial", aligne: "droite", rendu: (a) => <Euro montant={Number(a.base_amount)} /> },
+    { cle: "gest", titre: "Gestionnaire", aligne: "droite", rendu: (a) => <Euro montant={Number(a.gestionnaire_amount)} discret /> },
+    { cle: "ccm", titre: "Call center", aligne: "droite", rendu: (a) => <Euro montant={Number(a.call_center_amount)} discret /> },
+    { cle: "statut", titre: "Statut", aligne: "centre", rendu: statutBadge },
+    {
+      cle: "actions", titre: "", aligne: "droite", rendu: (a) => (
+        <div style={{ display: "inline-flex", gap: 6 }}>
+          <Button variante="discret" onClick={() => handleEdit(a)} title="Renégocier les montants">Modifier</Button>
+          <Button variante="danger" onClick={() => handleDelete(a)} title="Supprimer l'accord">Supprimer</Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <Shell active="baremes" wide>
-      <div style={{ maxWidth: 900 }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <PageHeader
+          title="Barèmes"
+          subtitle="Qui touche combien sur un dossier. Deux cas : un accord direct avec un commercial, ou un accord passant par un call center."
+        />
+
         {userRole === "admin" && (
-          <div style={{ background: "#fff", borderRadius: 12, padding: 24, marginBottom: 24, border: `1px solid ${LINE}` }}>
-            <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Accord direct — commercial</h2>
-            <p style={{ margin: "0 0 16px", fontSize: 13, color: GRAY }}>
-              Pas de call center ni de gestionnaire ici : juste toi et le commercial, sur la base convenue entre vous.
-              Frais fixe (€) par RDV signé + % du négocié (le même barème qui sert dans le Bilan et la facturation Abby).
-            </p>
+          <div style={{ display: "flex", gap: 6, marginBottom: S.md, flexWrap: "wrap" }}>
+            <Button variante={vue === "direct" ? "principal" : "secondaire"} onClick={() => setVue("direct")}>
+              Commerciaux ({directUsers.length})
+            </Button>
+            <Button variante={vue === "callcenter" ? "principal" : "secondaire"} onClick={() => setVue("callcenter")}>
+              Call centers ({agreements.length})
+            </Button>
+          </div>
+        )}
+
+        <StatRow>
+          <StatCard label="Commerciaux" value={directUsers.length} hint={`${avecBareme} avec un barème posé`} />
+          <StatCard label="Accords actifs" value={actifs} hint="confirmés par le commercial" />
+          <StatCard label="En attente" value={enAttente} hint="à confirmer par le commercial" />
+        </StatRow>
+
+        {vue === "direct" && userRole === "admin" && (
+          <Card
+            title="Accord direct avec un commercial"
+            description="Sans call center ni gestionnaire : ce que tu verses au commercial pour chaque dossier. Un montant fixe, plus éventuellement un pourcentage du montant négocié. C'est ce barème qui alimente le Bilan et la facturation."
+          >
             {directUsers.length === 0 ? (
-              <p style={{ color: GRAY, fontSize: 14 }}>Aucun commercial.</p>
+              <div style={{ padding: `${S.lg}px 0`, textAlign: "center", color: T.ink2 }}>Aucun commercial enregistré.</div>
             ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {directUsers.map((u) => {
+              <div style={{ display: "grid", gap: 0 }}>
+                {directUsers.map((u, i) => {
                   const d = directDraft[u.id] ?? { base: "0", pct: "0" };
                   return (
-                    <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${LINE}` }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
-                        <div style={{ fontSize: 12, color: GRAY }}>{u.email}</div>
+                    <div key={u.id} style={{ display: "flex", alignItems: "flex-end", gap: S.md, flexWrap: "wrap", padding: `${S.md}px 0`, borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>
+                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15.5 }}>{u.name}</div>
+                        <div style={{ fontSize: 13, color: T.ink2 }}>{u.email}</div>
                       </div>
-                      <input type="number" step="0.01" value={d.base} onChange={(e) => setDirectDraft((m) => ({ ...m, [u.id]: { ...d, base: e.target.value } }))} style={{ width: 80, padding: "8px 10px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 13 }} title="€ par RDV signé" />
-                      <span style={{ fontSize: 12, color: GRAY }}>€ +</span>
-                      <input type="number" step="0.1" value={d.pct} onChange={(e) => setDirectDraft((m) => ({ ...m, [u.id]: { ...d, pct: e.target.value } }))} style={{ width: 70, padding: "8px 10px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 13 }} title="% du négocié" />
-                      <span style={{ fontSize: 12, color: GRAY }}>%</span>
-                      <button onClick={() => saveDirect(u.id)} disabled={savingDirect === u.id} style={{ padding: "8px 12px", borderRadius: 6, border: "none", background: PINK, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: savingDirect === u.id ? 0.6 : 1 }}>
+                      <div style={{ width: 150 }}>
+                        <Field label="Fixe par dossier">
+                          <input
+                            type="number" step="0.01" value={d.base}
+                            onChange={(e) => setDirectDraft((m) => ({ ...m, [u.id]: { ...d, base: e.target.value } }))}
+                            style={{ ...champ, textAlign: "right" }}
+                          />
+                        </Field>
+                      </div>
+                      <div style={{ width: 150 }}>
+                        <Field label="% du négocié">
+                          <input
+                            type="number" step="0.1" value={d.pct}
+                            onChange={(e) => setDirectDraft((m) => ({ ...m, [u.id]: { ...d, pct: e.target.value } }))}
+                            style={{ ...champ, textAlign: "right" }}
+                          />
+                        </Field>
+                      </div>
+                      <Button variante="principal" onClick={() => saveDirect(u.id)} disabled={savingDirect === u.id}>
                         {savingDirect === u.id ? "…" : "Enregistrer"}
-                      </button>
+                      </Button>
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
+          </Card>
         )}
 
-        <div style={{ background: "#fff", borderRadius: 12, padding: 24, marginBottom: 24, border: `1px solid ${LINE}` }}>
-          <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Créer un accord — call center</h2>
-          <p style={{ margin: "0 0 20px", fontSize: 13, color: GRAY }}>Répartition call center / gestionnaire sur un commercial rattaché à un call center.</p>
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Call Center</label>
-            <select
-              value={selectedCC}
-              onChange={(e) => {
-                setSelectedCC(e.target.value);
-                setSelectedCommercial("");
-              }}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 6,
-                border: `1px solid ${LINE}`,
-                fontSize: 14,
-              }}
+        {(vue === "callcenter" || userRole !== "admin") && (
+          <>
+            <Card
+              title="Accords call center"
+              description="Un dossier apporté par un call center se partage en trois : la part du commercial, celle du gestionnaire qui a apporté le call center, et celle du call center."
+              actions={<Button variante={formOuvert ? "secondaire" : "principal"} onClick={() => setFormOuvert((v) => !v)}>{formOuvert ? "Fermer" : "Nouvel accord"}</Button>}
             >
-              <option value="">Sélectionner un call center</option>
-              {callCenters.map((cc) => (
-                <option key={cc.id} value={cc.id}>
-                  {cc.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              {formOuvert && (
+                <div style={{ background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 12, padding: S.md, marginBottom: S.md }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: S.md }}>
+                    <Button variante={typeAccord === "callcenter" ? "principal" : "secondaire"} onClick={() => setTypeAccord("callcenter")}>
+                      Avec un call center
+                    </Button>
+                    <Button variante={typeAccord === "independant" ? "principal" : "secondaire"} onClick={() => setTypeAccord("independant")}>
+                      Avec un téléprospecteur indépendant
+                    </Button>
+                  </div>
 
-          {selectedCC && (
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Commercial</label>
-              <select
-                value={selectedCommercial}
-                onChange={(e) => setSelectedCommercial(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 6,
-                  border: `1px solid ${LINE}`,
-                  fontSize: 14,
-                }}
-              >
-                <option value="">Sélectionner un commercial</option>
-                {commercials.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+                  {typeAccord === "independant" ? (
+                    <>
+                      <p style={{ margin: `0 0 ${S.md}px`, fontSize: 14, color: T.ink2, lineHeight: 1.5, maxWidth: "70ch" }}>
+                        Pas de call center ici : le commercial paie directement le téléprospecteur pour chaque rendez-vous
+                        qu&apos;il lui apporte. Montant fixe, pourcentage du négocié, ou les deux.
+                      </p>
+                      <FormGrid>
+                        <Field label="Commercial qui paie">
+                          <select value={indepCommercial} onChange={(e) => setIndepCommercial(e.target.value)} style={champ}>
+                            <option value="">À sélectionner</option>
+                            {directUsers.map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="Téléprospecteur payé">
+                          <select value={indepTelepro} onChange={(e) => setIndepTelepro(e.target.value)} style={champ}>
+                            <option value="">À sélectionner</option>
+                            {telepros.map((t) => <option key={t.email} value={t.email}>{t.name}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="La rémunération tombe" hint="Au mandat signé, ou dès que le client est venu.">
+                          <select value={trigger} onChange={(e) => setTrigger(e.target.value as "signed" | "honored")} style={champ}>
+                            <option value="signed">Au mandat signé</option>
+                            <option value="honored">Au rendez-vous honoré</option>
+                          </select>
+                        </Field>
+                      </FormGrid>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Base (Commercial)</label>
-              <select value={trigger} onChange={(e) => setTrigger(e.target.value as "signed" | "honored")} style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box", marginBottom: 10, background: "#fff" }}>
-                <option value="signed">Payé au rendez-vous SIGNÉ (mandat)</option>
-                <option value="honored">Payé au rendez-vous HONORÉ (client venu)</option>
-              </select>
-              <input type="number" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} placeholder="60" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Gestionnaire</label>
-              <input type="number" value={gestionnaireAmount} onChange={(e) => setGestionnaireAmount(e.target.value)} placeholder="30" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Call Center</label>
-              <input type="number" value={callCenterAmount} onChange={(e) => setCallCenterAmount(e.target.value)} placeholder="30" step="0.01" style={{ width: "100%", padding: "10px 12px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, boxSizing: "border-box" }} />
-            </div>
-          </div>
+                      <FormGrid colonnes="repeat(auto-fit, minmax(180px, 1fr))">
+                        <Field label="Montant fixe (€)" hint="Par rendez-vous.">
+                          <input type="number" step="0.01" value={indepBase} onChange={(e) => setIndepBase(e.target.value)} placeholder="50" style={{ ...champ, textAlign: "right" }} />
+                        </Field>
+                        <Field label="Pourcentage du négocié (%)" hint="Facultatif.">
+                          <input type="number" step="0.1" value={indepPct} onChange={(e) => setIndepPct(e.target.value)} placeholder="10" style={{ ...champ, textAlign: "right" }} />
+                        </Field>
+                      </FormGrid>
 
-          <button onClick={handleCreate} disabled={creating || !selectedCommercial} style={{ padding: "12px 20px", borderRadius: 6, border: "none", background: PINK, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: creating ? 0.6 : 1 }}>
-            {creating ? "Création..." : "Créer l'accord"}
-          </button>
-        </div>
-
-        <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: `1px solid ${LINE}` }}>
-          <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Accords ({agreements.length})</h2>
-
-          {agreements.length === 0 ? (
-            <p style={{ color: GRAY, fontSize: 14 }}>Aucun accord créé</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #e8ebef" }}>
-                    <th style={{ textAlign: "left", padding: "12px 0", fontWeight: 600 }}>Call Center</th>
-                    <th style={{ textAlign: "left", padding: "12px 0", fontWeight: 600 }}>Commercial</th>
-                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Déclencheur</th>
-                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Base</th>
-                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Gest.</th>
-                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>CC</th>
-                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Statut</th>
-                    <th style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {agreements.map((a) => (
-                    <tr key={a.id} style={{ borderBottom: "1px solid #e8ebef" }}>
-                      <td style={{ padding: "12px 0" }}>{a.call_center_name}</td>
-                      <td style={{ padding: "12px 0" }}>{a.commercial_name}</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", fontSize: 12 }}>{(a as unknown as { trigger_kind?: string }).trigger_kind === "honored" ? "🙋 Honoré" : "✍️ Signé"}</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", fontWeight: 600 }}>{Number(a.base_amount).toFixed(2)}€</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{Number(a.gestionnaire_amount).toFixed(2)}€</td>
-                      <td style={{ textAlign: "center", padding: "12px 0", color: GRAY }}>{Number(a.call_center_amount).toFixed(2)}€</td>
-                      <td style={{ textAlign: "center", padding: "12px 0" }}>
-                        <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: a.status === "active" ? "#dffcf0" : a.status === "pending_confirmation" ? "#fef3c7" : "#fee2e2", color: a.status === "active" ? GREEN : a.status === "pending_confirmation" ? "#92400e" : RED }}>
-                          {a.status === "pending_confirmation" ? "En attente" : a.status === "active" ? "Actif" : "Rejeté"}
+                      <div style={{ display: "flex", alignItems: "center", gap: S.md, flexWrap: "wrap" }}>
+                        <Button
+                          variante="principal" onClick={creerAccordIndep}
+                          disabled={!indepCommercial || !indepTelepro || (!indepBase && !indepPct)}
+                        >
+                          Créer l&apos;accord
+                        </Button>
+                        <span style={{ fontSize: 13.5, color: T.ink2 }}>
+                          Sur un dossier signé à 2 000 € de marge :{" "}
+                          <Euro montant={(parseFloat(indepBase) || 0) + ((parseFloat(indepPct) || 0) / 100) * 2000} /> versés au téléprospecteur.
                         </span>
-                      </td>
-                      <td style={{ textAlign: "center", padding: "12px 0", whiteSpace: "nowrap" }}>
-                        <button onClick={() => handleEdit(a)} title="Renégocier les montants" style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid #e8ebef", background: "#fff", fontSize: 12, cursor: "pointer", marginRight: 6 }}>✏️ Modifier</button>
-                        <button onClick={() => handleDelete(a)} title="Supprimer l'accord" style={{ padding: "5px 9px", borderRadius: 6, border: "1px solid #fecaca", background: "#fff", color: "#dc2626", fontSize: 12, cursor: "pointer" }}>Supprimer</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                      </div>
+                    </>
+                  ) : (
+                  <>
+                  <FormGrid>
+                    <Field label="Call center">
+                      <select value={selectedCC} onChange={(e) => { setSelectedCC(e.target.value); setSelectedCommercial(""); }} style={champ}>
+                        <option value="">À sélectionner</option>
+                        {callCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Commercial" hint={selectedCC ? undefined : "Choisis d'abord un call center."}>
+                      <select value={selectedCommercial} onChange={(e) => setSelectedCommercial(e.target.value)} disabled={!selectedCC} style={{ ...champ, color: selectedCC ? T.ink : T.ink3 }}>
+                        <option value="">À sélectionner</option>
+                        {commercials.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="La rémunération tombe" hint="Au mandat signé, ou dès que le client est venu.">
+                      <select value={trigger} onChange={(e) => setTrigger(e.target.value as "signed" | "honored")} style={champ}>
+                        <option value="signed">Au mandat signé</option>
+                        <option value="honored">Au rendez-vous honoré</option>
+                      </select>
+                    </Field>
+                  </FormGrid>
+
+                  <FormGrid colonnes="repeat(auto-fit, minmax(160px, 1fr))">
+                    <Field label="Part commercial (€)">
+                      <input type="number" step="0.01" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} placeholder="60" style={{ ...champ, textAlign: "right" }} />
+                    </Field>
+                    <Field label="Part gestionnaire (€)">
+                      <input type="number" step="0.01" value={gestionnaireAmount} onChange={(e) => setGestionnaireAmount(e.target.value)} placeholder="30" style={{ ...champ, textAlign: "right" }} />
+                    </Field>
+                    <Field label="Part call center (€)">
+                      <input type="number" step="0.01" value={callCenterAmount} onChange={(e) => setCallCenterAmount(e.target.value)} placeholder="30" style={{ ...champ, textAlign: "right" }} />
+                    </Field>
+                  </FormGrid>
+
+                  <Repartition
+                    commercial={commercials.find((c) => String(c.id) === selectedCommercial)?.name}
+                    callCenter={callCenters.find((cc) => String(cc.id) === selectedCC)}
+                    partCommercial={parseFloat(baseAmount) || 0}
+                    partGestionnaire={parseFloat(gestionnaireAmount) || 0}
+                    partCallCenter={parseFloat(callCenterAmount) || 0}
+                    declencheur={trigger}
+                  />
+
+                  <div style={{ display: "flex", alignItems: "center", gap: S.md, flexWrap: "wrap", marginTop: S.md }}>
+                    <Button variante="principal" onClick={handleCreate} disabled={creating || !selectedCommercial}>
+                      {creating ? "Création…" : "Créer l'accord"}
+                    </Button>
+                  </div>
+                  </>
+                  )}
+                </div>
+              )}
+
+              <DataTable colonnes={colonnes} lignes={agreements} vide="Aucun accord pour l'instant." />
+            </Card>
+
+            {userRole === "admin" && (
+              <Card
+                title={`Accords avec des téléprospecteurs indépendants (${accordsIndep.length})`}
+                description="Sans call center : le commercial paie directement le téléprospecteur qui lui apporte le rendez-vous."
+              >
+                <DataTable
+                  colonnes={[
+                    { cle: "com", titre: "Commercial", rendu: (x: AccordIndep) => <strong>{x.commercial_name || x.commercial_email}</strong> },
+                    { cle: "tel", titre: "Téléprospecteur", rendu: (x: AccordIndep) => x.telepro_name || x.payee_email },
+                    { cle: "decl", titre: "Payé quand", rendu: (x: AccordIndep) => <Badge ton="info">{x.trigger_kind === "honored" ? "RDV honoré" : "Mandat signé"}</Badge> },
+                    { cle: "fixe", titre: "Fixe", aligne: "droite", rendu: (x: AccordIndep) => <Euro montant={Number(x.base_eur)} /> },
+                    { cle: "pct", titre: "Du négocié", aligne: "droite", rendu: (x: AccordIndep) => Number(x.pct_nego) > 0 ? `${Number(x.pct_nego)} %` : <span style={{ color: T.ink2 }}>—</span> },
+                    {
+                      cle: "actions", titre: "", aligne: "droite",
+                      rendu: (x: AccordIndep) => <Button variante="danger" onClick={() => supprimerAccordIndep(x.id)}>Retirer</Button>,
+                    },
+                  ]}
+                  lignes={accordsIndep}
+                  vide="Aucun accord direct avec un téléprospecteur indépendant."
+                />
+              </Card>
+            )}
+          </>
+        )}
       </div>
     </Shell>
+  );
+}
+
+/** Répartition d'un dossier, ligne par ligne : qui touche quoi, et ce qu'il en coûte au total.
+ *  Se met à jour pendant la saisie : plus besoin d'imaginer le résultat. */
+function Repartition({ commercial, callCenter, partCommercial, partGestionnaire, partCallCenter, declencheur }: {
+  commercial?: string;
+  callCenter?: { name: string; responsable_email?: string; gestionnaire_email?: string };
+  partCommercial: number; partGestionnaire: number; partCallCenter: number;
+  declencheur: "signed" | "honored";
+}) {
+  const total = partCommercial + partGestionnaire + partCallCenter;
+  const lignes = [
+    { role: "Commercial", qui: commercial ?? "à sélectionner", montant: partCommercial, aide: "Celui qui reçoit le client et signe le mandat." },
+    { role: "Référent", qui: callCenter?.gestionnaire_email || "aucun référent", montant: partGestionnaire, aide: "Celui qui a apporté le call center." },
+    { role: "Call center", qui: callCenter?.name ?? "à sélectionner", montant: partCallCenter, aide: "Reversé au call center, qui paie ses téléprospecteurs." },
+  ];
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: S.md, marginTop: S.md }}>
+      <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, marginBottom: 10 }}>
+        Ce que verse un dossier — {declencheur === "signed" ? "au mandat signé" : "au rendez-vous honoré"}
+      </div>
+
+      {lignes.map((l, i) => (
+        <div key={l.role} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: S.md, padding: "10px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700 }}>{l.role} <span style={{ fontWeight: 500, color: T.ink2 }}>— {l.qui}</span></div>
+            <div style={{ fontSize: 12.5, color: T.ink3 }}>{l.aide}</div>
+          </div>
+          <Euro montant={l.montant} discret={l.montant === 0} />
+        </div>
+      ))}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "12px 0 0", borderTop: `2px solid ${T.line}`, marginTop: 4 }}>
+        <strong style={{ fontSize: 15 }}>Total par dossier</strong>
+        <Euro montant={total} />
+      </div>
+
+      <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 10, lineHeight: 1.5 }}>
+        Le téléprospecteur qui a décroché le rendez-vous est payé par son call center, sur la part ci-dessus —
+        son barème personnel se règle dans l&apos;onglet Commerciaux ou sur sa fiche de compte.
+      </div>
+    </div>
   );
 }

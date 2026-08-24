@@ -8,6 +8,20 @@ export function getToken(): string | null {
   return typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
 }
 
+/** Jeton encore valide ? Le corps du jeton porte sa date d'expiration.
+ *  Sans cette vérification, l'écran s'affiche alors que chaque appel d'API répond 401. */
+export function tokenValide(): boolean {
+  const t = getToken();
+  if (!t) return false;
+  try {
+    const [body] = t.split(".");
+    const p = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof p.exp === "number" && p.exp > Date.now();
+  } catch {
+    return false;
+  }
+}
+
 export function getUser(): ClientUser | null {
   if (typeof window === "undefined") return null;
   try {
@@ -52,4 +66,10 @@ export function clearAuth() {
 export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const t = getToken();
   return t ? { ...extra, Authorization: `Bearer ${t}` } : extra;
+}
+
+/** Session refusée en cours de route (jeton expiré) : on repart proprement sur la connexion. */
+export function sessionExpiree(): void {
+  clearAuth();
+  if (typeof window !== "undefined") window.location.reload();
 }

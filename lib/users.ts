@@ -120,6 +120,11 @@ export async function updateUserFlags(id: number, patch: { isCommercial?: boolea
   await getPool().query(`update users set ${sets.join(", ")} where id = $${params.length}`, params);
 }
 
+/** Définit un nouveau mot de passe (admin : dépannage d'un compte, prise en main). */
+export async function setUserPassword(id: number, password: string): Promise<void> {
+  await getPool().query(`update users set password_hash = $1 where id = $2`, [hashPassword(password), id]);
+}
+
 /** Compat : active/désactive le statut commercial. */
 export async function setUserCommercial(id: number, _callCenterId: number, isCommercial: boolean): Promise<void> {
   await updateUserFlags(id, { isCommercial });

@@ -5,6 +5,7 @@ import Shell from "@/components/Shell";
 import PlaqueLookup from "@/components/PlaqueLookup";
 import VehiclePicker from "@/components/VehiclePicker";
 import { authHeaders, getUser } from "@/lib/client";
+import { T, R, S, Badge, Euro } from "@/components/ui";
 import { MAIL_TEMPLATES, TEMPLATE_CATEGORIES, fillVars } from "@/lib/mail-templates-list";
 import { SMS_TEMPLATES, SMS_TEMPLATE_CATEGORIES } from "@/lib/sms-templates-list";
 import { COMMERCIAUX } from "@/lib/commerciaux";
@@ -28,6 +29,8 @@ type Appt = {
   bcSigned: boolean; bcSignedAt: string | null;
   vehicleSold: boolean; soldAt: string | null;
   mandatRemoved?: boolean; mandatRemovedAt?: string | null; mandatRemovedReason?: string;
+  ffStatus?: string; ffDate?: string | null; ffPaidDate?: string | null;
+  commStatus?: string; commDate?: string | null; commPaidDate?: string | null;
 };
 
 const histLabel = (t: string) =>
@@ -260,82 +263,99 @@ function NotifMatrix({ msgs, startDateTime }: { msgs: MsgMeta[]; startDateTime?:
   );
 }
 
-function MessageTimeline({ id, refreshKey, startDateTime }: { id: string; refreshKey: number; startDateTime?: string | null }) {
-  const [msgs, setMsgs] = useState<MsgMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [brevoErr, setBrevoErr] = useState("");
-  const [openMsg, setOpenMsg] = useState<MsgMeta | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const r = await fetch(`/api/client/${encodeURIComponent(id)}/messages`, { headers: authHeaders() });
-        const d = await r.json();
-        if (alive && d.ok) { setMsgs(d.messages); setBrevoErr(d.brevoError ?? ""); }
-      } finally { if (alive) setLoading(false); }
-    })();
-    return () => { alive = false; };
-  }, [id, refreshKey]);
-
-  const mails = msgs.filter((m) => m.channel === "email");
-  const sms = msgs.filter((m) => m.channel === "sms");
-
-  const item = (m: MsgMeta) => {
-    const src = m.channel === "sms" ? (m.source === "db" ? "db" : "allmysms") : m.source;
-    return (
-      <button
-        key={m.key}
-        onClick={() => setOpenMsg(m)}
-        style={{ textAlign: "left", width: "100%", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 9, padding: "10px 12px", marginBottom: 8, cursor: "pointer", display: "block" }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: NAVY }}>{m.templateKey ? tplLabel(m.templateKey) : (m.channel === "sms" ? "SMS" : "Mail")}</span>
-          <span style={{ display: "flex", gap: 5, alignItems: "center" }}><OriginTag origin={m.origin} /><StatusBadge status={m.status} /></span>
-        </div>
-        <div style={{ fontSize: 12.5, color: "#475569", margin: "4px 0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.preview || "—"}</div>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "#9aa6b8" }}>{fmtDT(m.sentAt)}</span>
-          <SourceTag source={src} />
-        </div>
-      </button>
-    );
-  };
-
-  const col = (title: string, list: MsgMeta[]) => (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 12, fontWeight: 700, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
-        {title} <span style={{ color: "#9aa6b8" }}>({list.length})</span>
-      </div>
-      {list.length === 0 ? <div style={{ fontSize: 12.5, color: "#9aa6b8", padding: "8px 0" }}>Aucun</div> : list.map(item)}
-    </div>
-  );
+/** Section repliable : le contenu ne s'affiche que si on le demande.
+ *  Évite les murs de boutons toujours visibles. */
+/** Chaîne de facturation d'une ligne d'argent, en trois temps :
+ *  le commercial appelle la facture, le prestataire l'émet, puis elle est payée. */
+function ChaineFacturation({ titre, montant, statut, dateFacture, datePaiement, onChange, busy }: {
+  titre: string; montant: number; statut: string;
+  dateFacture?: string | null; datePaiement?: string | null;
+  onChange: (statut: string) => void; busy?: boolean;
+}) {
+  const etapes = [
+    { cle: "requested", titre: "Appel à facturation", aide: "Tu demandes la facture au call center." },
+    { cle: "invoiced", titre: "Facture émise", aide: "Le call center a envoyé sa facture." },
+    { cle: "paid", titre: "Payée", aide: "Tu as réglé la facture." },
+  ];
+  const rang = (v: string) => (v === "paid" ? 3 : v === "invoiced" ? 2 : v === "requested" ? 1 : 0);
+  const courant = rang(statut);
+  const dateFR = (v?: string | null) => (v ? new Date(v).toLocaleDateString("fr-FR") : "");
 
   return (
-    <>
-      {loading ? (
-        <div style={{ color: "#9aa6b8", fontSize: 13 }}>Chargement…</div>
-      ) : (
-        <>
-          <NotifMatrix msgs={msgs} startDateTime={startDateTime} />
-          {msgs.length === 0 ? (
-            <div style={{ color: "#9aa6b8", fontSize: 13 }}>Aucun message envoyé pour le moment.</div>
-          ) : (
-            <details>
-              <summary style={{ cursor: "pointer", fontSize: 12.5, color: "#6b7280", fontWeight: 600, padding: "4px 0" }}>
-                Historique détaillé ({msgs.length} messages)
-              </summary>
-              <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-                {col("📧 Mails", mails)}
-                {col("📱 SMS", sms)}
-              </div>
-            </details>
-          )}
-        </>
-      )}
-      {brevoErr && <div style={{ marginTop: 10, fontSize: 11.5, color: "#ca8a04" }}>⚠️ Récupération Brevo : {brevoErr}</div>}
-      {openMsg && <MessageModal meta={openMsg} onClose={() => setOpenMsg(null)} />}
-    </>
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: R.md, padding: S.md, marginBottom: S.sm, background: T.surface2 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <span style={{ fontSize: 14.5, fontWeight: 700 }}>{titre}</span>
+        <Euro montant={montant} />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {etapes.map((e, i) => {
+          const atteint = courant >= i + 1;
+          const suivant = courant === i;
+          return (
+            <button
+              key={e.cle} type="button" disabled={busy}
+              title={atteint ? "Cliquer pour revenir en arrière" : e.aide}
+              onClick={() => onChange(atteint ? etapes[i - 1]?.cle ?? "" : e.cle)}
+              style={{
+                height: 36, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700,
+                cursor: busy ? "wait" : "pointer", whiteSpace: "nowrap",
+                border: atteint ? "none" : `1px solid ${suivant ? T.lineStrong : T.line}`,
+                background: atteint ? T.ink : T.surface,
+                color: atteint ? "#fff" : suivant ? T.ink : T.ink3,
+              }}
+            >
+              {atteint ? `✓ ${e.titre}` : e.titre}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 10 }}>
+        {statut === "" && "Rien de demandé pour l'instant."}
+        {statut === "requested" && "Facture demandée — en attente du call center."}
+        {statut === "invoiced" && `Facture émise${dateFacture ? ` le ${dateFR(dateFacture)}` : ""} — reste à régler.`}
+        {statut === "paid" && `Réglée${datePaiement ? ` le ${dateFR(datePaiement)}` : ""}.`}
+      </div>
+    </div>
+  );
+}
+
+/** Ce qu'un statut déclencherait comme message client, si on l'autorise. */
+const MAILS_STATUT: Partial<Record<string, { statut: string; description: string }>> = {
+  signed: { statut: "Signé", description: "relance de remerciement et suivi du mandat." },
+  thinking: { statut: "Réfléchit", description: "relance douce pour rappeler l'offre." },
+  unsigned: { statut: "Pas signé", description: "relance pour tenter de récupérer le client." },
+};
+
+function Repliable({ titre, description, ouvertParDefaut = false, resume, children }: {
+  titre: string; description?: string; ouvertParDefaut?: boolean; resume?: React.ReactNode; children: React.ReactNode;
+}) {
+  const [ouvert, setOuvert] = useState(ouvertParDefaut);
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: R.lg, marginBottom: S.md, overflow: "hidden" }}>
+      <button
+        type="button" onClick={() => setOuvert((o) => !o)} aria-expanded={ouvert}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md,
+          padding: `${S.md}px ${S.lg}px`, background: "transparent", border: "none", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: 17, fontWeight: 700, color: T.ink }}>{titre}</span>
+          {description && <span style={{ display: "block", fontSize: 13.5, color: T.ink2, marginTop: 3 }}>{description}</span>}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {resume}
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.ink2 }}>{ouvert ? "Replier" : "Déplier"}</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.ink2} strokeWidth="2" strokeLinecap="round"
+               style={{ transform: ouvert ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </span>
+      </button>
+      {ouvert && <div style={{ padding: `0 ${S.lg}px ${S.lg}px` }}>{children}</div>}
+    </div>
   );
 }
 
@@ -344,6 +364,8 @@ function ClientPage({ id }: { id: string }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string>("");
+  const [questionAnnonce, setQuestionAnnonce] = useState(false);
+  const [demandeMail, setDemandeMail] = useState<Sign | null>(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
   const [editVehicle, setEditVehicle] = useState(false);
   const [draftBrand, setDraftBrand] = useState("");
@@ -444,8 +466,15 @@ function ClientPage({ id }: { id: string }) {
   }
 
   async function markPresent() {
+    if (!a) return;
     setBusy("present");
     try {
+      // Recliquer sur « Client présent » remet la présence à « non renseigné ».
+      if (a.present) {
+        await saveStatus({ present: null });
+        load();
+        return;
+      }
       await saveStatus({ present: true });
       // Stoppe la séquence no-show si elle tournait.
       await fetch(`/api/client/${encodeURIComponent(id)}`, {
@@ -470,9 +499,10 @@ function ClientPage({ id }: { id: string }) {
     } finally { setBusy(""); }
   }
 
-  async function saveStatus(patch: { present?: boolean; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean }) {
+  async function saveStatus(patch: { present?: boolean | null; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean; sendMails?: boolean }) {
     if (!a) return;
-    setA({ ...a, ...patch });
+    const { sendMails, ...visible } = patch;
+    setA({ ...a, ...(visible as Partial<Appt>) });
     await fetch("/api/status", {
       method: "POST",
       headers: authHeaders({ "content-type": "application/json" }),
@@ -683,9 +713,45 @@ function ClientPage({ id }: { id: string }) {
   //   Si le RDV a été honoré (présent) ou signé, le bouton disparaît.
   const canReprogram = !a.cancelled && a.signStatus !== "signed" && !a.present;
 
-  const sectionTitle: React.CSSProperties = { fontFamily: "'Cabin',sans-serif", fontSize: 12, color: PINK, textTransform: "uppercase", letterSpacing: 0.6, margin: "0 0 12px", fontWeight: 700 };
-  const card: React.CSSProperties = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18, marginBottom: 14 };
-  const actionRow: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 10 };
+  /** Où en est ce dossier, en un mot — affiché en haut à droite de la fiche. */
+  const statutDossier: { texte: string; ton: "succes" | "attente" | "danger" | "info" | "neutre" } =
+    a.cancelled ? { texte: "Rendez-vous annulé", ton: "danger" }
+      : a.mandatRemoved ? { texte: "Mandat retiré", ton: "danger" }
+      : a.vehicleSold ? { texte: "Véhicule vendu", ton: "succes" }
+      : a.bcSigned ? { texte: "Bon de commande signé", ton: "succes" }
+      : a.signStatus === "signed" ? { texte: "Mandat signé", ton: "succes" }
+      : a.signStatus === "thinking" ? { texte: "Client en réflexion", ton: "attente" }
+      : a.signStatus === "listed" ? { texte: "Annonce en ligne", ton: "info" }
+      : a.signStatus === "unsigned" ? { texte: "Non signé", ton: "neutre" }
+      : a.presence === "absent" ? { texte: "Client absent", ton: "danger" }
+      : a.present ? { texte: "Client venu — à qualifier", ton: "attente" }
+      : { texte: "Rendez-vous à venir", ton: "info" };
+
+  /** Avance (ou recule) une ligne dans la chaîne de facturation. */
+  async function majFacturation(ligne: "ff" | "comm", statut: string) {
+    setBusy(`facturation-${ligne}`);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const body: Record<string, string> = { eid: a!.id };
+      const p = ligne === "ff" ? "ff" : "comm";
+      body[`${p}Status`] = statut;
+      if (statut === "invoiced") body[`${p}Date`] = today;
+      if (statut === "paid") body[`${p}PaidDate`] = today;
+      if (statut === "" || statut === "requested") { body[`${p}Date`] = ""; body[`${p}PaidDate`] = ""; }
+      await fetch("/api/invoicing", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify(body) });
+      await load();
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const sectionTitle: React.CSSProperties = { fontSize: 17, fontWeight: 700, color: T.ink, letterSpacing: "-0.01em", margin: `0 0 ${S.md}px` };
+  const card: React.CSSProperties = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: R.lg, padding: S.lg, marginBottom: S.md };
+  const champ: React.CSSProperties = { width: "100%", boxSizing: "border-box", height: 44, padding: "0 14px", fontSize: 15, border: `1px solid ${T.line}`, borderRadius: R.sm, background: T.surface, color: T.ink };
+  const legende: React.CSSProperties = { display: "block", fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 6 };
+  const btnPrincipal: React.CSSProperties = { height: 38, padding: "0 16px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" };
+  const btnSecondaire: React.CSSProperties = { height: 36, padding: "0 14px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" };
+  const actionRow: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" };
 
   const actionBtn = (label: string, sub: string, action: string, opts?: { color?: string; outline?: boolean; disabled?: boolean; onClick?: () => void; confirmMsg?: string }) => {
     const color = opts?.color ?? NAVY;
@@ -699,15 +765,14 @@ function ClientPage({ id }: { id: string }) {
         disabled={isBusy || opts?.disabled}
         title={sub}
         style={{
-          flex: "1 1 calc(50% - 5px)", minWidth: 160, padding: "12px 14px", borderRadius: 8,
-          background: opts?.disabled ? "#f0f1f3" : bg, color: opts?.disabled ? "#9aa6b8" : fg,
-          border: `1.5px solid ${opts?.disabled ? "#e5e7eb" : color}`,
-          fontSize: 14, fontWeight: 600, cursor: isBusy || opts?.disabled ? "default" : "pointer",
-          textAlign: "left", lineHeight: 1.3,
+          height: 36, padding: "0 14px", borderRadius: R.sm,
+          background: opts?.disabled ? T.surface3 : bg, color: opts?.disabled ? T.ink3 : fg,
+          border: `1px solid ${opts?.disabled ? T.line : color}`,
+          fontSize: 13.5, fontWeight: 700, cursor: isBusy || opts?.disabled ? "not-allowed" : "pointer",
+          whiteSpace: "nowrap",
         }}
       >
-        <div>{isBusy ? "…" : label}</div>
-        <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8, marginTop: 2 }}>{sub}</div>
+        {isBusy ? "…" : label}
       </button>
     );
   };
@@ -716,13 +781,18 @@ function ClientPage({ id }: { id: string }) {
     const active = a.signStatus === val;
     return (
       <button
-        onClick={() => saveStatus({ signStatus: active ? "" : val })}
+        onClick={async () => {
+          const nouveau = active ? "" : val;
+          // Le statut est enregistré seul : aucun mail ne part sans validation.
+          await saveStatus({ signStatus: nouveau as Sign });
+          setDemandeMail(nouveau ? (nouveau as Sign) : null);
+        }}
         style={{
-          flex: 1, padding: "10px 6px", fontSize: 13, fontWeight: 600, borderRadius: 8,
-          cursor: "pointer",
-          border: active ? `1.5px solid ${color}` : "1.5px solid #e5e7eb",
-          background: active ? color : "#fff",
-          color: active ? "#fff" : "#6b7280",
+          height: 36, padding: "0 14px", fontSize: 13.5, fontWeight: 700, borderRadius: R.sm,
+          cursor: "pointer", whiteSpace: "nowrap",
+          border: active ? "none" : `1px solid ${T.line}`,
+          background: active ? color : T.surface,
+          color: active ? "#fff" : T.ink2,
         }}
       >
         {label}
@@ -732,30 +802,56 @@ function ClientPage({ id }: { id: string }) {
 
   return (
     <>
-      <div style={{ marginBottom: 12 }}>
-        <a href="/agenda" style={{ color: PINK, fontSize: 14, textDecoration: "none", fontWeight: 600 }}>← Retour à l&apos;agenda</a>
+      <div style={{ marginBottom: S.md }}>
+        <a href="/agenda" style={{ color: T.ink2, fontSize: 14, textDecoration: "none", fontWeight: 600 }}>← Retour à l&apos;agenda</a>
       </div>
 
       {/* === EN-TÊTE CLIENT === */}
-      <div style={card}>
-        {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>RDV ANNULÉ</div>}
-        {a.deplacement && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#38bdf8", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8, marginLeft: a.cancelled ? 6 : 0 }}>🚗 DÉPLACEMENT</div>}
-        <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, color: NAVY }}>{a.civility} {a.firstName} {a.lastName}</h1>
-        {a.deplacement && a.address && <div style={{ marginTop: 6, fontSize: 13, color: "#475569" }}>📍 {a.address}</div>}
-        {a.ref && <div style={{ marginTop: 4, fontSize: 11, color: "#9aa6b8", fontFamily: "monospace" }}>🔖 {a.ref}</div>}
+      <div style={{ ...card, padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: S.lg, borderBottom: `1px solid ${T.line}` }}>
+          {a.deplacement && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              <Badge ton="info">Rendez-vous en déplacement</Badge>
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: S.md, flexWrap: "wrap" }}>
+            <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", color: T.ink }}>
+              {a.civility} {a.firstName} {a.lastName}
+            </h1>
+            <span style={{ flexShrink: 0 }}><Badge ton={statutDossier.ton}>{statutDossier.texte}</Badge></span>
+          </div>
+
+          <div style={{ marginTop: 6, fontSize: 14.5, color: T.ink2, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {a.startDateTime && <span style={{ fontWeight: 700, color: T.ink }}>{fmtLong(a.startDateTime)}</span>}
+            {a.deplacement && a.address && <span>· {a.address}</span>}
+            {a.ref && <span style={{ fontFamily: "monospace", fontSize: 12.5, color: T.ink3 }}>· {a.ref}</span>}
+          </div>
+        </div>
+
+        <div style={{ padding: S.lg }}>
         {!editContact ? (
           <>
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 14 }}>
-              <div><div style={{ color: "#9aa6b8", fontSize: 11, textTransform: "uppercase" }}>Téléphone</div><a href={`tel:${a.phone}`} style={{ color: NAVY, textDecoration: "none", fontWeight: 600 }}>{a.phone || "—"}</a></div>
-              <div><div style={{ color: "#9aa6b8", fontSize: 11, textTransform: "uppercase" }}>E-mail</div><a href={`mailto:${a.email}`} style={{ color: NAVY, textDecoration: "none", fontWeight: 600, wordBreak: "break-all" }}>{a.email || "—"}</a></div>
-              <div><div style={{ color: "#9aa6b8", fontSize: 11, textTransform: "uppercase" }}>Plateforme</div><div>{a.platform || "—"}</div></div>
-              <div><div style={{ color: "#9aa6b8", fontSize: 11, textTransform: "uppercase" }}>Date du RDV</div><div style={{ fontWeight: 600, color: PINK }}>{a.startDateTime ? fmtLong(a.startDateTime) : "—"}</div></div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: S.md, fontSize: 15 }}>
+              {[
+                { cle: "Téléphone", val: a.phone ? <a href={`tel:${a.phone}`} style={{ color: T.ink, textDecoration: "none", fontWeight: 700 }}>{a.phone}</a> : "—" },
+                { cle: "E-mail", val: a.email ? <a href={`mailto:${a.email}`} style={{ color: T.ink, textDecoration: "none", fontWeight: 700, wordBreak: "break-all" }}>{a.email}</a> : "—" },
+                { cle: "Véhicule", val: vehicle },
+                { cle: "Plateforme", val: a.platform || "—" },
+                { cle: "Commercial", val: a.commercial || "—" },
+                { cle: "Téléprospecteur", val: a.teleprospector || "—" },
+              ].map((c) => (
+                <div key={c.cle}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, marginBottom: 3 }}>{c.cle}</div>
+                  <div style={{ color: T.ink }}>{c.val}</div>
+                </div>
+              ))}
             </div>
-            <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => { setDraftPhone(a.phone); setDraftEmail(a.email); setDraftFirstName(a.firstName); setDraftLastName(a.lastName); setEditContact(true); }} style={{ padding: "7px 12px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                ✏️ Modifier le client (nom, tél, e-mail)
+            <div style={{ marginTop: S.md, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={() => { setDraftPhone(a.phone); setDraftEmail(a.email); setDraftFirstName(a.firstName); setDraftLastName(a.lastName); setEditContact(true); }} style={btnSecondaire}>
+                Modifier les coordonnées
               </button>
-              {a.listingUrl && <a href={/^https?:\/\//i.test(a.listingUrl) ? a.listingUrl : `https://${a.listingUrl}`} target="_blank" rel="noopener noreferrer" style={{ color: PINK, fontSize: 13, fontWeight: 600, textDecoration: "underline" }}>🔗 Voir l&apos;annonce</a>}
+              {a.listingUrl && <a href={/^https?:\/\//i.test(a.listingUrl) ? a.listingUrl : `https://${a.listingUrl}`} target="_blank" rel="noopener noreferrer" style={{ ...btnSecondaire, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Voir l&apos;annonce</a>}
             </div>
           </>
         ) : (
@@ -763,29 +859,265 @@ function ClientPage({ id }: { id: string }) {
             <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Corrige le nom, le téléphone ou l&apos;e-mail si erreur de saisie. Les futurs rappels utiliseront les nouvelles coordonnées.</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Prénom</label>
-                <input value={draftFirstName} onChange={(e) => setDraftFirstName(e.target.value)} placeholder="Jean" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+                <label style={legende}>Prénom</label>
+                <input value={draftFirstName} onChange={(e) => setDraftFirstName(e.target.value)} placeholder="Jean" style={champ} />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Nom</label>
-                <input value={draftLastName} onChange={(e) => setDraftLastName(e.target.value)} placeholder="Dupont" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+                <label style={legende}>Nom</label>
+                <input value={draftLastName} onChange={(e) => setDraftLastName(e.target.value)} placeholder="Dupont" style={champ} />
               </div>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Téléphone</label>
-              <input value={draftPhone} onChange={(e) => setDraftPhone(e.target.value)} type="tel" placeholder="06 12 34 56 78" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+              <label style={legende}>Téléphone</label>
+              <input value={draftPhone} onChange={(e) => setDraftPhone(e.target.value)} type="tel" placeholder="06 12 34 56 78" style={champ} />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>E-mail</label>
-              <input value={draftEmail} onChange={(e) => setDraftEmail(e.target.value)} type="email" placeholder="client@email.com" style={{ width: "100%", padding: 11, fontSize: 15, borderRadius: 8, border: "1.5px solid #e5e7eb", boxSizing: "border-box" }} />
+              <label style={legende}>E-mail</label>
+              <input value={draftEmail} onChange={(e) => setDraftEmail(e.target.value)} type="email" placeholder="client@email.com" style={champ} />
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={saveContact} disabled={busy === "contact"} style={{ flex: 1, padding: "10px 14px", borderRadius: 7, background: PINK, color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              <button onClick={saveContact} disabled={busy === "contact"} style={{ ...btnPrincipal, flex: 1 }}>
                 {busy === "contact" ? "Enregistrement…" : "Enregistrer"}
               </button>
-              <button onClick={() => setEditContact(false)} style={{ padding: "10px 14px", borderRadius: 7, background: "#fff", color: "#6b7280", border: "1.5px solid #e5e7eb", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Annuler</button>
+              <button onClick={() => setEditContact(false)} style={btnSecondaire}>Annuler</button>
             </div>
           </div>
+        )}
+        </div>
+      </div>
+
+      {/* === STATUT === */}
+      <div style={card}>
+        <h2 style={sectionTitle}>📊 Statut & commission</h2>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
+
+        {/* Confirmation du RDV -> débloque le SMS au commercial 30 min avant.
+            Bouton actif uniquement dans les 24h précédant le RDV. */}
+        {!a.cancelled && getUser()?.role === "admin" && (() => {
+          const msUntil = a.startDateTime ? new Date(a.startDateTime).getTime() - Date.now() : -1;
+          const inWindow = msUntil > 0 && msUntil <= 24 * 3600 * 1000;
+          const enabled = inWindow || a.confirmed; // toujours possible d'annuler une confirmation
+          return (
+            <button onClick={toggleConfirm} disabled={busy === "confirm" || !enabled} title={enabled ? "" : "S'active 24h avant le rendez-vous"} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, marginBottom: 14, fontSize: 14, fontWeight: 700, cursor: enabled ? "pointer" : "not-allowed", border: `1.5px solid ${a.confirmed ? "#15803d" : "#e5e7eb"}`, background: a.confirmed ? "#16a34a" : enabled ? "#fff" : "#f3f4f6", color: a.confirmed ? "#fff" : enabled ? NAVY : "#9aa6b8" }}>
+              {busy === "confirm" ? "…"
+                : a.confirmed ? "✅ RDV confirmé — SMS envoyé au commercial 30 min avant (cliquer pour annuler)"
+                : enabled ? "📞 Confirmer le RDV → SMS au commercial 30 min avant"
+                : "📞 Confirmer le RDV (s'active 24h avant le rendez-vous)"}
+            </button>
+          );
+        })()}
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, marginBottom: 8 }}>
+          Le client est-il venu ?
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+          {(() => {
+            const isNoShow = a.history.some((h) => h.t === "noshow") || a.presence === "absent";
+            const base: React.CSSProperties = { height: 36, padding: "0 14px", borderRadius: R.sm, fontSize: 13.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
+            return (
+              <>
+                <button
+                  onClick={markPresent}
+                  disabled={busy === "present"}
+                  style={{ ...base, border: `1.5px solid ${a.present ? "#16a34a" : "#e5e7eb"}`, background: a.present ? "#16a34a" : "#fff", color: a.present ? "#fff" : NAVY }}
+                >
+                  Client présent
+                </button>
+                <button
+                  onClick={markAbsent}
+                  disabled={busy === "noshow"}
+                  style={{ ...base, border: `1.5px solid ${isNoShow ? "#dc2626" : "#e5e7eb"}`, background: isNoShow ? "#dc2626" : "#fff", color: isNoShow ? "#fff" : NAVY }}
+                >
+                  {busy === "noshow" ? "Envoi…" : isNoShow ? "Absent — relances en cours" : "Ne s'est pas présenté"}
+                </button>
+              </>
+            );
+          })()}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, marginBottom: 8 }}>
+          Résultat du rendez-vous
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {signBtn("signed", "Signé", "#16a34a")}
+          <button
+            onClick={() => setQuestionAnnonce((v) => !v)}
+            style={{
+              height: 36, padding: "0 14px", fontSize: 13.5, fontWeight: 700, borderRadius: R.sm, cursor: "pointer", whiteSpace: "nowrap",
+              border: a.signStatus === "listed" ? "none" : `1px solid ${T.line}`,
+              background: a.signStatus === "listed" ? "#0891b2" : T.surface,
+              color: a.signStatus === "listed" ? "#fff" : T.ink2,
+            }}
+          >
+            Annonce en ligne
+          </button>
+          {signBtn("thinking", "Réfléchit", "#ca8a04")}
+          {signBtn("unsigned", "Pas signé", "#dc2626")}
+        </div>
+
+        {questionAnnonce && (
+          <div style={{ marginBottom: 12, padding: S.md, borderRadius: R.md, background: T.surface2, border: `1px solid ${T.line}` }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 10 }}>Le mandat a-t-il été signé ?</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => { saveStatus({ signStatus: "signed" }); setQuestionAnnonce(false); }}
+                style={{ height: 36, padding: "0 16px", borderRadius: R.sm, border: "none", background: "#16a34a", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+              >
+                Oui, mandat signé
+              </button>
+              <button
+                onClick={() => { saveStatus({ signStatus: "listed" }); setQuestionAnnonce(false); }}
+                style={{ height: 36, padding: "0 16px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+              >
+                Non, annonce en ligne seulement
+              </button>
+              <button onClick={() => setQuestionAnnonce(false)} style={btnSecondaire}>Annuler</button>
+            </div>
+          </div>
+        )}
+
+        {demandeMail && MAILS_STATUT[demandeMail] && (
+          <div style={{ marginBottom: 12, padding: S.md, borderRadius: R.md, background: T.surface2, border: `1px solid ${T.line}` }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 6 }}>Envoyer le message au client ?</div>
+            <div style={{ fontSize: 13.5, color: T.ink2, marginBottom: 10 }}>
+              Statut « {MAILS_STATUT[demandeMail]!.statut} » — {MAILS_STATUT[demandeMail]!.description}
+              <br />Rien ne part tant que tu n&apos;as pas cliqué.
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={async () => { await saveStatus({ signStatus: demandeMail, sendMails: true }); setDemandeMail(null); setFlash({ kind: "ok", msg: "Message programmé pour le client." }); }}
+                style={{ height: 36, padding: "0 16px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+              >
+                Envoyer
+              </button>
+              <button onClick={() => setDemandeMail(null)} style={btnSecondaire}>Ne rien envoyer</button>
+            </div>
+          </div>
+        )}
+
+        {a.signStatus === "listed" && !questionAnnonce && (
+          <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: R.sm, background: T.infoSoft, fontSize: 13.5, color: T.info }}>
+            Annonce mise en ligne — mandat en cours de signature, on attend le retour du client.
+          </div>
+        )}
+        {a.signStatus === "signed" && (() => {
+          // Comptes call center : le travail s'arrête au RDV signé -> pas de négo/BC/vendu.
+          const u = getUser();
+          return !!u && u.role !== "admin" && (u.callCenterId ?? 1) !== 1;
+        })() && (
+          <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", border: "1.5px solid #bbf7d0", fontSize: 13, color: "#166534" }}>
+            ✅ Mandat signé — mission accomplie pour le call center.
+          </div>
+        )}
+        {a.signStatus === "signed" && !((() => { const u = getUser(); return !!u && u.role !== "admin" && (u.callCenterId ?? 1) !== 1; })()) && (
+          <>
+            {/* Qui prend quoi sur ce dossier */}
+            <div style={{ borderTop: `1px solid ${T.line}`, margin: `${S.md}px 0`, paddingTop: S.md }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, marginBottom: 12 }}>
+                Ce que rapporte ce dossier
+              </div>
+
+              {(() => {
+                const base = a.commissionBase ?? 50;
+                const pct = a.commissionPct ?? 10;
+                const nego = a.negotiation || 0;
+                const variable = Math.round((pct / 100) * nego);
+                const lignes = [
+                  { qui: a.teleprospector || "Téléprospecteur", role: "Téléprospecteur", montant: base, aide: "Forfait dû dès que le mandat est signé." },
+                  { qui: `${pct} % du montant négocié`, role: "Part variable", montant: variable, aide: nego ? `${pct} % de ${nego.toLocaleString("fr-FR")} €` : "Se calcule dès qu'un montant négocié est saisi." },
+                ];
+                return (
+                  <>
+                    {base === 0 && pct === 0 && (
+                      <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: R.sm, background: T.warningSoft, color: T.warning, fontSize: 13.5 }}>
+                        Aucun barème enregistré pour ce téléprospecteur — d&apos;où les montants à zéro.
+                        Il se règle sur sa fiche de compte, dans Comptes.
+                      </div>
+                    )}
+                    {lignes.map((l, i) => (
+                      <div key={l.role} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14, padding: "10px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14.5, fontWeight: 700 }}>{l.role} <span style={{ fontWeight: 500, color: T.ink2 }}>— {l.qui}</span></div>
+                          <div style={{ fontSize: 12.5, color: T.ink3 }}>{l.aide}</div>
+                        </div>
+                        <Euro montant={l.montant} discret={l.montant === 0} />
+                      </div>
+                    ))}
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, paddingTop: 12, borderTop: `2px solid ${T.line}` }}>
+                      <strong style={{ fontSize: 15 }}>Total pour ce client</strong>
+                      <Euro montant={base + variable} />
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: S.md }}>
+                <label htmlFor="nego" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Prix négocié</label>
+                <input
+                  id="nego" type="number" inputMode="numeric"
+                  value={a.negotiation || ""}
+                  onChange={(e) => setA({ ...a, negotiation: Number(e.target.value) })}
+                  onBlur={(e) => saveStatus({ negotiation: Number(e.target.value) })}
+                  placeholder="—"
+                  style={{ ...champ, width: 140, height: 38, textAlign: "right" }}
+                />
+                <span style={{ fontSize: 13.5, color: T.ink2 }}>€</span>
+              </div>
+            </div>
+            <ChaineFacturation
+              titre="Frais fixe"
+              montant={a.commissionBase ?? 50}
+              statut={a.ffStatus ?? ""}
+              dateFacture={a.ffDate}
+              datePaiement={a.ffPaidDate}
+              onChange={(v) => majFacturation("ff", v)}
+              busy={busy === "facturation-ff"}
+            />
+
+            {a.bcSigned && (a.negotiation || 0) > 0 && (
+              <ChaineFacturation
+                titre="Part variable sur le négocié"
+                montant={Math.round(((a.commissionPct ?? 10) / 100) * (a.negotiation || 0))}
+                statut={a.commStatus ?? ""}
+                dateFacture={a.commDate}
+                datePaiement={a.commPaidDate}
+                onChange={(v) => majFacturation("comm", v)}
+                busy={busy === "facturation-comm"}
+              />
+            )}
+
+            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer", marginBottom: 8 }}>
+              <input type="checkbox" checked={a.bcSigned} onChange={(e) => saveStatus({ bcSigned: e.target.checked })} />
+              <div style={{ flex: 1 }}>
+                📝 Bon de commande signé
+                {a.bcSigned && a.bcSignedAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#1d4ed8", marginTop: 2 }}>Signé le {new Date(a.bcSignedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
+              </div>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.vehicleSold ? "#f0fdf4" : "#fff", border: `1.5px solid ${a.vehicleSold ? "#16a34a" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.vehicleSold ? "#166534" : NAVY, cursor: "pointer" }}>
+              <input type="checkbox" checked={a.vehicleSold} onChange={(e) => saveStatus({ vehicleSold: e.target.checked })} />
+              <div style={{ flex: 1 }}>
+                🏁 Véhicule vendu (livré / payé)
+                {a.vehicleSold && a.soldAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#166534", marginTop: 2 }}>Vendu le {new Date(a.soldAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
+              </div>
+            </label>
+
+            {/* Retrait du mandat (traçabilité gardée) */}
+            {a.mandatRemoved ? (
+              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "#fef2f2", border: "1.5px solid #fecaca" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c" }}>⛔ Mandat retiré</div>
+                <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>
+                  {a.mandatRemovedAt && <>Le {new Date(a.mandatRemovedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</>}
+                  {a.mandatRemovedReason && <> — {a.mandatRemovedReason}</>}
+                </div>
+                <button onClick={toggleMandate} disabled={busy === "mandate"} style={{ marginTop: 8, padding: "7px 12px", borderRadius: 7, background: "#fff", color: "#b91c1c", border: "1.5px solid #b91c1c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                  {busy === "mandate" ? "…" : "↩︎ Rétablir le mandat"}
+                </button>
+              </div>
+            ) : (
+              <button onClick={toggleMandate} disabled={busy === "mandate"} title="Le client ne peut plus être sous mandat. La trace (signé → retiré + raison) est gardée dans l'historique." style={{ marginTop: 10, padding: "9px 14px", borderRadius: 8, background: "#fff", color: "#b91c1c", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer", width: "100%" }}>
+                {busy === "mandate" ? "…" : "⛔ Retirer le mandat"}
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -798,7 +1130,7 @@ function ClientPage({ id }: { id: string }) {
               {vehicle === "—" ? <span style={{ color: "#9aa6b8", fontStyle: "italic" }}>Non renseigné (annonce supprimée ?)</span> : vehicle}
               {a.immatriculation && <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 6, background: "#1a273a", color: "#fff", fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>{a.immatriculation}</span>}
             </div>
-            <button onClick={() => { setDraftBrand(a.carBrand); setDraftModel(a.carModel); setDraftFinish(a.carFinish); setDraftImmat(a.immatriculation ?? ""); setEditVehicle(true); }} style={{ padding: "8px 14px", borderRadius: 7, background: "#fff", color: PINK, border: `1.5px solid ${PINK}`, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={() => { setDraftBrand(a.carBrand); setDraftModel(a.carModel); setDraftFinish(a.carFinish); setDraftImmat(a.immatriculation ?? ""); setEditVehicle(true); }} style={btnSecondaire}>
               ✏️ {vehicle === "—" ? "Renseigner" : "Modifier"}
             </button>
           </div>
@@ -911,10 +1243,34 @@ function ClientPage({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* === COMMUNICATION === */}
+      {/* === IDENTIFICATION DU VÉHICULE PAR LA PLAQUE === */}
       <div style={card}>
-        <h2 style={sectionTitle}>✉️ Communication client</h2>
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Renvoyer manuellement un mail ou un SMS au client. Utile si le client dit ne pas avoir reçu, ou pour une relance rapide.</p>
+        <h2 style={sectionTitle}>🔎 Identifier le véhicule</h2>
+        <PlaqueLookup
+          immatriculation={a.immatriculation}
+          onReprendre={async (v) => {
+            await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
+              method: "PATCH",
+              headers: authHeaders({ "content-type": "application/json" }),
+              body: JSON.stringify({
+                carBrand: v.marque || a.carBrand,
+                carModel: v.modele || a.carModel,
+                carFinish: v.finition || a.carFinish,
+                immatriculation: (v.plaque || a.immatriculation || "").replace(/-/g, ""),
+              }),
+            }).catch(() => {});
+            setA({ ...a, carBrand: v.marque || a.carBrand, carModel: v.modele || a.carModel, carFinish: v.finition || a.carFinish });
+            setFlash({ kind: "ok", msg: "Véhicule mis à jour depuis la plaque" });
+          }}
+        />
+      </div>
+
+      {/* === COMMUNICATION === */}
+      <Repliable
+        titre="Communication client"
+        description="Renvoyer un mail ou un SMS : confirmation, rappel, message libre."
+      >
+
         <div style={actionRow}>
           {actionBtn("📧 Renvoyer le mail de confirmation", `Renvoyé à ${a.email || "—"}`, "resend_confirmation_mail", { outline: true, disabled: !a.email || a.cancelled })}
           {actionBtn("📱 Renvoyer le SMS de confirmation", `Renvoyé au ${a.phone || "—"}`, "resend_confirmation_sms", { outline: true, disabled: !a.phone || a.cancelled })}
@@ -939,7 +1295,7 @@ function ClientPage({ id }: { id: string }) {
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>📋 Templates rapides (clique pour pré-remplir)</label>
+                <label style={legende}>📋 Templates rapides (clique pour pré-remplir)</label>
                 <select
                   onChange={(e) => {
                     const tpl = MAIL_TEMPLATES.find((t) => t.key === e.target.value);
@@ -981,7 +1337,7 @@ function ClientPage({ id }: { id: string }) {
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               <div>
-                <label style={{ display: "block", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>📋 Templates SMS (clique pour pré-remplir)</label>
+                <label style={legende}>📋 Templates SMS (clique pour pré-remplir)</label>
                 <select
                   onChange={(e) => {
                     const tpl = SMS_TEMPLATES.find((t) => t.key === e.target.value);
@@ -1021,41 +1377,14 @@ function ClientPage({ id }: { id: string }) {
             </div>
           )}
         </div>
-      </div>
+      </Repliable>
 
-      {/* === NOTIFICATIONS & PREUVES === */}
-      <div style={card}>
-        <h2 style={sectionTitle}>📨 Notifications</h2>
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Suivi des envois attendus (confirmation + rappel 24h, mail &amp; SMS) et historique détaillé avec statut, date et erreur éventuelle.</p>
-        <MessageTimeline id={a.id} refreshKey={msgKey} startDateTime={a.startDateTime} />
-      </div>
+      {/* === GESTION DU RENDEZ-VOUS === */}
+      <Repliable
+        titre="Gestion du rendez-vous"
+        description="Reprogrammer le créneau, réserver une place de parking, annuler."
+      >
 
-      {/* === IDENTIFICATION DU VÉHICULE PAR LA PLAQUE === */}
-      <div style={card}>
-        <h2 style={sectionTitle}>🔎 Identifier le véhicule</h2>
-        <PlaqueLookup
-          immatriculation={a.immatriculation}
-          onReprendre={async (v) => {
-            await fetch(`/api/client/${encodeURIComponent(a.id)}`, {
-              method: "PATCH",
-              headers: authHeaders({ "content-type": "application/json" }),
-              body: JSON.stringify({
-                carBrand: v.marque || a.carBrand,
-                carModel: v.modele || a.carModel,
-                carFinish: v.finition || a.carFinish,
-                immatriculation: (v.plaque || a.immatriculation || "").replace(/-/g, ""),
-              }),
-            }).catch(() => {});
-            setA({ ...a, carBrand: v.marque || a.carBrand, carModel: v.modele || a.carModel, carFinish: v.finition || a.carFinish });
-            setFlash({ kind: "ok", msg: "Véhicule mis à jour depuis la plaque" });
-          }}
-        />
-      </div>
-
-      {/* === LOGISTIQUE === */}
-      <div style={card}>
-        <h2 style={sectionTitle}>🚗 Logistique</h2>
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>Réserver une place de parking, changer le créneau du RDV.</p>
         <div style={actionRow}>
           {actionBtn(
             a.parkingSent ? "✓ Mail parking envoyé" : a.parkingRequested ? "✓ Parking réservé" : "🅿️ Réserver parking + envoyer mail",
@@ -1082,120 +1411,7 @@ function ClientPage({ id }: { id: string }) {
             </a>
           ) : null /* RDV signé ou honoré : reprogrammation impossible, bouton masqué */}
         </div>
-      </div>
-
-      {/* === STATUT === */}
-      <div style={card}>
-        <h2 style={sectionTitle}>📊 Statut & commission</h2>
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>À remplir après le RDV pour suivre le résultat et calculer ta commission.</p>
-
-        {/* Confirmation du RDV -> débloque le SMS au commercial 30 min avant.
-            Bouton actif uniquement dans les 24h précédant le RDV. */}
-        {!a.cancelled && (() => {
-          const msUntil = a.startDateTime ? new Date(a.startDateTime).getTime() - Date.now() : -1;
-          const inWindow = msUntil > 0 && msUntil <= 24 * 3600 * 1000;
-          const enabled = inWindow || a.confirmed; // toujours possible d'annuler une confirmation
-          return (
-            <button onClick={toggleConfirm} disabled={busy === "confirm" || !enabled} title={enabled ? "" : "S'active 24h avant le rendez-vous"} style={{ width: "100%", padding: "12px 14px", borderRadius: 8, marginBottom: 14, fontSize: 14, fontWeight: 700, cursor: enabled ? "pointer" : "not-allowed", border: `1.5px solid ${a.confirmed ? "#15803d" : "#e5e7eb"}`, background: a.confirmed ? "#16a34a" : enabled ? "#fff" : "#f3f4f6", color: a.confirmed ? "#fff" : enabled ? NAVY : "#9aa6b8" }}>
-              {busy === "confirm" ? "…"
-                : a.confirmed ? "✅ RDV confirmé — SMS envoyé au commercial 30 min avant (cliquer pour annuler)"
-                : enabled ? "📞 Confirmer le RDV → SMS au commercial 30 min avant"
-                : "📞 Confirmer le RDV (s'active 24h avant le rendez-vous)"}
-            </button>
-          );
-        })()}
-        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-          {(() => {
-            const isNoShow = a.history.some((h) => h.t === "noshow") || a.presence === "absent";
-            const base: React.CSSProperties = { flex: 1, padding: "12px 10px", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" };
-            return (
-              <>
-                <button
-                  onClick={markPresent}
-                  disabled={busy === "present"}
-                  style={{ ...base, border: `1.5px solid ${a.present ? "#16a34a" : "#e5e7eb"}`, background: a.present ? "#16a34a" : "#fff", color: a.present ? "#fff" : NAVY }}
-                >
-                  🙋 Client présent
-                </button>
-                <button
-                  onClick={markAbsent}
-                  disabled={busy === "noshow"}
-                  style={{ ...base, border: `1.5px solid ${isNoShow ? "#dc2626" : "#e5e7eb"}`, background: isNoShow ? "#dc2626" : "#fff", color: isNoShow ? "#fff" : NAVY }}
-                >
-                  {busy === "noshow" ? "Envoi…" : isNoShow ? "🚫 Absent — relances en cours" : "🚫 Ne s'est pas présenté"}
-                </button>
-              </>
-            );
-          })()}
-        </div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-          {signBtn("signed", "✅ A signé", "#16a34a")}
-          {signBtn("listed", "📢 Annonce en ligne", "#0891b2")}
-          {signBtn("thinking", "🤔 Réfléchit", "#ca8a04")}
-          {signBtn("unsigned", "❌ Pas signé", "#dc2626")}
-        </div>
-        {a.signStatus === "listed" && (
-          <div style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 8, background: "#ecfeff", border: "1.5px solid #a5f3fc", fontSize: 13, color: "#0e7490" }}>
-            📢 Annonce mise en ligne — mandat en cours de signature. On attend le retour du client.
-          </div>
-        )}
-        {a.signStatus === "signed" && (() => {
-          // Comptes call center : le travail s'arrête au RDV signé -> pas de négo/BC/vendu.
-          const u = getUser();
-          return !!u && u.role !== "admin" && (u.callCenterId ?? 1) !== 1;
-        })() && (
-          <div style={{ padding: "10px 12px", borderRadius: 8, background: "#f0fdf4", border: "1.5px solid #bbf7d0", fontSize: 13, color: "#166534" }}>
-            ✅ Mandat signé — mission accomplie pour le call center.
-          </div>
-        )}
-        {a.signStatus === "signed" && !((() => { const u = getUser(); return !!u && u.role !== "admin" && (u.callCenterId ?? 1) !== 1; })()) && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>Montant négocié €</span>
-              <input
-                type="number"
-                value={a.negotiation || ""}
-                onChange={(e) => setA({ ...a, negotiation: Number(e.target.value) })}
-                onBlur={(e) => saveStatus({ negotiation: Number(e.target.value) })}
-                placeholder="0"
-                style={{ width: 120, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }}
-              />
-            </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer", marginBottom: 8 }}>
-              <input type="checkbox" checked={a.bcSigned} onChange={(e) => saveStatus({ bcSigned: e.target.checked })} />
-              <div style={{ flex: 1 }}>
-                📝 Bon de commande signé
-                {a.bcSigned && a.bcSignedAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#1d4ed8", marginTop: 2 }}>Signé le {new Date(a.bcSignedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
-              </div>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.vehicleSold ? "#f0fdf4" : "#fff", border: `1.5px solid ${a.vehicleSold ? "#16a34a" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.vehicleSold ? "#166534" : NAVY, cursor: "pointer" }}>
-              <input type="checkbox" checked={a.vehicleSold} onChange={(e) => saveStatus({ vehicleSold: e.target.checked })} />
-              <div style={{ flex: 1 }}>
-                🏁 Véhicule vendu (livré / payé)
-                {a.vehicleSold && a.soldAt && <div style={{ fontSize: 11, fontWeight: 400, color: "#166534", marginTop: 2 }}>Vendu le {new Date(a.soldAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>}
-              </div>
-            </label>
-
-            {/* Retrait du mandat (traçabilité gardée) */}
-            {a.mandatRemoved ? (
-              <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "#fef2f2", border: "1.5px solid #fecaca" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c" }}>⛔ Mandat retiré</div>
-                <div style={{ fontSize: 12, color: "#7f1d1d", marginTop: 2 }}>
-                  {a.mandatRemovedAt && <>Le {new Date(a.mandatRemovedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</>}
-                  {a.mandatRemovedReason && <> — {a.mandatRemovedReason}</>}
-                </div>
-                <button onClick={toggleMandate} disabled={busy === "mandate"} style={{ marginTop: 8, padding: "7px 12px", borderRadius: 7, background: "#fff", color: "#b91c1c", border: "1.5px solid #b91c1c", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                  {busy === "mandate" ? "…" : "↩︎ Rétablir le mandat"}
-                </button>
-              </div>
-            ) : (
-              <button onClick={toggleMandate} disabled={busy === "mandate"} title="Le client ne peut plus être sous mandat. La trace (signé → retiré + raison) est gardée dans l'historique." style={{ marginTop: 10, padding: "9px 14px", borderRadius: 8, background: "#fff", color: "#b91c1c", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer", width: "100%" }}>
-                {busy === "mandate" ? "…" : "⛔ Retirer le mandat"}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      </Repliable>
 
       {/* === TIMELINE === */}
       <div style={card}>

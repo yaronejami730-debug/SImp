@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
+import MonLienRdv from "@/components/MonLienRdv";
+import { DatePicker, DateRange } from "@/components/ui";
 
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
@@ -67,6 +69,8 @@ function Parametres() {
         <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: NAVY }}>Paramètres</h1>
         <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>Construis ton agenda : les téléprospecteurs ne verront que tes créneaux réellement disponibles.</p>
       </header>
+
+      <MonLienRdv />
 
       {/* Durée / fréquence / battement */}
       <div style={card}>
@@ -154,11 +158,11 @@ function Parametres() {
             <button onClick={() => post({ action: "removeTimeOff", id: t.id })} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Supprimer</button>
           </div>
         ))}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-          <input type="date" style={tIn} value={voStart} onChange={(e) => setVoStart(e.target.value)} />
-          <span style={{ color: "#94a3b8", fontSize: 13 }}>au</span>
-          <input type="date" style={tIn} value={voEnd} onChange={(e) => setVoEnd(e.target.value)} />
-          <input style={{ ...tIn, width: 160 }} placeholder="Motif (optionnel)" value={voLabel} onChange={(e) => setVoLabel(e.target.value)} />
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+          <div style={{ minWidth: 400, flex: "1 1 400px" }}>
+            <DateRange from={voStart} to={voEnd} onChange={(r) => { setVoStart(r.from); setVoEnd(r.to); }} />
+          </div>
+          <input style={{ ...tIn, width: 180, height: 44 }} placeholder="Motif (optionnel)" value={voLabel} onChange={(e) => setVoLabel(e.target.value)} />
           <button disabled={!voStart || !voEnd} onClick={() => { post({ action: "addTimeOff", start: voStart, end: voEnd, label: voLabel }); setVoStart(""); setVoEnd(""); setVoLabel(""); }} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: NAVY, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>+ Ajouter</button>
         </div>
       </div>
@@ -176,8 +180,8 @@ function Parametres() {
             <button onClick={() => post({ action: "removeException", id: x.id })} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Supprimer</button>
           </div>
         ))}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-          <input type="date" style={tIn} value={exDate} onChange={(e) => setExDate(e.target.value)} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+          <div style={{ width: 220 }}><DatePicker value={exDate} onChange={setExDate} placeholder="Choisir un jour" /></div>
           <select style={sel} value={exKind} onChange={(e) => setExKind(e.target.value as "open" | "closed")}>
             <option value="open">✅ Dispo en plus</option>
             <option value="closed">⛔ Indisponible</option>

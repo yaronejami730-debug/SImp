@@ -381,6 +381,11 @@ export async function deleteEvent(eventId: string) {
 }
 
 /** RDV simplifié pour le dashboard. */
+/** Chaîne de facturation d'une ligne :
+ *  "" (rien à faire) -> "requested" (le commercial demande la facture)
+ *  -> "invoiced" (le call center l'a émise) -> "paid" (réglée). */
+export type InvoicingStatus = "" | "requested" | "invoiced" | "paid";
+
 export type AppointmentItem = {
   id: string;
   callCenterId: number;
@@ -428,13 +433,13 @@ export type AppointmentItem = {
   photos: string[];
   // ── Facturation (module Bilan) ──
   // Frais fixes (50 €) : facturables dès le mandat signé.
-  ffStatus: "" | "invoiced" | "paid"; // "" = à facturer
+  ffStatus: InvoicingStatus; // "" = à facturer
   ffNo: string;
   ffDate: string | null;
   ffPaidDate: string | null;
   ffComment: string;
   // Commission (10 % de la négo) : facturable seulement si bon de commande signé.
-  commStatus: "" | "invoiced" | "paid"; // "" = à facturer (si BC signé)
+  commStatus: InvoicingStatus; // "" = à facturer (si BC signé)
   commNo: string;
   commDate: string | null;
   commPaidDate: string | null;
@@ -653,11 +658,12 @@ export function colorIdForStatus(opts: {
 /** Met à jour les champs de suivi (présent / signature / négo / BC / vendu) d'un RDV. */
 export async function patchTracking(
   eventId: string,
-  fields: { present?: boolean; signStatus?: string; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean },
+  fields: { present?: boolean | null; signStatus?: string; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean },
 ) {
   const cal = calendarClient();
   const priv: Record<string, string> = {};
-  if (fields.present !== undefined) priv.present = fields.present ? "1" : "0";
+  // null = on efface la présence (retour à « non renseigné »), utile pour décocher.
+  if (fields.present !== undefined) priv.present = fields.present === null ? "" : fields.present ? "1" : "0";
   if (fields.signStatus !== undefined) {
     priv.signStatus = fields.signStatus;
     priv.signStatusAt = new Date().toISOString(); // date de la décision de signature
@@ -698,9 +704,9 @@ export async function patchTracking(
 /** Met à jour les champs de facturation (module Bilan) d'un RDV.
  *  ff* = frais fixes 50 € ; comm* = commission 10 %. */
 export type InvoicingFields = {
-  ffStatus?: "" | "invoiced" | "paid";
+  ffStatus?: InvoicingStatus;
   ffNo?: string; ffDate?: string | null; ffPaidDate?: string | null; ffComment?: string;
-  commStatus?: "" | "invoiced" | "paid";
+  commStatus?: InvoicingStatus;
   commNo?: string; commDate?: string | null; commPaidDate?: string | null; commComment?: string;
 };
 export async function patchInvoicing(eventId: string, f: InvoicingFields) {

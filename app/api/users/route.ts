@@ -64,7 +64,7 @@ export async function PATCH(req: Request) {
   try {
     const b = (await req.json()) as {
       id?: number; isCommercial?: boolean; isTeleprospector?: boolean; active?: boolean; phone?: string;
-      schemeKey?: string; commissionBase?: number; commissionPct?: number;
+      schemeKey?: string; commissionBase?: number; commissionPct?: number; password?: string;
     };
     if (!b.id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
     if (s.role === "responsable" && !(await sameCallCenter(b.id, s.callCenterId))) {
@@ -80,6 +80,15 @@ export async function PATCH(req: Request) {
       if (b.commissionPct !== undefined) patch.commissionPct = Number(b.commissionPct);
     }
     await updateUserFlags(b.id, patch);
+
+    // Nouveau mot de passe posé par l'admin (les mots de passe existants sont hachés,
+    // donc illisibles : la seule façon d'accéder à un compte est d'en poser un nouveau).
+    if (b.password !== undefined) {
+      if (s.role !== "admin") return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
+      if (b.password.trim().length < 6) return NextResponse.json({ error: "Mot de passe : 6 caractères minimum." }, { status: 400 });
+      const { setUserPassword } = await import("@/lib/users");
+      await setUserPassword(b.id, b.password.trim());
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

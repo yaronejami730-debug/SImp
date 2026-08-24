@@ -104,6 +104,13 @@ export async function GET(req: Request, { params }: Params) {
         mandatRemoved: p.mandatRemoved === "1",
         mandatRemovedAt: p.mandatRemovedAt || null,
         mandatRemovedReason: p.mandatRemovedReason ?? "",
+        // Chaîne de facturation : appel à facturation -> facture émise -> payée.
+        ffStatus: p.ffStatus ?? "",
+        ffDate: p.ffDate || null,
+        ffPaidDate: p.ffPaidDate || null,
+        commStatus: p.commStatus ?? "",
+        commDate: p.commDate || null,
+        commPaidDate: p.commPaidDate || null,
       },
     });
   } catch (e) {

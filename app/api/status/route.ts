@@ -17,10 +17,11 @@ export async function POST(req: Request) {
   if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
-    const { eid, present, signStatus, negotiation, bcSigned, vehicleSold } = (await req.json()) as {
+    const { eid, present, signStatus, negotiation, bcSigned, vehicleSold, sendMails } = (await req.json()) as {
       eid?: string;
       present?: boolean;
       signStatus?: string;
+      sendMails?: boolean; // les relances ne partent que sur autorisation explicite
       negotiation?: number;
       bcSigned?: boolean;
       vehicleSold?: boolean;
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
     // Déclenche les actions post-signature (best-effort, n'empêche pas la réponse).
     if (signStatus !== undefined) {
       try {
+        // Les relances client ne partent JAMAIS toutes seules : il faut sendMails = true.
         const ev = await getEvent(eid);
         const priv = ev.extendedProperties?.private ?? {};
         const email = priv.clientEmail;
@@ -47,7 +49,7 @@ export async function POST(req: Request) {
             unsigned: "unsigned",
           };
           const type = typeMap[signStatus];
-          if (type) {
+          if (type && sendMails === true) {
             await scheduleFollowup({
               email,
               civility: priv.clientCivility,
