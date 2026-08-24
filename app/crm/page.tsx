@@ -60,15 +60,33 @@ function CRM() {
 
   useEffect(() => { load(); }, []);
 
+  type UserScheme = { email: string; name: string; commission_base: number; commission_pct: number };
+
+  /** Barèmes par commercial : appliqués avant l'affichage, sinon les commissions
+   *  seraient calculées un instant avec le barème par défaut (total faux). */
+  function appliquerBaremes(users: UserScheme[]) {
+    const byEmail = new Map<string, { base: number; pct: number }>();
+    const byName = new Map<string, { base: number; pct: number }>();
+    for (const usr of users) {
+      const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
+      if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
+      if (usr.name) byName.set(nameKey(usr.name), scheme);
+    }
+    setSchemeByEmail(byEmail); setSchemeByName(byName);
+  }
+
   async function load() {
     // Affichage immédiat des dernières données connues, puis rafraîchissement en fond.
-    const cached = getCached<Appt[]>("appointments");
-    if (cached) setAppts(cached);
+    // Barèmes et RDV sont repris ensemble : sinon les commissions affichées seraient fausses.
+    const cached = getCached<Appt[]>("appointments:all");
+    const cachedUsers = getCached<UserScheme[]>("users");
+    if (cachedUsers) appliquerBaremes(cachedUsers);
+    if (cached && (cachedUsers || !isAdmin)) setAppts(cached);
     setLoading(!cached); setErr("");
     try {
-      const res = await fetch("/api/appointments", { headers: authHeaders() });
+      const res = await fetch("/api/appointments?all=1", { headers: authHeaders() });
       const d = await res.json();
-      if (d.ok) { setAppts(d.appointments); setCached("appointments", d.appointments); }
+      if (d.ok) { setAppts(d.appointments); setCached("appointments:all", d.appointments); }
       else setErr(d.error ?? "Erreur");
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
@@ -78,14 +96,8 @@ function CRM() {
       try {
         const u = await fetch("/api/users", { headers: authHeaders() }).then((r) => r.json());
         if (u?.ok) {
-          const byEmail = new Map<string, { base: number; pct: number }>();
-          const byName = new Map<string, { base: number; pct: number }>();
-          for (const usr of u.users as { email: string; name: string; commission_base: number; commission_pct: number }[]) {
-            const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
-            if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
-            if (usr.name) byName.set(nameKey(usr.name), scheme);
-          }
-          setSchemeByEmail(byEmail); setSchemeByName(byName);
+          setCached("users", u.users);
+          appliquerBaremes(u.users as UserScheme[]);
         }
       } catch { /* repli sur le barème par défaut */ }
     }

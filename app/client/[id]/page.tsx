@@ -11,7 +11,6 @@ import { COMMERCIAUX } from "@/lib/commerciaux";
 
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
-const BASE_COMMISSION = 50;
 const NEGO_RATE = 0.1;
 
 type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
@@ -48,9 +47,6 @@ const histLabel = (t: string) =>
     unconfirmed: "RDV dé-confirmé",
   } as Record<string, string>)[t] ?? t;
 
-const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
-const commission = (a: Appt) => (a.signStatus === "signed" ? (a.commissionBase ?? BASE_COMMISSION) + ((a.commissionPct ?? 10) / 100) * (a.negotiation || 0) : 0);
-const commercialCommission = (a: Appt) => (a.signStatus === "signed" ? (a.commercialCommissionBase ?? 0) + ((a.commercialCommissionPct ?? 0) / 100) * (a.negotiation || 0) : 0);
 
 // ───────────────── Timeline messages (mails + SMS, preuves) ─────────────────
 const fmtDT = (iso: string) => {
@@ -1164,16 +1160,6 @@ function ClientPage({ id }: { id: string }) {
                 placeholder="0"
                 style={{ width: 120, padding: "8px 10px", fontSize: 14, borderRadius: 7, border: "1.5px solid #e5e7eb" }}
               />
-            </div>
-            <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-                <span style={{ fontSize: 13, color: "#166534", fontWeight: 600 }}>👤 Commercial{a.commercial ? ` — ${a.commercial}` : ""}</span>
-                <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 700 }}>{eur(commercialCommission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>({a.commercialCommissionBase ? `${a.commercialCommissionBase}€` : ""}{(a.commercialCommissionPct ?? 0) > 0 ? `${a.commercialCommissionBase ? " + " : ""}${a.commercialCommissionPct}%` : ""})</span></span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderRadius: 8, background: "#f5f3ff", border: "1px solid #ddd6fe" }}>
-                <span style={{ fontSize: 13, color: "#5b21b6", fontWeight: 600 }}>📞 Téléprospecteur{a.teleprospector ? ` — ${a.teleprospector}` : ""}</span>
-                <span style={{ fontSize: 13, color: "#7c3aed", fontWeight: 700 }}>{eur(commission(a))} <span style={{ color: "#9aa6b8", fontWeight: 400 }}>({a.commissionBase ?? 50}€{(a.commissionPct ?? 10) > 0 ? ` + ${a.commissionPct ?? 10}%` : ""})</span></span>
-              </div>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer", marginBottom: 8 }}>
               <input type="checkbox" checked={a.bcSigned} onChange={(e) => saveStatus({ bcSigned: e.target.checked })} />

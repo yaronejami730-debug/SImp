@@ -5,6 +5,7 @@ import { DatePicker, TimePicker } from "./Pickers";
 import Cadence from "./Cadence";
 import Script from "./Script";
 import Outils from "./Outils";
+import { ClocheRappels, ModaleRappels, OngletRappels, useRappels, rappelsUrgents } from "./Rappels";
 import { estCreneauValide, HORAIRES_TEXTE } from "@/lib/dde-horaires";
 import { formatMobileEnCours, mobileFR } from "@/lib/telephone-fr";
 import { INFOS_CLIENT, INK, BG, LINE, MUTED, SOFT, WHATSAPP_GROUP, input as inputStyle, label as labelStyle, pill } from "./theme";
@@ -235,7 +236,9 @@ function Login({ onLogin }: { onLogin: (me: Me) => void }) {
 // ---------- Espace connecté ----------
 
 function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
-  const [tab, setTab] = useState<"form" | "table" | "comptes">("form");
+  const [tab, setTab] = useState<"form" | "table" | "rappels" | "comptes">("form");
+  const { rappels, reload: reloadRappels } = useRappels(true);
+  const [clocheOuverte, setClocheOuverte] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [version, setVersion] = useState(0); // incrémenté à chaque saisie : la cadence se remet à jour
   const [err, setErr] = useState("");
@@ -254,9 +257,11 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const aTraiter = rappels.filter((r) => r.statut === "a_faire").length;
   const tabs: { key: typeof tab; label: string }[] = [
     { key: "form", label: "Nouveau rendez-vous" },
     { key: "table", label: `Rendez-vous (${appointments.length})` },
+    { key: "rappels", label: `Rappels (${aTraiter})` },
     ...(me.role === "admin" ? [{ key: "comptes" as const, label: "Comptes" }] : []),
   ];
 
@@ -268,6 +273,7 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <div />
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <span style={{ fontSize: 14, color: MUTED }}>{me.name}{me.role === "admin" ? " (admin)" : ""}</span>
+            <ClocheRappels rappels={rappels} onOuvrir={() => setClocheOuverte(true)} />
             <Script />
             <button onClick={onLogout} style={{ height: 36, padding: "0 16px", borderRadius: 18, border: `1px solid ${LINE}`, background: "#fff", fontSize: 14, cursor: "pointer" }}>Déconnexion</button>
           </div>
@@ -288,13 +294,35 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><Outils /></div>
 
-        {tab !== "comptes" && <Cadence me={me} version={version} />}
+        {(tab === "form" || tab === "table") && <Cadence me={me} version={version} />}
+        {rappelsUrgents(rappels).length > 0 && tab !== "rappels" && (
+          <div style={{ marginBottom: 24, padding: "12px 16px", borderRadius: 12, background: "#fff", border: `1px solid ${LINE}`, fontSize: 15, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <strong>{rappelsUrgents(rappels).length} rappel{rappelsUrgents(rappels).length > 1 ? "s" : ""} à passer.</strong>
+            <button onClick={() => setTab("rappels")} style={{ height: 32, padding: "0 14px", borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Voir</button>
+          </div>
+        )}
 
         {err && <div style={{ marginBottom: 24, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
 
         {tab === "form" && <Formulaire me={me} onSaved={() => { load(); setVersion((v) => v + 1); }} />}
         {tab === "table" && <Tableau me={me} rows={appointments} reload={load} />}
+        {tab === "rappels" && <OngletRappels me={me} rappels={rappels} reload={reloadRappels} />}
         {tab === "comptes" && me.role === "admin" && <Comptes />}
+
+        {clocheOuverte && (
+          <ModaleRappels
+            rappels={rappels}
+            onClose={() => setClocheOuverte(false)}
+            onOuvrirOnglet={() => setTab("rappels")}
+            onCocher={async (r, fait) => {
+              await fetch("/api/dde/callbacks", {
+                method: "PATCH", headers: headers(),
+                body: JSON.stringify({ id: r.id, statut: fait ? "fait" : "a_faire" }),
+              });
+              reloadRappels();
+            }}
+          />
+        )}
       </div>
     </div>
   );

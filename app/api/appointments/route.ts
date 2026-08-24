@@ -13,9 +13,19 @@ export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
+  // Fenêtre par défaut : -60 j / +180 j, suffisante pour l'agenda du jour.
+  // ?all=1 (ou from/to) : historique complet, indispensable au CRM et au bilan —
+  // sinon les commissions des mois anciens sortent du calcul au fil des jours.
+  const params = new URL(req.url).searchParams;
   const now = new Date();
-  const timeMin = new Date(now.getTime() - 60 * 24 * 3600 * 1000); // -60 j
-  const timeMax = new Date(now.getTime() + 180 * 24 * 3600 * 1000); // +180 j
+  const jours = (n: number) => new Date(now.getTime() + n * 24 * 3600 * 1000);
+  const parse = (v: string | null, defaut: Date) => {
+    const d = v ? new Date(v) : null;
+    return d && !Number.isNaN(d.getTime()) ? d : defaut;
+  };
+  const tout = params.get("all") === "1";
+  const timeMin = parse(params.get("from"), tout ? jours(-5 * 365) : jours(-60));
+  const timeMax = parse(params.get("to"), tout ? jours(2 * 365) : jours(180));
 
   try {
     const items = await listAppointments(timeMin, timeMax);

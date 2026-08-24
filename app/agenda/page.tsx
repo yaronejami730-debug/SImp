@@ -60,11 +60,29 @@ function Agenda() {
 
   useEffect(() => { load(); }, []);
 
+  type UserScheme = { email: string; name: string; commission_base: number; commission_pct: number };
+
+  /** Barèmes par commercial : appliqués avant l'affichage, sinon les commissions
+   *  seraient calculées un instant avec le barème par défaut (total faux). */
+  function appliquerBaremes(users: UserScheme[]) {
+    const byEmail = new Map<string, { base: number; pct: number }>();
+    const byName = new Map<string, { base: number; pct: number }>();
+    for (const usr of users) {
+      const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
+      if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
+      if (usr.name) byName.set(nameKey(usr.name), scheme);
+    }
+    setSchemeByEmail(byEmail); setSchemeByName(byName);
+  }
+
   async function load() {
     // Affichage immédiat des dernières données connues, puis rafraîchissement en fond.
+    // Les barèmes sont repris du cache en même temps que les RDV : les deux vont ensemble.
     const cachedAppts = getCached<Appt[]>("appointments");
     const cachedRem = getCached<Reminder[]>("reminders");
-    if (cachedAppts) setAppts(cachedAppts);
+    const cachedUsers = getCached<UserScheme[]>("users");
+    if (cachedUsers) appliquerBaremes(cachedUsers);
+    if (cachedAppts && (cachedUsers || me?.role !== "admin")) setAppts(cachedAppts);
     if (cachedRem) setReminders(cachedRem);
     setLoading(!cachedAppts); setErr("");
     try {
@@ -84,14 +102,7 @@ function Agenda() {
         const u = await fetch("/api/users", { headers: authHeaders() }).then((r) => r.json());
         if (u?.ok) {
           setCached("users", u.users);
-          const byEmail = new Map<string, { base: number; pct: number }>();
-          const byName = new Map<string, { base: number; pct: number }>();
-          for (const usr of u.users as { email: string; name: string; commission_base: number; commission_pct: number }[]) {
-            const scheme = { base: Number(usr.commission_base), pct: Number(usr.commission_pct) };
-            if (usr.email) byEmail.set(usr.email.toLowerCase(), scheme);
-            if (usr.name) byName.set(nameKey(usr.name), scheme);
-          }
-          setSchemeByEmail(byEmail); setSchemeByName(byName);
+          appliquerBaremes(u.users as UserScheme[]);
         }
       } catch { /* repli sur le barème par défaut */ }
     }
