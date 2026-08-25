@@ -3,6 +3,7 @@
 import { createHmac, createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
 import { getPool } from "./db";
 import { hashPassword, verifyPassword } from "./auth";
+import { DDE_CRITERES, type DdeCriteres } from "./dde-criteres";
 
 const SECRET = process.env.AUTH_SECRET ?? "dev-secret-change-me";
 const TOKEN_TTL = 30 * 24 * 3600 * 1000; // 30 jours
@@ -148,16 +149,9 @@ export async function deleteDdeUser(id: number): Promise<void> {
 export const DDE_STATUTS = ["a_venir", "honore", "absent", "annule", "non_eligible"] as const;
 export type DdeStatut = (typeof DDE_STATUTS)[number];
 
-/** Critères posés au client pendant l'appel. Éligible = chaque réponse égale la réponse attendue. */
-export const DDE_CRITERES = [
-  { key: "crit_titre_sejour", question: "Avez-vous un titre de séjour valide ?", attendu: true },
-  { key: "crit_sans_diplome", question: "Avez-vous un diplôme ?", attendu: false },
-  { key: "crit_carte_vitale", question: "Avez-vous une carte Vitale ?", attendu: true },
-  { key: "crit_sans_dossier_prefecture", question: "Avez-vous un dossier en cours à la préfecture ?", attendu: false },
-  { key: "crit_moins_60_ans", question: "Avez-vous moins de 60 ans ?", attendu: true },
-] as const;
-export type DdeCritereKey = (typeof DDE_CRITERES)[number]["key"];
-export type DdeCriteres = Partial<Record<DdeCritereKey, boolean>>;
+/** Critères posés au client pendant l'appel : liste partagée avec le navigateur. */
+export { DDE_CRITERES } from "./dde-criteres";
+export type { DdeCritereKey, DdeCriteres } from "./dde-criteres";
 
 /** Facturation de l'entreprise cliente (argent entrant), dans l'ordre. */
 export const DDE_FACTURATION = ["a_facturer", "edition", "facturee", "encaissee"] as const;
@@ -167,7 +161,8 @@ export type DdeFacturation = (typeof DDE_FACTURATION)[number];
 export type DdeCallcenter = (typeof DDE_CALLCENTER)[number];
 
 export type DdeAppointment = {
-  id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string;
+  id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string; email: string;
+  prospect_id: number | null;
   telepro_email: string; telepro_name: string; saisi_par_email: string; saisi_par_name: string;
   statut: string; facturation_statut: string; callcenter_statut: string; notes: string; created_at: string;
   crit_titre_sejour: boolean | null; crit_sans_diplome: boolean | null; crit_carte_vitale: boolean | null;
@@ -176,7 +171,7 @@ export type DdeAppointment = {
   rdv_date_initiale: string | null; rdv_time_initiale: string | null; deplace_le: string | null;
 };
 
-const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, telepro_email, telepro_name, saisi_par_email, saisi_par_name, statut, facturation_statut, callcenter_statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at, to_char(rdv_date_initiale,'YYYY-MM-DD') as rdv_date_initiale, rdv_time_initiale, deplace_le, ${DDE_CRITERES.map((c) => c.key).join(", ")}`;
+const A_COLS = `id, nom, prenom, to_char(rdv_date,'YYYY-MM-DD') as rdv_date, rdv_time, telephone, email, prospect_id, telepro_email, telepro_name, saisi_par_email, saisi_par_name, statut, facturation_statut, callcenter_statut, notes, created_at, whatsapp_sent_at, invoiced_at, callcenter_paid_at, to_char(rdv_date_initiale,'YYYY-MM-DD') as rdv_date_initiale, rdv_time_initiale, deplace_le, ${DDE_CRITERES.map((c) => c.key).join(", ")}`;
 
 /** Admin -> tous les RDV ; téléprospectrice -> uniquement les siens. */
 export async function listDdeAppointments(s: DdeSession): Promise<DdeAppointment[]> {
@@ -196,8 +191,8 @@ export async function listDdeAppointments(s: DdeSession): Promise<DdeAppointment
  * l'admin peut saisir à la place de quelqu'un d'autre, on garde alors qui a rempli le formulaire.
  */
 export async function createDdeAppointment(s: DdeSession, input: {
-  nom: string; prenom: string; date: string; heure: string; telephone: string; notes?: string; teleproEmail?: string;
-  criteres?: DdeCriteres;
+  nom: string; prenom: string; date: string; heure: string; telephone: string; email?: string; notes?: string;
+  teleproEmail?: string; criteres?: DdeCriteres; prospectId?: number;
 }): Promise<DdeAppointment> {
   let telepro = { email: s.email, name: s.name };
   const cible = input.teleproEmail?.trim().toLowerCase();
@@ -211,9 +206,10 @@ export async function createDdeAppointment(s: DdeSession, input: {
   const statut = DDE_CRITERES.some((c, i) => reponses[i] !== c.attendu) ? "non_eligible" : "a_venir";
 
   const { rows } = await getPool().query(
-    `insert into dde_appointments (nom, prenom, rdv_date, rdv_time, telephone, telepro_email, telepro_name, saisi_par_email, saisi_par_name, notes, statut, ${DDE_CRITERES.map((c) => c.key).join(", ")})
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning ${A_COLS}`,
+    `insert into dde_appointments (nom, prenom, rdv_date, rdv_time, telephone, email, prospect_id, telepro_email, telepro_name, saisi_par_email, saisi_par_name, notes, statut, ${DDE_CRITERES.map((c) => c.key).join(", ")})
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) returning ${A_COLS}`,
     [input.nom.trim(), input.prenom.trim(), input.date, input.heure.trim(), input.telephone.trim(),
+     (input.email ?? "").trim().toLowerCase(), input.prospectId ?? null,
      telepro.email, telepro.name, s.email, s.name, (input.notes ?? "").trim(), statut, ...reponses],
   );
   return rows[0] as DdeAppointment;
@@ -222,7 +218,7 @@ export async function createDdeAppointment(s: DdeSession, input: {
 /** Marqueurs de suivi : un booléen -> horodatage (coché) ou null (décoché). */
 export type DdeAppointmentPatch = {
   statut?: string; notes?: string;
-  nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; // correction d'un RDV saisi
+  nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; email?: string; // correction d'un RDV saisi
   dateInitiale?: string | null; heureInitiale?: string | null; // déplacement saisi à la main (RDV antérieurs au suivi)
   whatsappSent?: boolean;          // message WhatsApp envoyé
   facturationStatut?: string;      // avancement de la facture envoyée à l'entreprise cliente
@@ -269,6 +265,7 @@ export async function updateDdeAppointment(s: DdeSession, id: number, patch: Dde
     statut: patch.statut, notes: patch.notes,
     nom: patch.nom?.trim(), prenom: patch.prenom?.trim(),
     rdv_date: patch.date, rdv_time: patch.heure?.trim(), telephone: patch.telephone?.trim(),
+    email: patch.email?.trim().toLowerCase(),
     whatsapp_sent_at: stamp(patch.whatsappSent),
     facturation_statut: patch.facturationStatut,
     callcenter_statut: patch.callcenterStatut,

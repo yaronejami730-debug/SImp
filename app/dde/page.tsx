@@ -6,13 +6,15 @@ import Cadence from "./Cadence";
 import Script from "./Script";
 import Outils from "./Outils";
 import { ClocheRappels, ModaleRappels, OngletRappels, useRappels, rappelsUrgents } from "./Rappels";
+import { OngletProspects, useProspects } from "./Prospects";
+import { DDE_PROSPECT_A_APPELER } from "@/lib/dde-prospects";
 import { estCreneauValide, HORAIRES_TEXTE } from "@/lib/dde-horaires";
 import { formatMobileEnCours, mobileFR } from "@/lib/telephone-fr";
 import { INFOS_CLIENT, INK, BG, LINE, MUTED, SOFT, WHATSAPP_GROUP, input as inputStyle, label as labelStyle, pill } from "./theme";
 
 type Me = { email: string; name: string; role: "admin" | "telepro" };
 type Appointment = {
-  id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string;
+  id: number; nom: string; prenom: string; rdv_date: string; rdv_time: string; telephone: string; email: string;
   telepro_email: string; telepro_name: string; saisi_par_email: string; saisi_par_name: string;
   statut: string; facturation_statut: string; callcenter_statut: string; notes: string; created_at: string;
   crit_titre_sejour: boolean | null; crit_sans_diplome: boolean | null; crit_carte_vitale: boolean | null;
@@ -128,6 +130,7 @@ function waMessage(a: Appointment): string {
     `Client : ${a.nom.toUpperCase()} ${a.prenom}`,
     `Date : ${frDate(a.rdv_date)} à ${a.rdv_time}`,
     `Téléphone : ${a.telephone}`,
+    ...(a.email ? [`E-mail : ${a.email}`] : []),
     `Telepro : ${a.telepro_name || a.telepro_email}`,
   ];
   if (a.notes.trim()) lignes.push(`Commentaire : ${a.notes.trim()}`);
@@ -236,8 +239,9 @@ function Login({ onLogin }: { onLogin: (me: Me) => void }) {
 // ---------- Espace connecté ----------
 
 function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
-  const [tab, setTab] = useState<"form" | "table" | "rappels" | "comptes">("form");
+  const [tab, setTab] = useState<"form" | "prospects" | "table" | "rappels" | "comptes">("form");
   const { rappels, reload: reloadRappels } = useRappels(true);
+  const { prospects, reload: reloadProspects } = useProspects(true);
   const [clocheOuverte, setClocheOuverte] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [version, setVersion] = useState(0); // incrémenté à chaque saisie : la cadence se remet à jour
@@ -258,8 +262,10 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   useEffect(() => { load(); }, [load]);
 
   const aTraiter = rappels.filter((r) => r.statut === "a_faire").length;
+  const aAppeler = prospects.filter((p) => DDE_PROSPECT_A_APPELER.includes(p.statut)).length;
   const tabs: { key: typeof tab; label: string }[] = [
     { key: "form", label: "Nouveau rendez-vous" },
+    { key: "prospects", label: `Prospects (${aAppeler})` },
     { key: "table", label: `Rendez-vous (${appointments.length})` },
     { key: "rappels", label: `Rappels (${aTraiter})` },
     ...(me.role === "admin" ? [{ key: "comptes" as const, label: "Comptes" }] : []),
@@ -268,7 +274,7 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   return (
     <div className="dde-wrap" style={{ minHeight: "100vh", background: BG, fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif", color: INK }}>
       <style dangerouslySetInnerHTML={{ __html: CSS_RESPONSIVE }} />
-      <div style={{ maxWidth: tab === "table" ? 1500 : 1100, margin: "0 auto" }}>
+      <div style={{ maxWidth: tab === "table" || tab === "prospects" ? 1500 : 1100, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
           <div />
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -294,7 +300,7 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}><Outils /></div>
 
-        {(tab === "form" || tab === "table") && <Cadence me={me} version={version} />}
+        {(tab === "form" || tab === "prospects" || tab === "table") && <Cadence me={me} version={version} />}
         {rappelsUrgents(rappels).length > 0 && tab !== "rappels" && (
           <div style={{ marginBottom: 24, padding: "12px 16px", borderRadius: 12, background: "#fff", border: `1px solid ${LINE}`, fontSize: 15, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <strong>{rappelsUrgents(rappels).length} rappel{rappelsUrgents(rappels).length > 1 ? "s" : ""} à passer.</strong>
@@ -305,6 +311,12 @@ function Espace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         {err && <div style={{ marginBottom: 24, fontSize: 15, fontWeight: 700, color: "#b3261e" }}>{err}</div>}
 
         {tab === "form" && <Formulaire me={me} onSaved={() => { load(); setVersion((v) => v + 1); }} />}
+        {tab === "prospects" && (
+          <OngletProspects
+            me={me} prospects={prospects} reload={reloadProspects}
+            onRdvCree={() => { load(); setVersion((v) => v + 1); }}
+          />
+        )}
         {tab === "table" && <Tableau me={me} rows={appointments} reload={load} />}
         {tab === "rappels" && <OngletRappels me={me} rappels={rappels} reload={reloadRappels} />}
         {tab === "comptes" && me.role === "admin" && <Comptes />}
@@ -336,6 +348,7 @@ function Formulaire({ me, onSaved }: { me: Me; onSaved: () => void }) {
   const [date, setDate] = useState("");
   const [heure, setHeure] = useState("");
   const [telephone, setTelephone] = useState("");
+  const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [err, setErr] = useState("");
@@ -368,11 +381,11 @@ function Formulaire({ me, onSaved }: { me: Me; onSaved: () => void }) {
     try {
       const r = await fetch("/api/dde/appointments", {
         method: "POST", headers: headers(),
-        body: JSON.stringify({ nom, prenom, date, heure, telephone, notes, teleproEmail, criteres }),
+        body: JSON.stringify({ nom, prenom, date, heure, telephone, email, notes, teleproEmail, criteres }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Erreur.");
-      setNom(""); setPrenom(""); setDate(""); setHeure(""); setTelephone(""); setNotes(""); setTeleproEmail(me.email); setCriteres({});
+      setNom(""); setPrenom(""); setDate(""); setHeure(""); setTelephone(""); setEmail(""); setNotes(""); setTeleproEmail(me.email); setCriteres({});
       setConfirm(true);
       setTimeout(() => setConfirm(false), 2500);
       onSaved();
@@ -435,6 +448,9 @@ function Formulaire({ me, onSaved }: { me: Me; onSaved: () => void }) {
           Mobile français attendu : 10 chiffres commençant par 06 ou 07.
         </div>
       )}
+
+      <label htmlFor="mail" style={labelStyle}>Adresse e-mail <span style={{ fontWeight: 400, color: MUTED, fontSize: 15 }}>(facultatif)</span></label>
+      <input id="mail" type="email" inputMode="email" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} style={{ ...inputStyle, marginBottom: 32 }} />
 
       {me.role === "admin" && (
         <>
@@ -559,6 +575,7 @@ function ModaleEdition({ appointment, motif, onClose, onSaved }: { appointment: 
   const [date, setDate] = useState(appointment.rdv_date);
   const [heure, setHeure] = useState(appointment.rdv_time);
   const [telephone, setTelephone] = useState(appointment.telephone);
+  const [email, setEmail] = useState(appointment.email ?? "");
   const [notes, setNotes] = useState(appointment.notes);
   const [dateInitiale, setDateInitiale] = useState(appointment.rdv_date_initiale ?? "");
   const [heureInitiale, setHeureInitiale] = useState(appointment.rdv_time_initiale ?? "");
@@ -583,7 +600,7 @@ function ModaleEdition({ appointment, motif, onClose, onSaved }: { appointment: 
       const r = await fetch("/api/dde/appointments", {
         method: "PATCH", headers: headers(),
         body: JSON.stringify({
-          id: appointment.id, nom, prenom, date, heure, telephone, notes,
+          id: appointment.id, nom, prenom, date, heure, telephone, email, notes,
           // Date d'origine : renseignée à la main pour les rendez-vous déplacés avant ce suivi.
           ...(dateInitiale !== (appointment.rdv_date_initiale ?? "") || heureInitiale !== (appointment.rdv_time_initiale ?? "")
             ? { dateInitiale: dateInitiale || null, heureInitiale: heureInitiale || null }
@@ -656,6 +673,9 @@ function ModaleEdition({ appointment, motif, onClose, onSaved }: { appointment: 
         {telephone && !telephoneValide && (
           <div style={{ fontSize: 14, color: MUTED, marginBottom: 24 }}>Mobile français attendu : 10 chiffres commençant par 06 ou 07.</div>
         )}
+
+        <label htmlFor="e-mail" style={labelStyle}>Adresse e-mail</label>
+        <input id="e-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ ...inputStyle, marginBottom: 24 }} />
 
         <label htmlFor="e-notes" style={labelStyle}>Commentaire</label>
         <textarea id="e-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ ...inputStyle, height: "auto", padding: "16px 18px", marginBottom: 28, fontFamily: "inherit", resize: "vertical" }} />
@@ -806,7 +826,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
   const filtrees = jourChoisi ? parTelepro.filter((a) => a.rdv_date === isoJour(jourChoisi.decalage)) : parTelepro;
   const visibles = termes.length === 0 ? filtrees : filtrees.filter((a) => {
     const foin = normalise([
-      a.nom, a.prenom, a.telephone, a.telephone.replace(/\s/g, ""), a.rdv_date, frDate(a.rdv_date), a.rdv_time,
+      a.nom, a.prenom, a.telephone, a.telephone.replace(/\s/g, ""), a.email, a.rdv_date, frDate(a.rdv_date), a.rdv_time,
       a.telepro_name, a.telepro_email, a.saisi_par_name,
       libelleStatut(a.statut), libelle(FACTURATION, a.facturation_statut), libelle(CALLCENTER, a.callcenter_statut),
       critereRates(a).length === 0 ? "eligible" : `non eligible ${critereRates(a).join(" ")}`,
@@ -913,6 +933,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
               <th style={th}>Heure</th>
               <th style={th}>Client</th>
               <th style={th}>Téléphone</th>
+              <th style={th}>E-mail</th>
               <th style={th}>Telepro</th>
               <th style={th}>
                 Éligibilité
@@ -945,6 +966,7 @@ function Tableau({ me, rows, reload }: { me: Me; rows: Appointment[]; reload: ()
                 <td data-label="Heure" style={{ ...td, whiteSpace: "nowrap" }}>{a.rdv_time}</td>
                 <td data-label="Client" style={td}>{a.nom.toUpperCase()} {a.prenom}</td>
                 <td data-label="Téléphone" style={td}><a href={`tel:${a.telephone.replace(/\s/g, "")}`} style={{ color: INK, whiteSpace: "nowrap" }}>{a.telephone}</a></td>
+                <td data-label="E-mail" style={{ ...td, wordBreak: "break-all" }}>{a.email || "—"}</td>
                 <td data-label="Telepro" style={td}>
                   <div style={{ textAlign: "right" }}>
                     {a.telepro_name || a.telepro_email}

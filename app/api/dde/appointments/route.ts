@@ -6,6 +6,7 @@ import {
 } from "@/lib/dde";
 import { estJourOuvre, estCreneauValide, HORAIRES_TEXTE } from "@/lib/dde-horaires";
 import { formatMobileFR } from "@/lib/telephone-fr";
+import { lieProspectAuRdv } from "@/lib/dde-prospects-db";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,8 @@ export async function POST(req: Request) {
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
     const b = (await req.json()) as {
-      nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; notes?: string;
-      teleproEmail?: string; criteres?: Record<string, unknown>;
+      nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; email?: string; notes?: string;
+      teleproEmail?: string; criteres?: Record<string, unknown>; prospectId?: number;
     };
     if (!b.nom?.trim() || !b.prenom?.trim() || !b.date || !b.heure?.trim() || !b.telephone?.trim()) {
       return NextResponse.json({ error: "Nom, prénom, date, heure et téléphone sont obligatoires." }, { status: 400 });
@@ -52,9 +53,11 @@ export async function POST(req: Request) {
       criteres[c.key] = v;
     }
     const appointment = await createDdeAppointment(s, {
-      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone, notes: b.notes,
-      teleproEmail: b.teleproEmail, criteres,
+      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone, email: b.email, notes: b.notes,
+      teleproEmail: b.teleproEmail, criteres, prospectId: b.prospectId ? Number(b.prospectId) : undefined,
     });
+    // Rendez-vous pris depuis une fiche prospect : le prospect sort de la file d'appel.
+    if (b.prospectId) await lieProspectAuRdv(Number(b.prospectId), appointment.id);
     return NextResponse.json({ ok: true, appointment });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
@@ -69,7 +72,7 @@ export async function PATCH(req: Request) {
     const b = (await req.json()) as {
       id?: number; statut?: string; notes?: string; whatsappSent?: boolean;
       facturationStatut?: string; callcenterStatut?: string;
-      nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string;
+      nom?: string; prenom?: string; date?: string; heure?: string; telephone?: string; email?: string;
       dateInitiale?: string | null; heureInitiale?: string | null;
     };
     if (!b.id) return NextResponse.json({ error: "id requis." }, { status: 400 });
@@ -85,7 +88,7 @@ export async function PATCH(req: Request) {
     // Une téléprospectrice consulte ses RDV en lecture seule : statut, WhatsApp,
     // facturation, rémunération et correction des informations sont pilotés par l'admin seul.
     const correction = b.nom !== undefined || b.prenom !== undefined || b.date !== undefined
-      || b.heure !== undefined || b.telephone !== undefined || b.notes !== undefined
+      || b.heure !== undefined || b.telephone !== undefined || b.email !== undefined || b.notes !== undefined
       || b.dateInitiale !== undefined;
     const reserveAdmin = correction || b.statut !== undefined || b.whatsappSent !== undefined
       || b.facturationStatut !== undefined || b.callcenterStatut !== undefined;
@@ -114,7 +117,7 @@ export async function PATCH(req: Request) {
     await updateDdeAppointment(s, Number(b.id), {
       statut: b.statut, notes: b.notes, whatsappSent: b.whatsappSent,
       facturationStatut: b.facturationStatut, callcenterStatut: b.callcenterStatut,
-      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone,
+      nom: b.nom, prenom: b.prenom, date: b.date, heure: b.heure, telephone, email: b.email,
       dateInitiale: b.dateInitiale, heureInitiale: b.heureInitiale,
     });
     return NextResponse.json({ ok: true });
