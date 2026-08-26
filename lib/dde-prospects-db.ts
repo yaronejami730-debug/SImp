@@ -6,8 +6,8 @@ import type { DdeSession } from "./dde";
 import { DDE_PROSPECT_STATUT_KEYS, type DdeProspect } from "./dde-prospects";
 
 const P_COLS = `
-  id, crm_id, nom, prenom, telephone, telephone_2, email, adresse, code_postal, ville, departement,
-  statut, telepro_email, telepro_name, notes, appels, dernier_appel_at, rdv_id,
+  id::int, crm_id, nom, prenom, telephone, telephone_2, email, adresse, code_postal, ville, departement,
+  statut, telepro_email, telepro_name, notes, appels, dernier_appel_at, rdv_id::int,
   crm_statut, crm_campagne, crm_telepro, crm_commercial, crm_resultat_rdv, crm_commentaire, crm_source,
   crm_cree_le, crm_maj_le,
   to_char(dernier_rdv_date,'YYYY-MM-DD') as dernier_rdv_date, dernier_rdv_heure, dernier_rdv_presence,

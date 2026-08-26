@@ -8,6 +8,7 @@ import {
   type DdeProspect,
 } from "@/lib/dde-prospects";
 import { estCreneauValide, HORAIRES_TEXTE } from "@/lib/dde-horaires";
+import { appelerAvecRingover, numeroInternational } from "@/lib/ringover";
 import { INFOS_CLIENT, INK, BG, LINE, MUTED, SOFT, input as inputStyle, label as labelStyle, pill } from "./theme";
 
 type Me = { email: string; name: string; role: "admin" | "telepro" };
@@ -222,15 +223,19 @@ function Bloc({ titre, lignes }: { titre: string; lignes: { label: string; valeu
   );
 }
 
-function FicheProspect({ prospect, me, onPatch, onRdv, onSuivant, restants }: {
+function FicheProspect({ prospect, me, titre, onPatch, onRdv, onSuivant, onFermer, restants }: {
   prospect: DdeProspect; me: Me;
+  /** « Nouveau prospect » dans la file d'appel, « Fiche prospect » dans la fenêtre. */
+  titre: string;
   onPatch: (body: Record<string, unknown>) => void;
   onRdv: () => void;
-  onSuivant: () => void;
-  restants: number;
+  onSuivant?: () => void;
+  onFermer?: () => void;
+  restants?: number;
 }) {
   const [notes, setNotes] = useState(prospect.notes);
   const [noteEnregistree, setNoteEnregistree] = useState(false);
+  const [numeroCopie, setNumeroCopie] = useState(false);
 
   // Changer de prospect remet le commentaire affiché sur celui de la nouvelle fiche.
   useEffect(() => { setNotes(prospect.notes); setNoteEnregistree(false); }, [prospect.id, prospect.notes]);
@@ -267,14 +272,17 @@ function FicheProspect({ prospect, me, onPatch, onRdv, onSuivant, restants }: {
     ...(me.role === "admin" ? [{ label: "Attribué à", valeur: prospect.telepro_name || prospect.telepro_email }] : []),
   ];
 
-  const tel = prospect.telephone.replace(/\s/g, "");
-
   return (
     <div style={{ display: "grid", gap: 24 }}>
       <div>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.01em", color: INK, margin: 0 }}>Nouveau prospect</h1>
-          <span style={{ fontSize: 14, color: MUTED }}>{restants} prospect{restants > 1 ? "s" : ""} à appeler</span>
+          <h1 style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.01em", color: INK, margin: 0 }}>{titre}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {restants !== undefined && <span style={{ fontSize: 14, color: MUTED }}>{restants} prospect{restants > 1 ? "s" : ""} à appeler</span>}
+            {onFermer && (
+              <button type="button" onClick={onFermer} aria-label="Fermer" style={{ height: 34, width: 34, borderRadius: 17, border: `1px solid ${LINE}`, background: "#fff", fontSize: 15, cursor: "pointer", color: MUTED }}>✕</button>
+            )}
+          </div>
         </div>
         <div style={{ marginTop: 14, fontSize: 24, fontWeight: 700 }}>{prospect.nom.toUpperCase()} {prospect.prenom}</div>
         <div style={{ marginTop: 4, fontSize: 16, color: MUTED }}>
@@ -284,25 +292,38 @@ function FicheProspect({ prospect, me, onPatch, onRdv, onSuivant, restants }: {
 
       {/* Appeler — Statut — Prendre rendez-vous : les trois gestes de l'appel. */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <a
-          href={`tel:${tel}`}
-          onClick={() => onPatch({ appel: true })}
-          style={{ height: 56, padding: "0 32px", borderRadius: 28, background: INK, color: "#fff", fontSize: 17, fontWeight: 700, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 10 }}
+        <button
+          type="button"
+          title={`Appeler ${numeroInternational(prospect.telephone)} depuis Ringover`}
+          onClick={async () => {
+            await appelerAvecRingover(prospect.telephone);
+            setNumeroCopie(true);
+            onPatch({ appel: true });
+          }}
+          style={{ height: 56, padding: "0 32px", borderRadius: 28, border: "none", background: INK, color: "#fff", fontSize: 17, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 10 }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z" />
           </svg>
           Appeler
-        </a>
+        </button>
         <button
           type="button" onClick={onRdv}
           style={{ height: 56, padding: "0 28px", borderRadius: 28, border: `1px solid ${INK}`, background: "#fff", color: INK, fontSize: 17, fontWeight: 700, cursor: "pointer" }}
         >Prendre rendez-vous</button>
-        <button
-          type="button" onClick={onSuivant}
-          style={{ height: 56, padding: "0 24px", borderRadius: 28, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 16, fontWeight: 700, cursor: "pointer" }}
-        >Prospect suivant</button>
+        {onSuivant && (
+          <button
+            type="button" onClick={onSuivant}
+            style={{ height: 56, padding: "0 24px", borderRadius: 28, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, fontSize: 16, fontWeight: 700, cursor: "pointer" }}
+          >Prospect suivant</button>
+        )}
       </div>
+
+      {numeroCopie && (
+        <div style={{ fontSize: 14, color: MUTED }}>
+          Ringover ouvert sur {numeroInternational(prospect.telephone)} — le numéro est aussi dans le presse-papiers.
+        </div>
+      )}
 
       <div>
         <div style={labelStyle}>Statut</div>
@@ -371,6 +392,37 @@ function FicheProspect({ prospect, me, onPatch, onRdv, onSuivant, restants }: {
   );
 }
 
+/** Fiche complète d'un prospect dans une fenêtre : ouverte depuis le fichier d'appel. */
+function ModaleProspect({ prospect, me, onPatch, onRdv, onClose }: {
+  prospect: DdeProspect; me: Me;
+  onPatch: (body: Record<string, unknown>) => void;
+  onRdv: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(26,26,26,0.35)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflowY: "auto" }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 900, background: BG, borderRadius: 18, padding: 28, boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}
+      >
+        <FicheProspect
+          prospect={prospect} me={me} titre="Fiche prospect"
+          onPatch={onPatch} onRdv={onRdv} onFermer={onClose}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ---------- Onglet ----------
 
 export function OngletProspects({ me, prospects, reload, onRdvCree }: {
@@ -380,12 +432,15 @@ export function OngletProspects({ me, prospects, reload, onRdvCree }: {
   const [q, setQ] = useState("");
   const [filtreStatut, setFiltreStatut] = useState("");
   const [filtreTelepro, setFiltreTelepro] = useState("");
-  const [rdvOuvert, setRdvOuvert] = useState(false);
+  const [fiche, setFiche] = useState<number | null>(null);   // prospect ouvert en fenêtre
+  const [rdvPour, setRdvPour] = useState<number | null>(null); // prospect dont on prend le rendez-vous
   const [err, setErr] = useState("");
 
   // File d'appel : ce qui reste à traiter, dans l'ordre donné par le serveur.
   const file = useMemo(() => prospects.filter((p) => DDE_PROSPECT_A_APPELER.includes(p.statut)), [prospects]);
   const courant = prospects.find((p) => p.id === selection) ?? file[0] ?? prospects[0] ?? null;
+  const ficheOuverte = fiche === null ? null : prospects.find((p) => p.id === fiche) ?? null;
+  const rdvProspect = rdvPour === null ? null : prospects.find((p) => p.id === rdvPour) ?? null;
 
   const telepros = useMemo(
     () => [...new Map(prospects.map((p) => [p.telepro_email.toLowerCase(), p.telepro_name || p.telepro_email])).entries()]
@@ -407,6 +462,7 @@ export function OngletProspects({ me, prospects, reload, onRdvCree }: {
   async function remove(id: number) {
     await fetch(`/api/dde/prospects?id=${id}`, { method: "DELETE", headers: headers() });
     if (selection === id) setSelection(null);
+    if (fiche === id) setFiche(null);
     reload();
   }
 
@@ -445,9 +501,9 @@ export function OngletProspects({ me, prospects, reload, onRdvCree }: {
 
       {courant && (
         <FicheProspect
-          prospect={courant} me={me} restants={file.length}
+          prospect={courant} me={me} titre="Nouveau prospect" restants={file.length}
           onPatch={(body) => patch(courant.id, body)}
-          onRdv={() => setRdvOuvert(true)}
+          onRdv={() => setRdvPour(courant.id)}
           onSuivant={suivant}
         />
       )}
@@ -534,7 +590,7 @@ export function OngletProspects({ me, prospects, reload, onRdvCree }: {
                   <td data-label="" className="dde-td-actions" style={td}>
                     <div className="dde-actions">
                       <button
-                        onClick={() => { setSelection(p.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                        onClick={() => setFiche(p.id)}
                         style={{ height: 32, padding: "0 14px", borderRadius: 16, border: `1px solid ${LINE}`, background: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
                       >Ouvrir</button>
                       {me.role === "admin" && (
@@ -555,11 +611,20 @@ export function OngletProspects({ me, prospects, reload, onRdvCree }: {
         </div>
       </div>
 
-      {rdvOuvert && courant && (
+      {ficheOuverte && (
+        <ModaleProspect
+          prospect={ficheOuverte} me={me}
+          onPatch={(body) => patch(ficheOuverte.id, body)}
+          onRdv={() => setRdvPour(ficheOuverte.id)}
+          onClose={() => setFiche(null)}
+        />
+      )}
+
+      {rdvProspect && (
         <ModaleRdv
-          prospect={courant} me={me}
-          onClose={() => setRdvOuvert(false)}
-          onSaved={() => { reload(); onRdvCree(); setSelection(null); }}
+          prospect={rdvProspect} me={me}
+          onClose={() => setRdvPour(null)}
+          onSaved={() => { reload(); onRdvCree(); setFiche(null); setSelection(null); }}
         />
       )}
     </div>
