@@ -45,6 +45,7 @@ export const GROUPES: Groupe[] = [
     entrees: [
       { key: "bilan", label: "Bilan", href: "/bilan", icone: "graphique", visible: restreint((u) => estAdmin(u) || !!u?.isTeleprospector) },
       { key: "statistiques", label: "Statistiques", href: "/statistiques", icone: "barres", visible: restreint(() => true) },
+      { key: "stock", label: "Stock", href: "/stock", icone: "voiture", visible: () => true },
       { key: "paiements", label: "Mes paiements", href: "/paiements", icone: "euro", visible: (u) => estAdmin(u) || !!u?.isCommercial || !!u?.isTeleprospector },
     ],
   },
