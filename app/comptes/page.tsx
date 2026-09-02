@@ -535,7 +535,7 @@ function Comptes() {
               <Field label="Mot de passe"><input style={inp} value={rPass} onChange={(e) => setRPass(e.target.value)} /></Field>
               <Field label="E-mail (facultatif)"><input style={inp} type="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} /></Field>
               <Field label="Téléphone (facultatif)"><input style={inp} value={rPhone} onChange={(e) => setRPhone(e.target.value)} /></Field>
-              <button onClick={addCallCenter} disabled={busy || !ccName.trim() || !rName.trim() || !rEmail.trim() || !rPass.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
+              <button onClick={addCallCenter} disabled={busy || !ccName.trim() || !rName.trim() || !rUsername.trim() || !rPass.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
                 {busy ? "…" : "Créer le call center"}
               </button>
             </div>
@@ -556,7 +556,7 @@ function Comptes() {
                   ))}
                 </select>
               </Field>
-              <button onClick={addUser} disabled={busy || !name.trim() || !email.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
+              <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
                 {busy ? "…" : type === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
               </button>
             </div>
