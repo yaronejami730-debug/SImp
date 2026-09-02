@@ -32,7 +32,7 @@ export const GROUPES: Groupe[] = [
   {
     titre: "Activité",
     entrees: [
-      { key: "rdv", label: "Prise de RDV", href: "/", icone: "plus", visible: restreint(peutCreer) },
+      { key: "rdv", label: "Prise de RDV", href: "/simplicicar", icone: "plus", visible: restreint(peutCreer) },
       { key: "agenda", label: "Agenda", href: "/agenda", icone: "calendrier", visible: () => true },
       { key: "recherche-rdv", label: "Recherche", href: "/recherche-rdv", icone: "loupe", visible: () => true },
       { key: "crm", label: "Clients", href: "/crm", icone: "personnes", visible: restreint(() => true) },
