@@ -39,15 +39,22 @@ export async function addLead(phone: string, listingUrl: string | undefined, not
   return rows[0];
 }
 
-/** Recherche les leads d'une entité par téléphone (partiel). Sinon les plus récents. */
-export async function searchLeads(callCenterId: number, phoneQuery?: string): Promise<Lead[]> {
-  const digits = (phoneQuery ?? "").replace(/\D/g, "");
-  if (digits.length >= 2) {
+/** Recherche les leads d'une entité par téléphone (partiel), nom, e-mail ou référence. Sinon les plus récents. */
+export async function searchLeads(callCenterId: number, query?: string): Promise<Lead[]> {
+  const q = (query ?? "").trim();
+  const digits = q.replace(/\D/g, "");
+  if (q.length >= 2) {
     const { rows } = await getPool().query<Lead>(
       `select * from leads
-       where call_center_id = $2 and regexp_replace(phone, '\\D', '', 'g') like '%' || $1 || '%'
+       where call_center_id = $2 and (
+         ($3 <> '' and regexp_replace(phone, '\\D', '', 'g') like '%' || $3 || '%')
+         or first_name ilike '%' || $1 || '%'
+         or last_name ilike '%' || $1 || '%'
+         or email ilike '%' || $1 || '%'
+         or lead_ref ilike '%' || $1 || '%'
+       )
        order by created_at desc limit 100`,
-      [digits, callCenterId],
+      [q, callCenterId, digits],
     );
     return rows;
   }
@@ -70,4 +77,16 @@ export async function getLeadByRef(ref: string): Promise<Lead | null> {
 /** Supprime un lead. */
 export async function deleteLead(id: number): Promise<void> {
   await getPool().query(`delete from leads where id = $1`, [id]);
+}
+
+export const LEAD_STATUSES = ["nouveau", "absent", "ne_repond_pas", "faux_numero", "nrp1", "nrp2", "nrp3", "rdv_pris"] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+/** Change le statut d'un lead (NRP1/2/3, RDV pris...), scopé à l'entité appelante. */
+export async function updateLeadStatus(id: number, status: LeadStatus, callCenterId: number): Promise<Lead | null> {
+  const { rows } = await getPool().query<Lead>(
+    `update leads set status = $1 where id = $2 and call_center_id = $3 returning *`,
+    [status, id, callCenterId],
+  );
+  return rows[0] ?? null;
 }

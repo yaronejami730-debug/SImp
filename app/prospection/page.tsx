@@ -12,9 +12,22 @@ const ACCENT = "#24B9D7";
 type Lead = {
   id: number; phone: string; listing_url: string; note: string | null; lead_ref: string; created_at: string;
   first_name: string | null; last_name: string | null; email: string | null; campaign: string | null;
-  raw_data: Record<string, string> | null;
+  raw_data: Record<string, string> | null; status: string;
 };
 type ParsedLead = { phone: string; url: string; note: string; firstName?: string; lastName?: string; email?: string; campaign?: string; raw?: Record<string, string> };
+
+// ── Statut d'appel, choisi via menu déroulant sur chaque lead. ──
+const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  nouveau: { label: "Nouveau", color: "#6b7280", bg: "#f3f4f6" },
+  absent: { label: "Absent", color: "#b45309", bg: "#fef3c7" },
+  ne_repond_pas: { label: "Ne répond pas", color: "#b45309", bg: "#fef3c7" },
+  faux_numero: { label: "Faux numéro", color: "#dc2626", bg: "#fee2e2" },
+  nrp1: { label: "NRP 1", color: "#b45309", bg: "#fef3c7" },
+  nrp2: { label: "NRP 2", color: "#b45309", bg: "#fef3c7" },
+  nrp3: { label: "NRP 3", color: "#dc2626", bg: "#fee2e2" },
+  rdv_pris: { label: "RDV pris", color: "#16a34a", bg: "#dcfce7" },
+};
+const LEAD_STATUSES_DISPLAY = ["nouveau", "absent", "ne_repond_pas", "faux_numero", "nrp1", "nrp2", "nrp3", "rdv_pris"];
 
 const waPhone = (raw: string) => {
   const d = raw.replace(/\D/g, "");
@@ -102,6 +115,14 @@ const HEADER_KEYS = {
   campaign: ["campagne", "campaign", "pub"],
 };
 function normHeader(h: string) { return h.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+
+// Cherche une valeur dans les données brutes du CSV par mots-clés d'en-tête (ex : le modèle du véhicule).
+const MODEL_KEYS = ["marque/modele", "marque", "modele", "vehicule", "voiture", "model"];
+function findRaw(raw: Record<string, string> | null, keys: string[]): string {
+  if (!raw) return "";
+  const hit = Object.entries(raw).find(([k]) => keys.some((key) => normHeader(k).includes(key)));
+  return hit?.[1] ?? "";
+}
 
 // Une valeur "ressemble" à un numéro de téléphone : entre 8 et 15 chiffres une fois les séparateurs enlevés.
 function looksLikePhone(v: string): boolean {
@@ -229,6 +250,12 @@ function Prospection() {
     setLeads((l) => l.filter((x) => x.id !== id));
   }
 
+  // keepalive : le fetch part avant que le navigateur suive le lien "Prendre rendez-vous".
+  function setLeadStatus(id: number, status: string) {
+    setLeads((l) => l.map((x) => (x.id === id ? { ...x, status } : x)));
+    fetch("/api/leads", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ id, status }), keepalive: true }).catch(() => {});
+  }
+
   async function importLeadsBatch(items: ParsedLead[]) {
     setBulkBusy(true);
     setBulkResult(null);
@@ -338,6 +365,21 @@ function Prospection() {
         )}
       </div>
 
+      {leads.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+          {LEAD_STATUSES_DISPLAY.map((st) => {
+            const n = leads.filter((l) => (l.status || "nouveau") === st).length;
+            if (n === 0) return null;
+            const meta = STATUS_LABELS[st];
+            return (
+              <span key={st} style={{ fontSize: 12, fontWeight: 700, color: meta.color, background: meta.bg, padding: "5px 11px", borderRadius: 999 }}>
+                {meta.label} · {n}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 18, marginBottom: 18, boxShadow: "0 1px 3px rgba(26,39,58,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 13, color: PINK, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700 }}>
@@ -408,6 +450,8 @@ function Prospection() {
       <div style={{ display: "grid", gap: 10 }}>
         {leads.map((l) => {
           const displayName = [l.first_name, l.last_name].filter(Boolean).join(" ");
+          const model = findRaw(l.raw_data, MODEL_KEYS);
+          const isCsvLead = !!l.raw_data;
           return (
           <div key={l.id} className="lp-lead-card" onClick={() => setFicheLead(l)} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, cursor: "pointer" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
@@ -415,6 +459,9 @@ function Prospection() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                   <a href={`/lead/${l.lead_ref}`} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, fontWeight: 700, color: PINK, background: "#fdf2f8", padding: "3px 9px", borderRadius: 999, textDecoration: "none" }}>{l.lead_ref}</a>
                   {l.campaign && <span style={{ fontSize: 11, fontWeight: 700, color: ACCENT, background: "#e6fbfd", padding: "3px 9px", borderRadius: 999 }}>{l.campaign}</span>}
+                  {(() => { const st = STATUS_LABELS[l.status || "nouveau"]; return st && l.status !== "nouveau" ? (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.bg, padding: "3px 9px", borderRadius: 999 }}>{st.label}</span>
+                  ) : null; })()}
                 </div>
                 {displayName ? (
                   <>
@@ -424,6 +471,7 @@ function Prospection() {
                 ) : (
                   <span style={{ fontWeight: 700, color: NAVY, fontSize: 16.5 }}>{l.phone}</span>
                 )}
+                {model && <div style={{ fontSize: 13.5, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {model}</div>}
                 {l.listing_url && (
                   <div style={{ marginTop: 4 }}>
                     <a href={l.listing_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: ACCENT, fontSize: 13.5, textDecoration: "none", fontWeight: 600 }}>{platformOf(l.listing_url)} — ouvrir l&apos;annonce →</a>
@@ -434,15 +482,52 @@ function Prospection() {
               </div>
               <button className="lp-danger" onClick={(e) => { e.stopPropagation(); del(l.id); }} style={{ flexShrink: 0, padding: "8px 11px", borderRadius: 8, background: "#fff", color: "#dc2626", border: "1.5px solid #fecaca", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Suppr.</button>
             </div>
-            {cvId !== l.id ? (
+            {isCsvLead ? (
               <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                <button
+                  className="lp-ghost"
+                  onClick={() => setFicheLead(l)}
+                  style={{ flex: "1 1 auto", padding: "11px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", cursor: "pointer", background: "#fff", color: NAVY, fontSize: 14, fontWeight: 600 }}
+                >
+                  👁️ Voir le lead
+                </button>
+                <select
+                  value={l.status || "nouveau"}
+                  onChange={(e) => setLeadStatus(l.id, e.target.value)}
+                  style={{ flex: "0 0 auto", padding: "11px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", cursor: "pointer", background: "#fff", color: NAVY, fontSize: 13.5, fontWeight: 600 }}
+                >
+                  {LEAD_STATUSES_DISPLAY.map((st) => (
+                    <option key={st} value={st}>{STATUS_LABELS[st].label}</option>
+                  ))}
+                </select>
                 <a
                   className="lp-primary"
                   href={rdvHref(l)}
+                  onClick={() => setLeadStatus(l.id, "rdv_pris")}
                   style={{ flex: "1 1 auto", textAlign: "center", padding: "11px 12px", borderRadius: 8, border: "none", cursor: "pointer", background: PINK, color: "#fff", fontSize: 15, fontWeight: 600, textDecoration: "none" }}
                 >
                   📅 Prendre rendez-vous
                 </a>
+              </div>
+            ) : cvId !== l.id ? (
+              <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                <a
+                  className="lp-primary"
+                  href={rdvHref(l)}
+                  onClick={() => setLeadStatus(l.id, "rdv_pris")}
+                  style={{ flex: "1 1 auto", textAlign: "center", padding: "11px 12px", borderRadius: 8, border: "none", cursor: "pointer", background: PINK, color: "#fff", fontSize: 15, fontWeight: 600, textDecoration: "none" }}
+                >
+                  📅 Prendre rendez-vous
+                </a>
+                <select
+                  value={l.status || "nouveau"}
+                  onChange={(e) => setLeadStatus(l.id, e.target.value)}
+                  style={{ flex: "0 0 auto", padding: "11px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", cursor: "pointer", background: "#fff", color: NAVY, fontSize: 13.5, fontWeight: 600 }}
+                >
+                  {LEAD_STATUSES_DISPLAY.map((st) => (
+                    <option key={st} value={st}>{STATUS_LABELS[st].label}</option>
+                  ))}
+                </select>
                 <button
                   className="lp-ghost"
                   onClick={() => startConvert(l)}
@@ -548,6 +633,7 @@ function Prospection() {
 
             <a
               href={rdvHref(ficheLead)}
+              onClick={() => setLeadStatus(ficheLead.id, "rdv_pris")}
               style={{ display: "block", textAlign: "center", marginTop: 20, padding: "12px 16px", borderRadius: 8, border: "none", background: PINK, color: "#fff", fontSize: 15, fontWeight: 600, textDecoration: "none" }}
             >
               📅 Prendre rendez-vous

@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { addLead, searchLeads, deleteLead } from "@/lib/leads";
+import { NextResponse, after } from "next/server";
+import { addLead, searchLeads, deleteLead, updateLeadStatus, LEAD_STATUSES, type LeadStatus } from "@/lib/leads";
 import { getAuth } from "@/lib/auth";
 import { createGoogleContact } from "@/lib/google";
 
@@ -43,15 +43,34 @@ export async function POST(req: Request) {
     }
     const lead = await addLead(phone, listingUrl, note, s.callCenterId, { firstName, lastName, email, campaign, rawData });
     const base = (process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "");
-    try {
-      await createGoogleContact({
-        firstName: lead.first_name || lead.lead_ref,
-        lastName: lead.last_name || undefined,
-        email: lead.email || undefined,
-        phone: lead.phone,
-        websites: [lead.listing_url, `${base}/lead/${lead.lead_ref}`].filter(Boolean),
-      });
-    } catch { /* non-bloquant */ }
+    after(async () => {
+      try {
+        await createGoogleContact({
+          firstName: lead.first_name || lead.lead_ref,
+          lastName: lead.last_name || undefined,
+          email: lead.email || undefined,
+          phone: lead.phone,
+          websites: [lead.listing_url, `${base}/lead/${lead.lead_ref}`].filter(Boolean),
+        });
+      } catch { /* non-bloquant */ }
+    });
+    return NextResponse.json({ ok: true, lead });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
+  }
+}
+
+/** PATCH { id, status } -> change le statut d'un lead (NRP1/2/3, rdv_pris...). */
+export async function PATCH(req: Request) {
+  const s = getAuth(req);
+  if (!s) return NextResponse.json({ error: "Code invalide." }, { status: 401 });
+  try {
+    const { id, status } = (await req.json()) as { id?: number; status?: string };
+    if (!id || !status || !LEAD_STATUSES.includes(status as LeadStatus)) {
+      return NextResponse.json({ error: "Paramètres invalides." }, { status: 400 });
+    }
+    const lead = await updateLeadStatus(id, status as LeadStatus, s.callCenterId);
+    if (!lead) return NextResponse.json({ error: "Lead introuvable." }, { status: 404 });
     return NextResponse.json({ ok: true, lead });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
