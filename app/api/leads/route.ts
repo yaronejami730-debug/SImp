@@ -28,19 +28,26 @@ export async function POST(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Code invalide." }, { status: 401 });
   try {
-    const { phone, listingUrl, note } = (await req.json()) as {
+    const { phone, listingUrl, note, firstName, lastName, email, campaign, rawData } = (await req.json()) as {
       phone?: string;
       listingUrl?: string;
       note?: string;
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      campaign?: string;
+      rawData?: Record<string, string>;
     };
-    if (!phone?.trim() || !listingUrl?.trim()) {
-      return NextResponse.json({ error: "Téléphone et lien requis." }, { status: 400 });
+    if (!phone?.trim()) {
+      return NextResponse.json({ error: "Téléphone requis." }, { status: 400 });
     }
-    const lead = await addLead(phone, listingUrl, note, s.callCenterId);
+    const lead = await addLead(phone, listingUrl, note, s.callCenterId, { firstName, lastName, email, campaign, rawData });
     const base = (process.env.APP_URL ?? "https://simplicicar.store").replace(/\/$/, "");
     try {
       await createGoogleContact({
-        firstName: lead.lead_ref,
+        firstName: lead.first_name || lead.lead_ref,
+        lastName: lead.last_name || undefined,
+        email: lead.email || undefined,
         phone: lead.phone,
         websites: [lead.listing_url, `${base}/lead/${lead.lead_ref}`].filter(Boolean),
       });

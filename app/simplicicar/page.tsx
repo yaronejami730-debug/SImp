@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import SlotPicker from "@/components/SlotPicker";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
@@ -36,8 +37,14 @@ const inputStyle: React.CSSProperties = {
     "#232323", boxSizing: "border-box", fontFamily: "inherit",
 };
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 };
+const selectStyle: React.CSSProperties = {
+  ...inputStyle, appearance: "none", cursor: "pointer", paddingRight: 38,
+  backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
+  backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", backgroundSize: 16,
+};
 
 function Home() {
+  const searchParams = useSearchParams();
   const [form, setForm] = useState(EMPTY);
   const [commerciaux, setCommerciaux] = useState<string[]>([...COMMERCIAUX]);
   const [teleprospecteurs, setTeleprospecteurs] = useState<{ name: string; email: string }[]>([]);
@@ -52,6 +59,25 @@ function Home() {
     if (u && u.role !== "admin" && !u.isTeleprospector && u.isCommercial) {
       window.location.href = "/agenda";
     }
+  }, []);
+
+  // Pré-remplissage depuis un lead (prospection) : /simplicicar?firstName=...&lastName=...&email=...&phone=...&listingUrl=...
+  useEffect(() => {
+    const firstName = searchParams.get("firstName");
+    const lastName = searchParams.get("lastName");
+    const email = searchParams.get("email");
+    const phone = searchParams.get("phone");
+    const listingUrl = searchParams.get("listingUrl");
+    if (!firstName && !lastName && !email && !phone && !listingUrl) return;
+    setForm((f) => ({
+      ...f,
+      firstName: firstName ?? f.firstName,
+      lastName: lastName ?? f.lastName,
+      email: email ?? f.email,
+      phone: phone ?? f.phone,
+      listingUrl: listingUrl ?? f.listingUrl,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function uploadVehiclePhotos(files?: FileList | null) {
@@ -255,6 +281,12 @@ function Home() {
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "26px 24px", boxShadow: "0 4px 6px rgba(26,39,58,0.06)" }}>
       <h1 style={{ margin: "0 0 6px", fontFamily: "'Cabin','Manrope',Arial,sans-serif", fontSize: 22, fontWeight: 700, color: NAVY, textTransform: "uppercase" }}>Prise de rendez-vous</h1>
       <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 22, fontSize: 14 }}>Rendez-vous au 3 rue Bélidor, 75017 Paris. Le client reçoit une confirmation par e-mail.</p>
+      <style jsx>{`
+        .sc-select:hover { border-color: #c7cbd1; }
+        .sc-select:focus { outline: none; border-color: ${PINK}; box-shadow: 0 0 0 3px rgba(230, 30, 105, 0.12); }
+        .sc-file-btn:hover { background: #f0f1f3; border-color: #c7cbd1; }
+        .sc-file-btn:has(input:focus-visible) { outline: 2px solid ${PINK}; outline-offset: 2px; }
+      `}</style>
 
       <div style={{ display: "grid", gap: 16 }}>
         <div>
@@ -314,8 +346,17 @@ function Home() {
         </div>
         <div>
           <label style={labelStyle}>Photos du véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(plusieurs possibles, max 6)</span></label>
-          <input type="file" accept="image/*" multiple onChange={(e) => uploadVehiclePhotos(e.target.files)} style={{ fontSize: 13 }} />
-          {photoBusy && <span style={{ fontSize: 12, color: "#9aa6b8" }}> envoi…</span>}
+          <label htmlFor="vehicle-photos-input" className="sc-file-btn" style={{
+            display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 8,
+            border: "1.5px solid #e5e7eb", background: "#f8f9fa", color: "#232323", fontSize: 14, fontWeight: 600,
+            cursor: photoBusy ? "wait" : "pointer", userSelect: "none",
+          }}>
+            📷 Choisir des photos
+            <input id="vehicle-photos-input" type="file" accept="image/*" multiple disabled={photoBusy}
+              onChange={(e) => uploadVehiclePhotos(e.target.files)}
+              style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }} />
+          </label>
+          {photoBusy && <span style={{ fontSize: 12, color: "#9aa6b8", marginLeft: 8 }}> envoi…</span>}
           {form.photos.length > 0 && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
               {form.photos.map((u) => (
@@ -331,7 +372,7 @@ function Home() {
         {!rule?.agenceOnly && (
           <div>
             <label style={labelStyle}>Type de RDV</label>
-            <select style={inputStyle} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value, date: "", time: "" }))}>
+            <select className="sc-select" style={selectStyle} value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value, date: "", time: "" }))}>
               <option value="agence">🏢 En agence</option>
               <option value="deplacement">🚗 En déplacement</option>
             </select>
@@ -345,14 +386,14 @@ function Home() {
         )}
         <div>
           <label style={labelStyle}>Commercial assigné</label>
-          <select style={inputStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
+          <select className="sc-select" style={selectStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
             {commerciaux.length === 0 && <option value="">— Crée un commercial dans Comptes —</option>}
             {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
           <label style={labelStyle}>Téléprospecteur <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(qui génère le RDV)</span></label>
-          <select style={inputStyle} value={form.teleprospectorEmail} onChange={(e) => { const t = teleprospecteurs.find((x) => x.email === e.target.value); setForm((f) => ({ ...f, teleprospectorEmail: e.target.value, teleprospector: t?.name ?? f.teleprospector })); }}>
+          <select className="sc-select" style={selectStyle} value={form.teleprospectorEmail} onChange={(e) => { const t = teleprospecteurs.find((x) => x.email === e.target.value); setForm((f) => ({ ...f, teleprospectorEmail: e.target.value, teleprospector: t?.name ?? f.teleprospector })); }}>
             {teleprospecteurs.length === 0 && <option value={form.teleprospectorEmail}>{form.teleprospector || "Moi"}</option>}
             {teleprospecteurs.map((t) => <option key={t.email} value={t.email}>{t.name}</option>)}
           </select>
@@ -518,7 +559,9 @@ function Home() {
 export default function Page() {
   return (
     <Shell active="rdv">
-      <Home />
+      <Suspense fallback={null}>
+        <Home />
+      </Suspense>
     </Shell>
   );
 }

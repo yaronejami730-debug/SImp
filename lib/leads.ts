@@ -8,6 +8,11 @@ export type Lead = {
   status: string;
   lead_ref: string;
   created_at: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  campaign: string | null;
+  raw_data: Record<string, string> | null;
 };
 
 /** Génère le prochain identifiant SP-YYYY-NNN. */
@@ -17,12 +22,19 @@ async function nextRef(): Promise<string> {
   return `SP-${year}-${String(rows[0].n).padStart(3, "0")}`;
 }
 
-/** Ajoute un lead de prospection (lien + téléphone, sans RDV). */
-export async function addLead(phone: string, listingUrl: string, note: string | undefined, callCenterId: number): Promise<Lead> {
+export type NewLeadExtra = { firstName?: string; lastName?: string; email?: string; campaign?: string; rawData?: Record<string, string> };
+
+/** Ajoute un lead de prospection (téléphone requis ; lien d'annonce optionnel — colonne NOT NULL en base, on stocke "" si absent). */
+export async function addLead(phone: string, listingUrl: string | undefined, note: string | undefined, callCenterId: number, extra?: NewLeadExtra): Promise<Lead> {
   const ref = await nextRef();
   const { rows } = await getPool().query<Lead>(
-    `insert into leads (phone, listing_url, note, lead_ref, call_center_id) values ($1, $2, $3, $4, $5) returning *`,
-    [phone.trim(), listingUrl.trim(), note?.trim() || null, ref, callCenterId],
+    `insert into leads (phone, listing_url, note, lead_ref, call_center_id, first_name, last_name, email, campaign, raw_data)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning *`,
+    [
+      phone.trim(), listingUrl?.trim() || "", note?.trim() || null, ref, callCenterId,
+      extra?.firstName?.trim() || null, extra?.lastName?.trim() || null, extra?.email?.trim() || null,
+      extra?.campaign?.trim() || null, extra?.rawData ? JSON.stringify(extra.rawData) : null,
+    ],
   );
   return rows[0];
 }
