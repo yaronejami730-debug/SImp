@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { agence?: boolean; name?: string; agenceOnly?: boolean; responsable?: { name?: string; email?: string; username?: string; password?: string; phone?: string } };
+    const b = (await req.json()) as { agence?: boolean; name?: string; agenceOnly?: boolean; parentId?: number; responsable?: { name?: string; email?: string; username?: string; password?: string; phone?: string } };
     // Création d'une agence (call center racine).
     if (b.agence) {
       if (!b.name?.trim()) return NextResponse.json({ error: "Nom de l'agence requis." }, { status: 400 });
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Nom du call center + nom/pseudo/mot de passe du responsable requis." }, { status: 400 });
     }
     const cc = await createCallCenter({
-      name: b.name, agenceOnly: !!b.agenceOnly,
+      name: b.name, agenceOnly: !!b.agenceOnly, parentId: b.parentId,
       responsable: { name: b.responsable.name, email: b.responsable.email, username: b.responsable.username, password: b.responsable.password, phone: b.responsable.phone },
     });
     return NextResponse.json({ ok: true, callCenter: cc });

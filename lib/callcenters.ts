@@ -59,17 +59,17 @@ export async function getCallCenter(id: number): Promise<CallCenter | undefined>
   return rows[0] ? { ...rows[0], id: Number(rows[0].id), parent_id: rows[0].parent_id == null ? null : Number(rows[0].parent_id), agence_only: !!rows[0].agence_only } : undefined;
 }
 
-/** Crée un call center + son responsable (role='responsable', rattaché au nouveau CC, parent = 1 racine). */
+/** Crée un call center + son responsable (role='responsable'), rattaché à l'agence donnée (racine Simplicicar par défaut). */
 export async function createCallCenter(input: {
-  name: string; agenceOnly?: boolean;
+  name: string; agenceOnly?: boolean; parentId?: number;
   responsable: { name: string; email?: string; username?: string; password: string; phone?: string };
 }): Promise<CallCenter> {
   const pool = getPool();
   const cc = await pool.query<CallCenter>(
     `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email)
-     values ($1, '', 1, $2, $3)
+     values ($1, '', $4, $2, $3)
      returning id, name, agence_only, responsable_email, parent_id`,
-    [input.name.trim(), !!input.agenceOnly, (input.responsable.email ?? "").trim().toLowerCase() || `${(input.responsable.username ?? "").trim().toLowerCase()}@no-mail.local`],
+    [input.name.trim(), !!input.agenceOnly, (input.responsable.email ?? "").trim().toLowerCase() || `${(input.responsable.username ?? "").trim().toLowerCase()}@no-mail.local`, input.parentId ?? 1],
   );
   const ccId = Number(cc.rows[0].id);
   // Le responsable peut créer des RDV (téléprospecteur) et gère son équipe (role responsable).

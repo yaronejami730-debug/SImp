@@ -68,6 +68,7 @@ function Comptes() {
   // Call center
   const [ccName, setCcName] = useState("");
   const [ccAgence, setCcAgence] = useState(true);
+  const [ccParentId, setCcParentId] = useState<number>(1); // agence de rattachement du nouveau call center
   const [rName, setRName] = useState("");
   const [rUsername, setRUsername] = useState("");
   const [rEmail, setREmail] = useState("");
@@ -117,7 +118,7 @@ function Comptes() {
     if (!ccName.trim() || !rName.trim() || !rUsername.trim() || !rPass.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone } }) });
+      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, parentId: ccParentId, responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone } }) });
       const d = await res.json();
       if (d.ok) { setCcName(""); setRName(""); setRUsername(""); setREmail(""); setRPass(""); setRPhone(""); load(); }
       else alert(d.error ?? "Erreur");
@@ -529,6 +530,11 @@ function Comptes() {
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: T.ink }}>
                 <input type="checkbox" checked={ccAgence} onChange={(e) => setCcAgence(e.target.checked)} /> Agence uniquement (pas de déplacement)
               </label>
+              <Field label="Agence de rattachement" hint="Détermine le logo et les couleurs affichés à ce call center.">
+                <select style={inp} value={ccParentId} onChange={(e) => setCcParentId(Number(e.target.value))}>
+                  {agences.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </Field>
               <div style={legendeSection}>Responsable du call center</div>
               <Field label="Nom"><input style={inp} value={rName} onChange={(e) => setRName(e.target.value)} /></Field>
               <Field label="Pseudo (identifiant)"><input style={inp} value={rUsername} onChange={(e) => setRUsername(e.target.value.toLowerCase())} autoCapitalize="none" /></Field>
