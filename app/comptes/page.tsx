@@ -215,11 +215,11 @@ function Comptes() {
     });
     const d = await res.json();
     if (!d.ok) { alert(d.error ?? "Erreur"); return; }
-    // Sauvegarde de la session admin pour pouvoir revenir en un clic.
+    // Sauvegarde de la session admin (+ son thème) pour pouvoir revenir en un clic.
     localStorage.setItem("auth_backup", JSON.stringify({
-      token: localStorage.getItem("auth_token"), user: localStorage.getItem("auth_user"), name: getUser()?.name ?? "mon compte",
+      token: localStorage.getItem("auth_token"), user: localStorage.getItem("auth_user"), theme: localStorage.getItem("auth_theme"), name: getUser()?.name ?? "mon compte",
     }));
-    setAuth(d.token, d.user);
+    setAuth(d.token, d.user, d.theme ?? null);
     window.location.href = "/agenda";
   }
 

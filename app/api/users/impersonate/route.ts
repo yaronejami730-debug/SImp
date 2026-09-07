@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth, signToken } from "@/lib/auth";
 import { getPool } from "@/lib/db";
+import { themeForCallCenter } from "@/lib/callcenters";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,8 @@ export async function POST(req: Request) {
       isCommercial: !!u.is_commercial,
       isTeleprospector: !!u.is_teleprospector,
     };
-    return NextResponse.json({ ok: true, token: signToken(session), user: session });
+    const theme = await themeForCallCenter(session.callCenterId).catch(() => null);
+    return NextResponse.json({ ok: true, token: signToken(session), user: session, theme });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

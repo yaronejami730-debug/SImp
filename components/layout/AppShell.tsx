@@ -38,13 +38,14 @@ export default function AppShell({ active, children, wide }: { active: string; c
   const marque = theme?.name || "Simplicicar";
   const logo = theme?.logo || "/logo.png";
 
-  let backup: { token?: string; user?: string } | null = null;
+  let backup: { token?: string; user?: string; theme?: string | null } | null = null;
   try { backup = JSON.parse(localStorage.getItem("auth_backup") || "null"); } catch { backup = null; }
 
   function revenirAdmin() {
     if (!backup?.token || !backup?.user) return;
     localStorage.setItem("auth_token", backup.token);
     localStorage.setItem("auth_user", backup.user);
+    if (backup.theme) localStorage.setItem("auth_theme", backup.theme); else localStorage.removeItem("auth_theme");
     localStorage.removeItem("auth_backup");
     window.location.href = "/comptes";
   }
