@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listAppointments } from "@/lib/google";
 import { getAuth } from "@/lib/auth";
+import { activeDelegationsAsDelegate } from "@/lib/availability";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -32,12 +33,22 @@ export async function GET(req: Request) {
     const myName = tokset(s.name);
     const myEmail = s.email.toLowerCase();
     const isCreator = (a: typeof items[number]) => a.owner === s.email;
+
+    // Délégation active AUJOURD'HUI : je reprends TOUT le stock du titulaire (pas seulement
+    // les RDV pris pendant la période), comme si c'était le mien, tant que la délégation dure.
+    const todayISO = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());
+    const delegatedFor = await activeDelegationsAsDelegate(myEmail, todayISO).catch(() => []);
+    const delegatedEmails = new Set(delegatedFor.map((d) => d.email.toLowerCase()));
+    const delegatedNames = new Set(delegatedFor.map((d) => tokset(d.name)));
+
     // Délégation : celui qui OPÈRE réellement le RDV doit aussi le voir dans son agenda (pour s'y présenter).
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
       (!a.commercialEmail && !!myName && tokset(a.commercial) === myName) ||
       (!!a.operatedByEmail && a.operatedByEmail.toLowerCase() === myEmail) ||
-      (!a.operatedByEmail && !!a.operatedBy && !!myName && tokset(a.operatedBy) === myName);
+      (!a.operatedByEmail && !!a.operatedBy && !!myName && tokset(a.operatedBy) === myName) ||
+      (!!a.commercialEmail && delegatedEmails.has(a.commercialEmail.toLowerCase())) ||
+      (!a.commercialEmail && delegatedNames.has(tokset(a.commercial)));
     // Visibilité : super-admin = tout ; responsable = son call center ;
     // sinon : mes RDV créés + affectés + ceux des call centers dont je suis GESTIONNAIRE.
     const { listCallCenters } = await import("@/lib/callcenters");

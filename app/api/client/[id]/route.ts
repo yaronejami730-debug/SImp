@@ -11,6 +11,7 @@ import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
 import { getUserByEmail } from "@/lib/users";
 import { isFrenchMobile } from "@/lib/parse";
 import { themeForCallCenter } from "@/lib/callcenters";
+import { activeDelegationsAsDelegate } from "@/lib/availability";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -18,14 +19,23 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 type GEvent = Awaited<ReturnType<typeof getEvent>>;
-/** Accès fiche : admin, créateur (télépro), commercial assigné, responsable du call center
- *  du RDV, ou GESTIONNAIRE de ce call center — tous les acteurs liés au rendez-vous. */
+/** Accès fiche : admin, créateur (télépro), commercial assigné, celui qui OPÈRE le RDV
+ *  (délégation), responsable du call center du RDV, ou GESTIONNAIRE de ce call center —
+ *  tous les acteurs liés au rendez-vous. */
 async function ownsOrAdmin(ev: GEvent, email: string, role: string): Promise<boolean> {
   const p = ev.extendedProperties?.private ?? {};
   const owner = p.owner ?? "";
   const commercialEmail = (p.commercialEmail ?? "").toLowerCase();
+  const operatedByEmail = (p.operatedByEmail ?? "").toLowerCase();
   const me = email.toLowerCase();
-  if (role === "admin" || owner === email || (!!commercialEmail && commercialEmail === me)) return true;
+  if (role === "admin" || owner === email || (!!commercialEmail && commercialEmail === me) || (!!operatedByEmail && operatedByEmail === me)) return true;
+  // Délégation active aujourd'hui : je reprends tout le stock du titulaire, même les RDV
+  // pris avant la délégation (pas seulement ceux tagués operatedBy à la création).
+  try {
+    const todayISO = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());
+    const delegatedFor = await activeDelegationsAsDelegate(me, todayISO);
+    if (commercialEmail && delegatedFor.some((d) => d.email.toLowerCase() === commercialEmail)) return true;
+  } catch { /* refus par défaut */ }
   try {
     const cc = Number(p.cc ?? "1");
     const { getCallCenter } = await import("@/lib/callcenters");

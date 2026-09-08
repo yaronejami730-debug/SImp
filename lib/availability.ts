@@ -96,6 +96,20 @@ export async function removeDelegation(delegatorEmail: string, id: number) {
   await getPool().query(`delete from commercial_delegation where id=$1 and lower(delegator_email)=lower($2)`, [id, delegatorEmail]);
 }
 
+/** Commerciaux dont CE compte reprend tout le stock aujourd'hui (délégation active) —
+ *  pas seulement les RDV pris pendant la délégation : tout l'agenda du titulaire,
+ *  comme si c'était le sien, le temps que dure la délégation. */
+export async function activeDelegationsAsDelegate(delegateEmail: string, date: string): Promise<{ email: string; name: string }[]> {
+  const { rows } = await getPool().query(
+    `select u.email, u.name
+       from commercial_delegation d
+       join users u on lower(u.email) = lower(d.delegator_email)
+      where lower(d.delegate_email) = lower($1) and $2::date between d.start_date and d.end_date`,
+    [delegateEmail, date],
+  );
+  return rows.map((r) => ({ email: r.email, name: r.name }));
+}
+
 /** Délégué actif pour ce commercial à cette date, s'il y en a un. */
 export async function activeDelegate(delegatorEmail: string, date: string): Promise<{ email: string; name: string } | null> {
   const { rows } = await getPool().query(
