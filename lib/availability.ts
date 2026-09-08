@@ -9,6 +9,7 @@ import { getPool } from "./db";
 export type Weekly = Record<string, [string, string][]>; // "1".."7" (lundi..dimanche) -> [["09:00","12:00"], ...]
 export type Settings = { user_email: string; slot_duration_min: number; frequency_min: number; buffer_min: number; weekly: Weekly };
 export type TimeOff = { id: number; start_date: string; end_date: string; label: string };
+export type Delegation = { id: number; delegate_email: string; delegate_name: string; start_date: string; end_date: string };
 export type ExceptionSlot = { id: number; date: string; kind: "open" | "closed"; start_time: string; end_time: string };
 
 /** Hebdo par défaut = horaires historiques de l'agence (lun-ven, pause déjeuner). */
@@ -70,6 +71,42 @@ export async function addException(email: string, e: { date: string; kind: "open
 }
 export async function removeException(email: string, id: number) {
   await getPool().query(`delete from commercial_exceptions where id=$1 and lower(user_email)=lower($2)`, [id, email]);
+}
+
+// ── Délégation temporaire (ex : vacances — un autre commercial prend la main) ──
+export async function listDelegations(email: string): Promise<Delegation[]> {
+  const { rows } = await getPool().query(
+    `select d.id, d.delegate_email, coalesce(u.name, d.delegate_email) as delegate_name,
+            to_char(d.start_date,'YYYY-MM-DD') as start_date, to_char(d.end_date,'YYYY-MM-DD') as end_date
+       from commercial_delegation d
+       left join users u on lower(u.email) = lower(d.delegate_email)
+      where lower(d.delegator_email) = lower($1)
+      order by d.start_date desc`,
+    [email],
+  );
+  return rows.map((r) => ({ ...r, id: Number(r.id) }));
+}
+export async function addDelegation(delegatorEmail: string, delegateEmail: string, start: string, end: string) {
+  await getPool().query(
+    `insert into commercial_delegation (delegator_email, delegate_email, start_date, end_date) values (lower($1),lower($2),$3,$4)`,
+    [delegatorEmail, delegateEmail, start, end],
+  );
+}
+export async function removeDelegation(delegatorEmail: string, id: number) {
+  await getPool().query(`delete from commercial_delegation where id=$1 and lower(delegator_email)=lower($2)`, [id, delegatorEmail]);
+}
+
+/** Délégué actif pour ce commercial à cette date, s'il y en a un. */
+export async function activeDelegate(delegatorEmail: string, date: string): Promise<{ email: string; name: string } | null> {
+  const { rows } = await getPool().query(
+    `select u.email, u.name
+       from commercial_delegation d
+       join users u on lower(u.email) = lower(d.delegate_email)
+      where lower(d.delegator_email) = lower($1) and $2::date between d.start_date and d.end_date
+      order by d.start_date desc limit 1`,
+    [delegatorEmail, date],
+  );
+  return rows[0] ? { email: rows[0].email, name: rows[0].name } : null;
 }
 
 // ── Calcul des créneaux ──

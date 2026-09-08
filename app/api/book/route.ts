@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { verifyBooking } from "@/lib/auth";
 import { buildAppointment } from "@/lib/parse";
+import { commercialEmailByName } from "@/lib/users";
+import { activeDelegate } from "@/lib/availability";
 import { isFrenchMobile } from "@/lib/parse";
 import { createEvent, isSlotFree, commercialConflict, halfDayModalityBlocked } from "@/lib/google";
 import { SLOT_MIN } from "@/lib/slots";
@@ -61,7 +63,7 @@ export async function POST(req: Request) {
       phone: body.phone,
       listingUrl: p.listingUrl,
       source: p.source,
-      commercial: p.commercial,
+      commercial: p.commercial, // reste le commercial titulaire : la commission ne bouge pas
       carBrand: p.carBrand,
       carModel: p.carModel,
       carFinish: p.carFinish,
@@ -69,12 +71,21 @@ export async function POST(req: Request) {
       time,
     });
 
-    // Créneaux par commercial : bloque seulement si CE commercial est déjà pris à ce moment.
+    // Délégation temporaire (ex : vacances) : à cette date, un autre commercial opère —
+    // on vérifie SA disponibilité réelle (c'est lui qui est occupé), le RDV reste au nom du titulaire.
+    let execName = appt.commercial;
+    if (execName) {
+      const ownerEmail = await commercialEmailByName(execName);
+      const delegate = ownerEmail ? await activeDelegate(ownerEmail, date) : null;
+      if (delegate) execName = delegate.name;
+    }
+
+    // Créneaux par commercial : bloque seulement si CE commercial (celui qui opère) est déjà pris à ce moment.
     const isDep = appt.type === "deplacement";
-    if (appt.commercial) {
-      const conflict = await commercialConflict(appt.commercial, appt.startDateTime, isDep);
+    if (execName) {
+      const conflict = await commercialConflict(execName, appt.startDateTime, isDep);
       if (conflict) return NextResponse.json({ error: "Ce créneau vient d'être pris. Choisissez-en un autre." }, { status: 409 });
-      if (await halfDayModalityBlocked(appt.commercial, appt.startDateTime, isDep)) {
+      if (await halfDayModalityBlocked(execName, appt.startDateTime, isDep)) {
         return NextResponse.json({ error: "Ce créneau n'est plus disponible. Choisissez-en un autre." }, { status: 409 });
       }
     } else if (!(await isSlotFree(appt.startDateTime, SLOT_MIN, undefined, p.callCenterId ?? 1))) {

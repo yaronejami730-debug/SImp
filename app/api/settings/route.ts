@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getSettings, saveSettings, listTimeOff, addTimeOff, removeTimeOff, listExceptions, addException, removeException, DEFAULT_WEEKLY, type Weekly } from "@/lib/availability";
+import { getSettings, saveSettings, listTimeOff, addTimeOff, removeTimeOff, listExceptions, addException, removeException, listDelegations, addDelegation, removeDelegation, DEFAULT_WEEKLY, type Weekly } from "@/lib/availability";
 import { listBookersFor, setBlocked } from "@/lib/bookers";
+import { listCommercials } from "@/lib/users";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -10,12 +11,16 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
-  const [settings, timeOff, exceptions, bookers] = await Promise.all([getSettings(s.email), listTimeOff(s.email), listExceptions(s.email), listBookersFor(s.email).catch(() => [])]);
+  const [settings, timeOff, exceptions, bookers, delegations, commercials] = await Promise.all([
+    getSettings(s.email), listTimeOff(s.email), listExceptions(s.email), listBookersFor(s.email).catch(() => []),
+    listDelegations(s.email), listCommercials(),
+  ]);
   return NextResponse.json({
     ok: true,
     settings: settings ?? { user_email: s.email, slot_duration_min: 40, frequency_min: 40, buffer_min: 0, weekly: DEFAULT_WEEKLY },
     saved: !!settings,
-    timeOff, exceptions, bookers,
+    timeOff, exceptions, bookers, delegations,
+    commercials: commercials.filter((c) => c.email.toLowerCase() !== s.email.toLowerCase()),
   });
 }
 
@@ -27,7 +32,7 @@ export async function POST(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
   try {
-    const b = (await req.json()) as { action?: string; slotDurationMin?: number; frequencyMin?: number; bufferMin?: number; weekly?: Weekly; start?: string; end?: string; label?: string; id?: number; date?: string; kind?: "open" | "closed" };
+    const b = (await req.json()) as { action?: string; slotDurationMin?: number; frequencyMin?: number; bufferMin?: number; weekly?: Weekly; start?: string; end?: string; label?: string; id?: number; date?: string; kind?: "open" | "closed"; delegateEmail?: string };
     if (b.action === "save") {
       await saveSettings(s.email, {
         slotDurationMin: Math.max(5, Number(b.slotDurationMin ?? 40)),
@@ -47,6 +52,10 @@ export async function POST(req: Request) {
       await setBlocked(s.email, bb.booker, !!bb.blocked);
     } else if (b.action === "removeException" && b.id) {
       await removeException(s.email, b.id);
+    } else if (b.action === "addDelegation" && b.delegateEmail && b.start && b.end) {
+      await addDelegation(s.email, b.delegateEmail, b.start, b.end);
+    } else if (b.action === "removeDelegation" && b.id) {
+      await removeDelegation(s.email, b.id);
     } else {
       return NextResponse.json({ error: "Action invalide." }, { status: 400 });
     }

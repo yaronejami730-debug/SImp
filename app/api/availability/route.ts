@@ -4,7 +4,7 @@ import { slotTimesForType, isWeekday, weekday, SLOT_MIN } from "@/lib/slots";
 import { toParisISO } from "@/lib/parse";
 import { getAuth } from "@/lib/auth";
 import { commercialEmailByName } from "@/lib/users";
-import { getSettings, listTimeOff, listExceptions, computeSlots } from "@/lib/availability";
+import { getSettings, listTimeOff, listExceptions, computeSlots, activeDelegate } from "@/lib/availability";
 
 const parisMin = (d: Date) => {
   const parts = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
@@ -24,13 +24,20 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const date = sp.get("date");
   const type = sp.get("type") ?? "agence";
-  const commercial = sp.get("commercial") ?? "";
+  let commercial = sp.get("commercial") ?? "";
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "Date invalide." }, { status: 400 });
   }
   getAuth(req); // auth facultative (formulaire interne)
 
   try {
+    // Délégation temporaire (ex : vacances) : à cette date, un autre commercial prend la main.
+    if (commercial) {
+      const ownerEmail = await commercialEmailByName(commercial);
+      const delegate = ownerEmail ? await activeDelegate(ownerEmail, date) : null;
+      if (delegate) commercial = delegate.name;
+    }
+
     const dayStart = new Date(toParisISO(date, "00:00"));
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
     const events = await listEvents(dayStart, dayEnd);

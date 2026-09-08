@@ -13,6 +13,8 @@ type Weekly = Record<string, [string, string][]>;
 type TimeOff = { id: number; start_date: string; end_date: string; label: string };
 type Exc = { id: number; date: string; kind: "open" | "closed"; start_time: string; end_time: string };
 type Booker = { email: string; name: string; callCenter: string | null; blocked: boolean };
+type Delegation = { id: number; delegate_email: string; delegate_name: string; start_date: string; end_date: string };
+type Commercial = { email: string; name: string; phone: string };
 
 const DAYS = [["1", "Lundi"], ["2", "Mardi"], ["3", "Mercredi"], ["4", "Jeudi"], ["5", "Vendredi"], ["6", "Samedi"], ["7", "Dimanche"]] as const;
 const DUR = [20, 30, 40, 45, 60, 90];
@@ -33,9 +35,12 @@ function Parametres() {
   const [timeOff, setTimeOff] = useState<TimeOff[]>([]);
   const [excs, setExcs] = useState<Exc[]>([]);
   const [bookers, setBookers] = useState<Booker[]>([]);
+  const [delegations, setDelegations] = useState<Delegation[]>([]);
+  const [commercials, setCommercials] = useState<Commercial[]>([]);
   const [loading, setLoading] = useState(true);
   const [flash, setFlash] = useState("");
   const [voStart, setVoStart] = useState(""); const [voEnd, setVoEnd] = useState(""); const [voLabel, setVoLabel] = useState("");
+  const [dgStart, setDgStart] = useState(""); const [dgEnd, setDgEnd] = useState(""); const [dgDelegate, setDgDelegate] = useState("");
   const [exDate, setExDate] = useState(""); const [exKind, setExKind] = useState<"open" | "closed">("open");
   const [exStart, setExStart] = useState(""); const [exEnd, setExEnd] = useState("");
 
@@ -45,6 +50,7 @@ function Parametres() {
     if (d.ok) {
       setDuration(d.settings.slot_duration_min); setFrequency(d.settings.frequency_min); setBuffer(d.settings.buffer_min);
       setWeekly(d.settings.weekly ?? {}); setTimeOff(d.timeOff); setExcs(d.exceptions); setBookers(d.bookers ?? []);
+      setDelegations(d.delegations ?? []); setCommercials(d.commercials ?? []);
     }
     setLoading(false);
   }
@@ -164,6 +170,33 @@ function Parametres() {
           </div>
           <input style={{ ...tIn, width: 180, height: 44 }} placeholder="Motif (optionnel)" value={voLabel} onChange={(e) => setVoLabel(e.target.value)} />
           <button disabled={!voStart || !voEnd} onClick={() => { post({ action: "addTimeOff", start: voStart, end: voEnd, label: voLabel }); setVoStart(""); setVoEnd(""); setVoLabel(""); }} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: NAVY, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>+ Ajouter</button>
+        </div>
+      </div>
+
+      {/* Délégation temporaire */}
+      <div style={card}>
+        <h2 style={h2}>🔁 Délégation pendant mon absence</h2>
+        <p style={hint}>Pendant une période, un autre commercial prend la main sur mon lien de prise de RDV (ses créneaux à lui sont proposés). Le RDV reste enregistré à mon nom — la commission ne change pas, ce que tu partages avec la personne qui opère se règle entre vous.</p>
+        {delegations.length === 0 && <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 8 }}>Aucune délégation en cours.</div>}
+        {delegations.map((dg) => (
+          <div key={dg.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", borderRadius: 8, padding: "8px 12px", marginBottom: 6 }}>
+            <span style={{ fontSize: 13, color: NAVY }}>
+              <strong>{dg.delegate_name}</strong> opère du <strong>{dg.start_date.split("-").reverse().join("/")}</strong> au <strong>{dg.end_date.split("-").reverse().join("/")}</strong>
+            </span>
+            <button onClick={() => post({ action: "removeDelegation", id: dg.id })} style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Supprimer</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+          <label style={{ fontSize: 12.5, color: "#64748b" }}>Opéré par<br />
+            <select style={{ ...sel, marginTop: 4, minWidth: 200 }} value={dgDelegate} onChange={(e) => setDgDelegate(e.target.value)}>
+              <option value="">— Choisir un commercial —</option>
+              {commercials.map((c) => <option key={c.email} value={c.email}>{c.name}</option>)}
+            </select>
+          </label>
+          <div style={{ minWidth: 400, flex: "1 1 400px" }}>
+            <DateRange from={dgStart} to={dgEnd} onChange={(r) => { setDgStart(r.from); setDgEnd(r.to); }} />
+          </div>
+          <button disabled={!dgDelegate || !dgStart || !dgEnd} onClick={() => { post({ action: "addDelegation", delegateEmail: dgDelegate, start: dgStart, end: dgEnd }, "✅ Délégation enregistrée."); setDgDelegate(""); setDgStart(""); setDgEnd(""); }} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: NAVY, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>+ Ajouter</button>
         </div>
       </div>
 
