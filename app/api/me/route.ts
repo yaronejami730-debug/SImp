@@ -22,7 +22,9 @@ export async function GET(req: Request) {
       const allowedEmails = await commercialsForTelepro(s.email);
       if (allowedEmails.length) {
         const allowedSet = new Set(allowedEmails);
-        const pool = rule ? commercials : await listCommercials();
+        // L'assignation par-télépro est indépendante de la liste (déjà restreinte) du call center :
+        // on cherche dans TOUS les commerciaux actifs, pas seulement ceux déjà liés à ce CC.
+        const pool = await listCommercials();
         const filtered = pool.filter((c) => allowedSet.has(c.email.toLowerCase()));
         if (filtered.length) {
           commercials = filtered;
