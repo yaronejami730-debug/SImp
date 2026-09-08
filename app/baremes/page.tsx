@@ -12,11 +12,14 @@ import {
 interface CallCenter { id: number; name: string; responsable_email?: string; gestionnaire_email?: string; }
 interface Commercial { id: number; name: string; email: string; }
 interface DirectUser { id: number; name: string; email: string; commission_base: number; commission_pct: number; is_commercial: boolean; }
+type TierMode = "none" | "threshold" | "progressive";
+interface Tier { minCount: number; amountEur: number; pctNego: number }
 interface AccordIndep {
   id: number;
   commercial_email: string; commercial_name: string | null;
   payee_email: string; telepro_name: string | null;
   base_eur: string; pct_nego: string; trigger_kind: string;
+  tier_mode: TierMode; tiers: Tier[];
 }
 
 interface Agreement {
@@ -58,6 +61,8 @@ export default function BaremesPage() {
   const [indepTelepro, setIndepTelepro] = useState("");
   const [indepBase, setIndepBase] = useState("");
   const [indepPct, setIndepPct] = useState("");
+  const [indepTierMode, setIndepTierMode] = useState<TierMode>("none");
+  const [indepTiers, setIndepTiers] = useState<Tier[]>([]);
 
   useEffect(() => {
     loadUser();
@@ -83,11 +88,12 @@ export default function BaremesPage() {
       body: JSON.stringify({
         commercialEmail: indepCommercial, teleproEmail: indepTelepro,
         baseEur: parseFloat(indepBase) || 0, pctNego: parseFloat(indepPct) || 0, trigger,
+        tierMode: indepTierMode, tiers: indepTiers,
       }),
     });
     const d = await res.json();
     if (!d.ok) { alert(d.error ?? "Erreur"); return; }
-    setIndepBase(""); setIndepPct(""); setIndepTelepro("");
+    setIndepBase(""); setIndepPct(""); setIndepTelepro(""); setIndepTierMode("none"); setIndepTiers([]);
     const r = await fetch("/api/accords-telepro", { headers: authHeaders() });
     const j = await r.json();
     if (j.ok) setAccordsIndep(j.accords);
@@ -422,7 +428,45 @@ export default function BaremesPage() {
                         </Field>
                       </FormGrid>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: S.md, flexWrap: "wrap" }}>
+                      <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: S.md, marginTop: S.md }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Paliers de volume (facultatif)</div>
+                        <p style={{ margin: `0 0 ${S.md}px`, fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: "70ch" }}>
+                          Le tarif change selon le nombre de RDV pris par CE téléprospecteur le même jour.
+                          « Seuil » bascule TOUS les RDV du jour au nouveau tarif dès qu&apos;il est atteint (ex : 20 RDV pris → 20€ au lieu de 10€ pour chacun).
+                          « Progressif » ne change que les RDV suivants (ex : les 10 premiers à 60€, à partir du 11e à 100€).
+                        </p>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: indepTierMode !== "none" ? S.md : 0 }}>
+                          <Button variante={indepTierMode === "none" ? "principal" : "secondaire"} onClick={() => { setIndepTierMode("none"); setIndepTiers([]); }}>Aucun palier</Button>
+                          <Button variante={indepTierMode === "threshold" ? "principal" : "secondaire"} onClick={() => setIndepTierMode("threshold")}>Seuil (jour)</Button>
+                          <Button variante={indepTierMode === "progressive" ? "principal" : "secondaire"} onClick={() => setIndepTierMode("progressive")}>Progressif (jour)</Button>
+                        </div>
+                        {indepTierMode !== "none" && (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {indepTiers.map((t, i) => (
+                              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <span style={{ fontSize: 12.5, color: T.ink2, minWidth: 110 }}>
+                                  {indepTierMode === "threshold" ? "À partir de" : "À partir du"}
+                                </span>
+                                <input type="number" min={1} value={t.minCount} onChange={(e) => setIndepTiers((l) => l.map((x, j) => j === i ? { ...x, minCount: Number(e.target.value) } : x))}
+                                  style={{ ...champ, width: 80, textAlign: "right" }} />
+                                <span style={{ fontSize: 12.5, color: T.ink2 }}>{indepTierMode === "threshold" ? "RDV/jour →" : "e RDV du jour →"}</span>
+                                <input type="number" step="0.01" value={t.amountEur} onChange={(e) => setIndepTiers((l) => l.map((x, j) => j === i ? { ...x, amountEur: Number(e.target.value) } : x))}
+                                  placeholder="€" style={{ ...champ, width: 90, textAlign: "right" }} />
+                                <span style={{ fontSize: 12.5, color: T.ink2 }}>€ +</span>
+                                <input type="number" step="0.1" value={t.pctNego} onChange={(e) => setIndepTiers((l) => l.map((x, j) => j === i ? { ...x, pctNego: Number(e.target.value) } : x))}
+                                  placeholder="%" style={{ ...champ, width: 70, textAlign: "right" }} />
+                                <span style={{ fontSize: 12.5, color: T.ink2 }}>% négo</span>
+                                <Button variante="danger" onClick={() => setIndepTiers((l) => l.filter((_, j) => j !== i))}>✕</Button>
+                              </div>
+                            ))}
+                            <Button variante="secondaire" onClick={() => setIndepTiers((l) => [...l, { minCount: (l[l.length - 1]?.minCount ?? 0) + 1, amountEur: parseFloat(indepBase) || 0, pctNego: 0 }])}>
+                              + Ajouter un palier
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: S.md, flexWrap: "wrap", marginTop: S.md }}>
                         <Button
                           variante="principal" onClick={creerAccordIndep}
                           disabled={!indepCommercial || !indepTelepro || (!indepBase && !indepPct)}
@@ -504,6 +548,14 @@ export default function BaremesPage() {
                     { cle: "decl", titre: "Payé quand", rendu: (x: AccordIndep) => <Badge ton="info">{x.trigger_kind === "honored" ? "RDV honoré" : "Mandat signé"}</Badge> },
                     { cle: "fixe", titre: "Fixe", aligne: "droite", rendu: (x: AccordIndep) => <Euro montant={Number(x.base_eur)} /> },
                     { cle: "pct", titre: "Du négocié", aligne: "droite", rendu: (x: AccordIndep) => Number(x.pct_nego) > 0 ? `${Number(x.pct_nego)} %` : <span style={{ color: T.ink2 }}>—</span> },
+                    {
+                      cle: "paliers", titre: "Paliers", rendu: (x: AccordIndep) => x.tier_mode === "none" || !x.tiers?.length
+                        ? <span style={{ color: T.ink2 }}>—</span>
+                        : <span style={{ fontSize: 12.5 }}>
+                            <Badge ton="info">{x.tier_mode === "threshold" ? "Seuil" : "Progressif"}</Badge>{" "}
+                            {x.tiers.map((t) => `≥${t.minCount}→${t.amountEur}€`).join(", ")}
+                          </span>,
+                    },
                     {
                       cle: "actions", titre: "", aligne: "droite",
                       rendu: (x: AccordIndep) => <Button variante="danger" onClick={() => supprimerAccordIndep(x.id)}>Retirer</Button>,

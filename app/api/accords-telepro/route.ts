@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getPool } from "@/lib/db";
+import { setTiers, type Tier, type TierMode } from "@/lib/remuneration";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,12 @@ export async function GET(req: Request) {
   try {
     const { rows } = await getPool().query(
       `select r.id, r.commercial_email, r.payee_email, r.base_eur, r.pct_nego, r.sold_eur, r.sold_pct, r.trigger_kind, r.label,
-              c.name as commercial_name, t.name as telepro_name
+              r.tier_mode, c.name as commercial_name, t.name as telepro_name,
+              coalesce(
+                (select json_agg(json_build_object('minCount', ti.min_count, 'amountEur', ti.amount_eur, 'pctNego', ti.pct_nego) order by ti.min_count)
+                   from remuneration_tiers ti where ti.accord_id = r.id),
+                '[]'
+              ) as tiers
          from remuneration_accords r
          left join users c on lower(c.email) = lower(r.commercial_email)
          left join users t on lower(t.email) = lower(r.payee_email)
@@ -36,6 +42,7 @@ export async function POST(req: Request) {
     const b = (await req.json()) as {
       commercialEmail?: string; teleproEmail?: string;
       baseEur?: number; pctNego?: number; trigger?: "signed" | "honored"; label?: string;
+      tierMode?: TierMode; tiers?: Tier[];
     };
     if (!b.commercialEmail?.trim() || !b.teleproEmail?.trim()) {
       return NextResponse.json({ error: "Commercial et téléprospecteur requis." }, { status: 400 });
@@ -62,7 +69,12 @@ export async function POST(req: Request) {
        values (null, $1, $2, 'telepro', $3, $4, $5, $1, $6) returning id`,
       [payer, payee, base, pct, trig, (b.label ?? "").trim() || "Accord direct avec un téléprospecteur indépendant"],
     );
-    return NextResponse.json({ ok: true, id: rows[0]?.id });
+    const accordId = rows[0]?.id as number;
+    const tierMode: TierMode = b.tierMode === "threshold" || b.tierMode === "progressive" ? b.tierMode : "none";
+    if (accordId && tierMode !== "none" && Array.isArray(b.tiers) && b.tiers.length) {
+      await setTiers(accordId, tierMode, b.tiers.map((t) => ({ minCount: Number(t.minCount) || 0, amountEur: Number(t.amountEur) || 0, pctNego: Number(t.pctNego) || 0 })));
+    }
+    return NextResponse.json({ ok: true, id: accordId });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
