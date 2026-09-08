@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getUser, getTheme, clearAuth, applyTheme, tokenValide } from "@/lib/client";
+import { getUser, getTheme, clearAuth, applyTheme, tokenValide, authHeaders } from "@/lib/client";
 import Login from "@/components/Login";
 import NotifBell from "@/components/NotifBell";
 import Sidebar from "./Sidebar";
@@ -29,6 +29,15 @@ export default function AppShell({ active, children, wide }: { active: string; c
     }
     setPret(true);
   }, []);
+
+  // Présence : ping "connecté" toutes les 45s tant que le CRM reste ouvert (voir /comptes).
+  useEffect(() => {
+    if (!connecte) return;
+    const ping = () => { fetch("/api/presence", { method: "POST", headers: authHeaders() }).catch(() => {}); };
+    ping();
+    const id = setInterval(ping, 45000);
+    return () => clearInterval(id);
+  }, [connecte]);
 
   if (!pret) return null;
   if (!connecte) return <Login onLogin={() => setConnecte(true)} />;

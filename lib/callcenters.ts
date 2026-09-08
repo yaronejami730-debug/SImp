@@ -1,7 +1,7 @@
 import { getPool } from "./db";
 import { createUser } from "./users";
 
-export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string };
+export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string };
 export type BrandTheme = { name: string; primary: string; dark: string; logo: string; headerDark: boolean };
 
 /** Thème de marque pour un utilisateur : on remonte la hiérarchie jusqu'à la RACINE
@@ -31,7 +31,7 @@ export type CallCenterDetail = CallCenter & { parent_name: string | null; commer
 
 export async function listCallCenters(): Promise<CallCenterDetail[]> {
   const { rows } = await getPool().query<CallCenterDetail>(
-    `select c.id, c.name, c.agence_only, c.responsable_email, c.gestionnaire_email, c.parent_id,
+    `select c.id, c.name, c.agence_only, c.responsable_email, c.responsable_email_2, c.gestionnaire_email, c.parent_id,
             c.brand_primary, c.brand_dark, c.logo_url, c.header_dark,
             p.name as parent_name,
             (select count(*) from call_center_commercials x where x.call_center_id = c.id) as commercials_count,
@@ -98,6 +98,11 @@ export async function setCallCenterParent(ccId: number, parentId: number) {
 /** Définit le gestionnaire du call (celui qui touche la marge sur les signés du call center). */
 export async function setGestionnaire(ccId: number, email: string) {
   await getPool().query(`update call_centers set gestionnaire_email = $2 where id = $1`, [ccId, email.trim().toLowerCase()]);
+}
+
+/** Deuxième responsable (50/50 avec le premier, affichage uniquement) — vide pour retirer. */
+export async function setResponsable2(ccId: number, email: string) {
+  await getPool().query(`update call_centers set responsable_email_2 = $2 where id = $1`, [ccId, email.trim().toLowerCase() || null]);
 }
 
 /** Renomme une agence / un call center. */

@@ -10,12 +10,13 @@ type User = {
   id: number; email: string; name: string; role: "admin" | "responsable" | "collab";
   is_commercial?: boolean; is_teleprospector?: boolean; phone?: string; active?: boolean;
   commission_base?: number; commission_pct?: number;
-  call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string;
+  call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string; last_seen_at?: string | null;
 };
-type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
+type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
 type Assignment = { call_center_id: number; commercial_email: string };
 type TeleproAssignment = { telepro_email: string; commercial_email: string };
 type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
+type TeleproEarning = { email: string; name: string; callCenter: string; base: number; pct: number; rdv: number; signes: number; du: number; paye: number; solde: number };
 
 const inp: React.CSSProperties = { ...champ };
 
@@ -56,6 +57,9 @@ function Comptes() {
   const [selection, setSelection] = useState<{ kind: "agence" | "cc"; id: number } | null>(null);
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
   const [creationOuverte, setCreationOuverte] = useState(false);
+  const [recapOuvert, setRecapOuvert] = useState(false);
+  const [teleproEarnings, setTeleproEarnings] = useState<TeleproEarning[] | null>(null);
+  const [recapBusy, setRecapBusy] = useState(false);
   // Mini-form "ajouter un télépro à CE call center"
 
   const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin">("commercial");
@@ -65,7 +69,9 @@ function Comptes() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const schemeKey = "60"; // barème par défaut : la page Barèmes est en cours de refonte
+  const schemeKey = "60"; // barème par défaut des commerciaux : la page Barèmes est en cours de refonte
+  const [teleBase, setTeleBase] = useState(60); // barème libre du télépro créé (€ fixe / RDV signé)
+  const [telePct, setTelePct] = useState(0);    // + % de la négociation
   const [attachCC, setAttachCC] = useState<number>(1); // rattachement du nouveau compte (agence / call center)
   // Call center
   const [ccName, setCcName] = useState("");
@@ -100,18 +106,39 @@ function Comptes() {
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
   useEffect(() => { load(); }, []);
+  // Présence en temps réel : re-fetch léger toutes les 20s pour rafraîchir les pastilles "en ligne".
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetch("/api/users", { headers: authHeaders() }).then((r) => r.json()).then((d) => { if (d.ok) setUsers(d.users); }).catch(() => {});
+    }, 20000);
+    return () => clearInterval(id);
+  }, []);
+  const estEnLigne = (u: User) => !!u.last_seen_at && Date.now() - new Date(u.last_seen_at).getTime() < 2 * 60 * 1000;
 
   // Un responsable ne peut créer que des télépros.
   const isAdmin = role === "admin";
   useEffect(() => { if (!isAdmin && type !== "telepro") setType("telepro"); }, [isAdmin, type]);
 
+  async function ouvrirRecap() {
+    setRecapOuvert(true);
+    setRecapBusy(true);
+    try {
+      const res = await fetch("/api/telepro-earnings", { headers: authHeaders() });
+      const d = await res.json();
+      if (d.ok) setTeleproEarnings(d.telepros); else alert(d.error ?? "Erreur");
+    } finally { setRecapBusy(false); }
+  }
+
   async function addUser() {
     if (!name.trim() || !username.trim() || !password.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" || type === "admin" ? type : "telepro", name, username, email, password, phone, schemeKey, callCenterId: attachCC }) });
+      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
+        type: type === "commercial" || type === "admin" ? type : "telepro", name, username, email, password, phone, schemeKey, callCenterId: attachCC,
+        ...(type === "telepro" ? { commissionBase: teleBase, commissionPct: telePct } : {}),
+      }) });
       const d = await res.json();
-      if (d.ok) { setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); load(); }
+      if (d.ok) { setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); setTeleBase(60); setTelePct(0); load(); }
       else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
   }
@@ -159,6 +186,11 @@ function Comptes() {
   }
   async function setGestionnaire(ccId: number, email: string) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setGestionnaire", email }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  async function setResponsable2(ccId: number, email: string) {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setResponsable2", email }) });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
@@ -302,6 +334,11 @@ function Comptes() {
         subtitle={isAdmin
           ? "Une agence regroupe des call centers ; chaque call center a son responsable et ses téléprospecteurs ; les commerciaux réalisent les rendez-vous."
           : "Ajoute et rémunère les téléprospecteurs de ton call center."}
+        actions={isAdmin ? (
+          <button onClick={ouvrirRecap} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
+            💰 Récap télépros
+          </button>
+        ) : undefined}
       />
 
       {err && <Card><div style={{ color: T.danger, fontWeight: 700 }}>{err}</div></Card>}
@@ -362,7 +399,7 @@ function Comptes() {
                       <div style={{ fontSize: 14, color: T.ink2, marginTop: 4 }}>
                         {estAgence
                           ? `${commercialsOfAgence(noeud.id).length} commerciaux · ${callCenters.filter((c) => c.parent_id === noeud.id).length} call center(s)`
-                          : `Responsable : ${noeud.responsable_email || "—"} · ${noeud.telepros_count} téléprospecteur(s)`}
+                          : `Responsable : ${noeud.responsable_email || "—"}${noeud.responsable_email_2 ? ` + ${noeud.responsable_email_2} (50/50)` : ""} · ${noeud.telepros_count} téléprospecteur(s)`}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -479,6 +516,17 @@ function Comptes() {
                 </section>
 
                 <section>
+                  <div style={legendeSection}>Deuxième responsable (50/50)</div>
+                  <select value={noeud.responsable_email_2 ?? ""} onChange={(e) => setResponsable2(noeud.id, e.target.value)} style={{ ...champ, maxWidth: 320 }}>
+                    <option value="">— aucun —</option>
+                    {users.filter((u) => u.email !== noeud.responsable_email).map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
+                  </select>
+                  <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>
+                    Marque ce call center comme partagé 50/50. L'affichage du solde partagé reste à brancher.
+                  </div>
+                </section>
+
+                <section>
                   <div style={legendeSection}>Accord de rémunération (par rendez-vous signé)</div>
                   {(() => {
                     const accCall = accords.find((x) => Number(x.call_center_id) === noeud.id && x.payee_kind === "call_center");
@@ -572,6 +620,14 @@ function Comptes() {
               <Field label="Mot de passe"><input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
               <Field label="E-mail (facultatif)"><input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
               {type === "commercial" && <Field label="Téléphone" hint="Utilisé dans les mails et SMS envoyés aux clients."><input style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>}
+              {type === "telepro" && (
+                <Field label="Commission (€ / RDV signé + % négo)" hint="Ce qui lui est dû, visible dans son 'Mes paiements'.">
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input style={inp} type="number" min={0} value={teleBase} onChange={(e) => setTeleBase(Number(e.target.value))} placeholder="€" />
+                    <input style={inp} type="number" min={0} max={100} value={telePct} onChange={(e) => setTelePct(Number(e.target.value))} placeholder="%" />
+                  </div>
+                </Field>
+              )}
               <Field label="Rattachement">
                 <select style={inp} value={attachCC} onChange={(e) => setAttachCC(Number(e.target.value))}>
                   {agences.map((a) => (
@@ -585,6 +641,45 @@ function Comptes() {
               <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
                 {busy ? "…" : type === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
               </button>
+            </div>
+          )}
+        </Fenetre>
+      )}
+
+      {recapOuvert && (
+        <Fenetre titre="Récap télépros — combien on leur doit" onFermer={() => setRecapOuvert(false)}>
+          {recapBusy ? (
+            <div style={{ color: T.ink2, fontSize: 14 }}>Calcul en cours…</div>
+          ) : !teleproEarnings || teleproEarnings.length === 0 ? (
+            <div style={{ color: T.ink2, fontSize: 14 }}>Aucun téléprospecteur actif.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", color: T.ink3, fontSize: 11.5, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    <th style={{ padding: "6px 8px" }}>Télépro</th>
+                    <th style={{ padding: "6px 8px" }}>Call center</th>
+                    <th style={{ padding: "6px 8px" }}>Barème</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>RDV signés</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Dû</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Payé</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Solde</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teleproEarnings.map((t) => (
+                    <tr key={t.email} style={{ borderTop: `1px solid ${T.line}` }}>
+                      <td style={{ padding: "8px" }}>{t.name}</td>
+                      <td style={{ padding: "8px", color: T.ink2 }}>{t.callCenter}</td>
+                      <td style={{ padding: "8px", color: T.ink2 }}>{t.base}€{t.pct > 0 ? ` + ${t.pct}%` : ""}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{t.signes}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{t.du.toFixed(0)} €</td>
+                      <td style={{ padding: "8px", textAlign: "right", color: T.ink2 }}>{t.paye.toFixed(0)} €</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: t.solde > 0 ? T.danger : T.ink2 }}>{t.solde.toFixed(0)} €</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </Fenetre>
@@ -608,6 +703,12 @@ function Comptes() {
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ fontWeight: 700, color: T.ink, fontSize: 15.5 }}>{u.name}</span>
+              {estEnLigne(u) && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "3px 9px", borderRadius: 999 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#16a34a", display: "inline-block" }} />
+                  En ligne
+                </span>
+              )}
               {u.is_commercial && <Badge ton="succes">Commercial</Badge>}
               {u.is_teleprospector && <Badge ton="info">Téléprospecteur</Badge>}
               {u.role === "responsable" && <Badge ton="neutre">Responsable</Badge>}
@@ -659,6 +760,24 @@ function Comptes() {
             </div>
           );
         })()}
+
+        {isAdmin && u.is_teleprospector && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
+            <span style={{ fontSize: 12, color: T.ink3 }}>Commission (€ + % négo) :</span>
+            <input id={`tb-${u.id}`} type="number" min={0} defaultValue={u.commission_base ?? 0} style={{ width: 70, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }} />
+            <input id={`tp-${u.id}`} type="number" min={0} max={100} defaultValue={u.commission_pct ?? 0} style={{ width: 60, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }} />
+            <button
+              onClick={() => {
+                const base = Number((document.getElementById(`tb-${u.id}`) as HTMLInputElement)?.value ?? 0);
+                const pct = Number((document.getElementById(`tp-${u.id}`) as HTMLInputElement)?.value ?? 0);
+                patch(u.id, { commissionBase: base, commissionPct: pct });
+              }}
+              style={{ height: 30, padding: "0 12px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+            >
+              Enregistrer
+            </button>
+          </div>
+        )}
 
         {/* Rémunération : barèmes retirés le temps de refaire la page Barèmes (chiffres non fiables). */}
       </div>

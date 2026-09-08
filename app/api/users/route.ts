@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     const b = (await req.json()) as {
       type?: "commercial" | "telepro" | "admin";
       email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number; username?: string;
+      commissionBase?: number; commissionPct?: number;
     };
     if (!b.username?.trim() || !b.password?.trim() || !b.name?.trim()) {
       return NextResponse.json({ error: "Nom, pseudo et mot de passe requis." }, { status: 400 });
@@ -49,13 +50,16 @@ export async function POST(req: Request) {
       const user = await createUser({ email: b.email, username: b.username, password: b.password, name: b.name, role: "admin", callCenterId: 1 });
       return NextResponse.json({ ok: true, user });
     }
+    // Barème libre (€ fixe + % négo) si fourni, sinon le schéma par défaut.
     const sch = schemeByKey(b.schemeKey);
+    const commissionBase = b.commissionBase !== undefined ? Number(b.commissionBase) : sch.base;
+    const commissionPct = b.commissionPct !== undefined ? Number(b.commissionPct) : sch.pct;
     const isCommercial = b.type === "commercial";
     // Admin peut cibler un call center précis (panneau call center) ; sinon son propre CC.
     const callCenterId = s.role === "admin" ? (b.callCenterId && b.callCenterId > 0 ? b.callCenterId : 1) : s.callCenterId;
     const user = await createUser({
       email: b.email, username: b.username, password: b.password, name: b.name, role: "collab",
-      callCenterId, commissionBase: sch.base, commissionPct: sch.pct, phone: b.phone,
+      callCenterId, commissionBase, commissionPct, phone: b.phone,
       isCommercial, isTeleprospector: !isCommercial,
     });
     return NextResponse.json({ ok: true, user });
