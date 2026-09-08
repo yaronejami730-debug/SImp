@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders, getUser, setAuth } from "@/lib/client";
-import { PageHeader, Card, Badge, Field, champ, T, R, S } from "@/components/ui";
+import { PageHeader, Card, Badge, Field, champ, T, R, S, DateRange } from "@/components/ui";
 
 
 type User = {
@@ -17,6 +17,9 @@ type Assignment = { call_center_id: number; commercial_email: string };
 type TeleproAssignment = { telepro_email: string; commercial_email: string };
 type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
 type TeleproEarning = { email: string; name: string; callCenter: string; base: number; pct: number; rdv: number; signes: number; du: number; paye: number; solde: number };
+type TimeOff = { id: number; start_date: string; end_date: string; label: string };
+type Delegation = { id: number; delegate_email: string; delegate_name: string; start_date: string; end_date: string };
+type VacationRow = { email: string; name: string; timeOff: TimeOff[]; delegations: Delegation[] };
 
 const inp: React.CSSProperties = { ...champ };
 
@@ -60,6 +63,12 @@ function Comptes() {
   const [recapOuvert, setRecapOuvert] = useState(false);
   const [teleproEarnings, setTeleproEarnings] = useState<TeleproEarning[] | null>(null);
   const [recapBusy, setRecapBusy] = useState(false);
+  const [vacationsOuvert, setVacationsOuvert] = useState(false);
+  const [vacationsBusy, setVacationsBusy] = useState(false);
+  const [vacationRows, setVacationRows] = useState<VacationRow[] | null>(null);
+  const [vacationCommercials, setVacationCommercials] = useState<{ email: string; name: string }[]>([]);
+  const [delegatePick, setDelegatePick] = useState<Record<string, string>>({}); // email du commercial -> délégué choisi
+  const [delegateDates, setDelegateDates] = useState<Record<string, { start: string; end: string }>>({});
   // Mini-form "ajouter un télépro à CE call center"
 
   const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin">("commercial");
@@ -118,6 +127,9 @@ function Comptes() {
   // Un responsable ne peut créer que des télépros.
   const isAdmin = role === "admin";
   useEffect(() => { if (!isAdmin && type !== "telepro") setType("telepro"); }, [isAdmin, type]);
+  // Charge les vacances au démarrage (admin) pour afficher le point rouge sans avoir à ouvrir la fenêtre.
+  useEffect(() => { if (isAdmin) chargerVacations(); }, [isAdmin]);
+  const todayISO = new Date().toISOString().slice(0, 10);
 
   async function ouvrirRecap() {
     setRecapOuvert(true);
@@ -127,6 +139,40 @@ function Comptes() {
       const d = await res.json();
       if (d.ok) setTeleproEarnings(d.telepros); else alert(d.error ?? "Erreur");
     } finally { setRecapBusy(false); }
+  }
+
+  async function chargerVacations() {
+    setVacationsBusy(true);
+    try {
+      const res = await fetch("/api/admin/vacations", { headers: authHeaders() });
+      const d = await res.json();
+      if (d.ok) { setVacationRows(d.rows); setVacationCommercials(d.commercials); } else alert(d.error ?? "Erreur");
+    } finally { setVacationsBusy(false); }
+  }
+  async function ouvrirVacations() {
+    setVacationsOuvert(true);
+    await chargerVacations();
+  }
+  async function assignerDelegue(delegatorEmail: string) {
+    const delegateEmail = delegatePick[delegatorEmail];
+    const dates = delegateDates[delegatorEmail];
+    if (!delegateEmail || !dates?.start || !dates?.end) { alert("Choisis un délégué et une période."); return; }
+    const res = await fetch("/api/admin/vacations", {
+      method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ action: "addDelegation", delegatorEmail, delegateEmail, start: dates.start, end: dates.end }),
+    });
+    const d = await res.json();
+    if (!d.ok) { alert(d.error ?? "Erreur"); return; }
+    setDelegatePick((m) => ({ ...m, [delegatorEmail]: "" }));
+    setDelegateDates((m) => ({ ...m, [delegatorEmail]: { start: "", end: "" } }));
+    chargerVacations();
+  }
+  async function retirerDelegation(delegatorEmail: string, id: number) {
+    await fetch("/api/admin/vacations", {
+      method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ action: "removeDelegation", delegatorEmail, id }),
+    });
+    chargerVacations();
   }
 
   async function addUser() {
@@ -335,9 +381,17 @@ function Comptes() {
           ? "Une agence regroupe des call centers ; chaque call center a son responsable et ses téléprospecteurs ; les commerciaux réalisent les rendez-vous."
           : "Ajoute et rémunère les téléprospecteurs de ton call center."}
         actions={isAdmin ? (
-          <button onClick={ouvrirRecap} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
-            💰 Récap télépros
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={ouvrirVacations} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer", position: "relative" }}>
+              🏖️ Vacances & délégations
+              {vacationRows?.some((r) => r.timeOff.some((t) => t.end_date >= todayISO)) && (
+                <span style={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: "50%", background: T.danger, border: "2px solid #fff" }} />
+              )}
+            </button>
+            <button onClick={ouvrirRecap} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
+              💰 Récap télépros
+            </button>
+          </div>
         ) : undefined}
       />
 
@@ -680,6 +734,67 @@ function Comptes() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </Fenetre>
+      )}
+
+      {vacationsOuvert && (
+        <Fenetre titre="🏖️ Vacances & délégations" onFermer={() => setVacationsOuvert(false)}>
+          <p style={{ margin: "0 0 14px", fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
+            Chaque commercial règle ses propres vacances (page Paramètres). Ici tu vois qui est indisponible
+            et tu décides qui opère à sa place — le RDV reste enregistré au nom du commercial titulaire,
+            la commission ne change pas.
+          </p>
+          {vacationsBusy ? (
+            <div style={{ color: T.ink2, fontSize: 14 }}>Chargement…</div>
+          ) : !vacationRows || vacationRows.length === 0 ? (
+            <div style={{ color: T.ink2, fontSize: 14 }}>Aucun commercial actif.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {vacationRows.filter((r) => r.timeOff.length > 0 || r.delegations.length > 0).length === 0 ? (
+                <div style={{ color: T.ink2, fontSize: 14 }}>Aucune vacance déclarée pour l&apos;instant.</div>
+              ) : vacationRows.filter((r) => r.timeOff.length > 0 || r.delegations.length > 0).map((r) => {
+                const enCours = r.timeOff.some((t) => t.end_date >= todayISO);
+                const dates = delegateDates[r.email] ?? { start: "", end: "" };
+                return (
+                  <div key={r.email} style={{ background: enCours ? "#fef2f2" : T.surface2, border: `1px solid ${T.line}`, borderRadius: R.md, padding: S.md }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <strong style={{ fontSize: 14.5 }}>{r.name}</strong>
+                      {enCours && <Badge ton="danger">Indisponible</Badge>}
+                    </div>
+                    {r.timeOff.map((t) => (
+                      <div key={t.id} style={{ fontSize: 13, color: T.ink2, marginBottom: 2 }}>
+                        🏖️ Du <strong>{t.start_date.split("-").reverse().join("/")}</strong> au <strong>{t.end_date.split("-").reverse().join("/")}</strong>{t.label ? ` · ${t.label}` : ""}
+                      </div>
+                    ))}
+                    {r.delegations.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        {r.delegations.map((dg) => (
+                          <div key={dg.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: T.surface, borderRadius: R.sm, padding: "6px 10px", marginBottom: 4, fontSize: 13 }}>
+                            <span><strong>{dg.delegate_name}</strong> opère du <strong>{dg.start_date.split("-").reverse().join("/")}</strong> au <strong>{dg.end_date.split("-").reverse().join("/")}</strong></span>
+                            <button onClick={() => retirerDelegation(r.email, dg.id)} style={{ border: "none", background: "none", color: T.danger, cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>Retirer</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+                      <Field label="Opéré par">
+                        <select value={delegatePick[r.email] ?? ""} onChange={(e) => setDelegatePick((m) => ({ ...m, [r.email]: e.target.value }))} style={{ ...champ, minWidth: 180 }}>
+                          <option value="">— Choisir —</option>
+                          {vacationCommercials.filter((c) => c.email.toLowerCase() !== r.email.toLowerCase()).map((c) => <option key={c.email} value={c.email}>{c.name}</option>)}
+                        </select>
+                      </Field>
+                      <div style={{ minWidth: 320, flex: "1 1 320px" }}>
+                        <DateRange from={dates.start} to={dates.end} onChange={(v) => setDelegateDates((m) => ({ ...m, [r.email]: { start: v.from, end: v.to } }))} />
+                      </div>
+                      <button onClick={() => assignerDelegue(r.email)} style={{ height: 38, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                        + Assigner
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </Fenetre>
