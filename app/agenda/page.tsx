@@ -16,7 +16,7 @@ type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
-  present: boolean; presence?: "present" | "absent" | "unknown"; note?: string; signStatus: Sign; negotiation: number; owner: string; commercial: string; commercialEmail?: string; teleprospector: string; immatriculation: string;
+  present: boolean; presence?: "present" | "absent" | "unknown"; note?: string; signStatus: Sign; negotiation: number; owner: string; commercial: string; commercialEmail?: string; operatedBy?: string; teleprospector: string; immatriculation: string;
   relation?: "created" | "assigned" | "both" | "none";
   type?: "agence" | "deplacement" | "physique" | "visio" | "telephone";
   civility: string; createdAt: string | null; history: { t: string; at: string; info?: string }[];
@@ -319,9 +319,12 @@ function Agenda() {
     <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderLeft: `4px solid ${statusColor(a)}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
       {a.cancelled && <div style={{ display: "inline-block", padding: "3px 9px", borderRadius: 6, background: "#dc2626", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>ANNULÉ</div>}
       {(() => {
+        const jOpere = !!a.operatedBy && !!me?.name && nameKey(a.operatedBy) === nameKey(me.name);
         const b = a.relation === "both" ? { t: "🔁 Créé & à réaliser par moi", c: "#7c3aed", bg: "#f5f3ff" }
-          : a.relation === "created" ? { t: `📤 Créé pour ${a.commercial || "—"}`, c: "#0369a1", bg: "#f0f9ff" }
-          : a.relation === "assigned" ? { t: "🛠️ Rendez-vous à réaliser", c: "#15803d", bg: "#f0fdf4" }
+          : a.relation === "created" ? { t: `📤 Créé pour ${a.commercial || "—"}${a.operatedBy ? ` — opéré par ${a.operatedBy}` : ""}`, c: "#0369a1", bg: "#f0f9ff" }
+          : a.relation === "assigned" ? (jOpere
+              ? { t: `🔀 À réaliser (délégation de ${a.commercial})`, c: "#15803d", bg: "#f0fdf4" }
+              : { t: a.operatedBy ? `🛠️ À réaliser — opéré par ${a.operatedBy}` : "🛠️ Rendez-vous à réaliser", c: "#15803d", bg: "#f0fdf4" })
           : null;
         return b ? <div style={{ display: "inline-block", marginBottom: 8, marginLeft: a.cancelled ? 6 : 0, padding: "3px 9px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: b.c, background: b.bg }}>{b.t}</div> : null;
       })()}
@@ -332,7 +335,7 @@ function Agenda() {
           </a>
           {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}{a.immatriculation ? ` · ${a.immatriculation}` : ""}</div>}
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
-          <div style={{ fontSize: 13, color: "#6b7280" }}>{(a.type === "deplacement" ? "🚗 Déplacement" : "🏢 Agence")}{a.platform ? ` · ${a.platform}` : ""}{a.commercial ? ` · 👤 ${a.commercial}` : ""}{a.teleprospector ? ` · 📞 ${a.teleprospector}` : ""}</div>
+          <div style={{ fontSize: 13, color: "#6b7280" }}>{(a.type === "deplacement" ? "🚗 Déplacement" : "🏢 Agence")}{a.platform ? ` · ${a.platform}` : ""}{a.commercial ? ` · 👤 ${a.commercial}` : ""}{a.operatedBy ? ` (opéré par ${a.operatedBy})` : ""}{a.teleprospector ? ` · 📞 ${a.teleprospector}` : ""}</div>
           {(isAdmin || a.relation === "created" || a.relation === "both") && a.owner && <div style={{ fontSize: 12.5, color: "#9aa6b8" }}>✍️ Créé par : {a.owner}</div>}
           {a.listingUrl && <a href={safeUrl(a.listingUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: PINK, textDecoration: "underline", fontWeight: 600, display: "inline-block", marginTop: 2 }}>🔗 Voir l&apos;annonce</a>}
         </div>

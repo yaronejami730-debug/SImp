@@ -204,6 +204,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
   const ref = genRef();
   const commercialEmail = await commercialEmailByName(a.commercial); // compte commercial affecté (lien robuste)
   const commercialPhone = await commercialPhoneByName(a.commercial);  // tél commercial (depuis la base, pas de hardcode)
+  const operatedByEmail = a.operatedBy ? await commercialEmailByName(a.operatedBy) : ""; // délégation : qui opère réellement
   const isDeplacement = a.type === "deplacement";
   const typeLabel = isDeplacement ? "Déplacement" : "Agence";
   const requestBody: calendar_v3.Schema$Event = {
@@ -219,6 +220,7 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
         `Plateforme : ${a.platform}`,
         `Annonce : ${a.listingUrl}`,
         a.commercial ? `Commercial : ${a.commercial}` : "",
+        a.operatedBy ? `Opéré par : ${a.operatedBy} (délégation)` : "",
         a.teleprospector ? `Téléprospecteur : ${a.teleprospector}` : "",
         `Lieu : ${a.location}`,
       ].filter(Boolean).join("\n") + `\n\nRéférence : ${ref}`,
@@ -242,6 +244,8 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           commercial: a.commercial ?? "",
           commercialEmail,
           commercialPhone,
+          operatedBy: a.operatedBy ?? "",
+          operatedByEmail,
           teleprospector: a.teleprospector ?? "",
           teleprospectorEmail: a.teleprospectorEmail ?? "",
           type: a.type ?? "agence",
@@ -414,6 +418,8 @@ export type AppointmentItem = {
   owner: string; // email du collaborateur ayant créé le RDV
   commercial: string; // nom du commercial qui gère le RDV
   commercialEmail: string; // e-mail du compte commercial affecté (lien robuste)
+  operatedBy: string; // nom du commercial qui opère RÉELLEMENT le RDV (délégation temporaire), vide si personne
+  operatedByEmail: string;
   teleprospector: string; // nom du téléprospecteur qui a généré le RDV
   teleprospectorEmail: string;
   type: "agence" | "deplacement";
@@ -500,6 +506,8 @@ export async function listAppointments(
       owner: p.owner ?? "",
       commercial: p.commercial ?? "",
       commercialEmail: p.commercialEmail ?? "",
+      operatedBy: p.operatedBy ?? "",
+      operatedByEmail: p.operatedByEmail ?? "",
       teleprospector: p.teleprospector ?? "",
       teleprospectorEmail: p.teleprospectorEmail ?? "",
       // déplacement explicite, sinon agence (les anciens "physique/visio/telephone" -> agence).

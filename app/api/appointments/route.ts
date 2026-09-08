@@ -32,9 +32,12 @@ export async function GET(req: Request) {
     const myName = tokset(s.name);
     const myEmail = s.email.toLowerCase();
     const isCreator = (a: typeof items[number]) => a.owner === s.email;
+    // Délégation : celui qui OPÈRE réellement le RDV doit aussi le voir dans son agenda (pour s'y présenter).
     const isAssignee = (a: typeof items[number]) =>
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmail) ||
-      (!a.commercialEmail && !!myName && tokset(a.commercial) === myName);
+      (!a.commercialEmail && !!myName && tokset(a.commercial) === myName) ||
+      (!!a.operatedByEmail && a.operatedByEmail.toLowerCase() === myEmail) ||
+      (!a.operatedByEmail && !!a.operatedBy && !!myName && tokset(a.operatedBy) === myName);
     // Visibilité : super-admin = tout ; responsable = son call center ;
     // sinon : mes RDV créés + affectés + ceux des call centers dont je suis GESTIONNAIRE.
     const { listCallCenters } = await import("@/lib/callcenters");

@@ -23,6 +23,7 @@ export const appointmentSchema = z.object({
   teleprospector: z.string().describe("Nom du téléprospecteur ayant généré le RDV").default(""),
   teleprospectorEmail: z.string().describe("E-mail du téléprospecteur").default(""),
   commercial: z.string().describe("Nom du commercial qui gère le RDV").default(""),
+  operatedBy: z.string().describe("Nom du commercial qui opère RÉELLEMENT le RDV, si différent (délégation temporaire)").default(""),
   startDateTime: z
     .string()
     .describe(
@@ -148,6 +149,7 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     teleprospector: input.teleprospector?.trim() || "",
     teleprospectorEmail: input.teleprospectorEmail?.trim() || "",
     commercial: input.commercial?.trim() || "",
+    operatedBy: "",
     startDateTime: toParisISO(input.date, input.time),
   };
 }

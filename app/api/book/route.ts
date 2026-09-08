@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     if (execName) {
       const ownerEmail = await commercialEmailByName(execName);
       const delegate = ownerEmail ? await activeDelegate(ownerEmail, date) : null;
-      if (delegate) execName = delegate.name;
+      if (delegate) { execName = delegate.name; appt.operatedBy = delegate.name; }
     }
 
     // Créneaux par commercial : bloque seulement si CE commercial (celui qui opère) est déjà pris à ce moment.

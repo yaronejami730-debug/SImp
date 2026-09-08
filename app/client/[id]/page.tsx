@@ -21,7 +21,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string; location: string;
   immatriculation?: string; vehiclePhotoUrl?: string; teleprospector?: string;
   note: string;
-  present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; owner: string; commercial: string;
+  present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; owner: string; commercial: string; operatedBy?: string;
   commissionBase?: number; commissionPct?: number; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean; confirmed?: boolean;
@@ -838,7 +838,7 @@ function ClientPage({ id }: { id: string }) {
                 { cle: "E-mail", val: a.email ? <a href={`mailto:${a.email}`} style={{ color: T.ink, textDecoration: "none", fontWeight: 700, wordBreak: "break-all" }}>{a.email}</a> : "—" },
                 { cle: "Véhicule", val: vehicle },
                 { cle: "Plateforme", val: a.platform || "—" },
-                { cle: "Commercial", val: a.commercial || "—" },
+                { cle: "Commercial", val: a.operatedBy ? `${a.commercial} — opéré par ${a.operatedBy}` : (a.commercial || "—") },
                 { cle: "Téléprospecteur", val: a.teleprospector || "—" },
               ].map((c) => (
                 <div key={c.cle}>
