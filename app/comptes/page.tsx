@@ -14,6 +14,7 @@ type User = {
 };
 type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
 type Assignment = { call_center_id: number; commercial_email: string };
+type TeleproAssignment = { telepro_email: string; commercial_email: string };
 type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
 
 const inp: React.CSSProperties = { ...champ };
@@ -48,6 +49,7 @@ function Comptes() {
   const [role, setRole] = useState<"admin" | "responsable" | "collab">("collab");
   const [callCenters, setCallCenters] = useState<CallCenter[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [teleproAssignments, setTeleproAssignments] = useState<TeleproAssignment[]>([]);
   const [accords, setAccords] = useState<Accord[]>([]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,7 @@ function Comptes() {
   const [creationOuverte, setCreationOuverte] = useState(false);
   // Mini-form "ajouter un télépro à CE call center"
 
-  const [type, setType] = useState<"commercial" | "telepro" | "callcenter">("commercial");
+  const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin">("commercial");
   // Compte commercial / télépro
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -93,7 +95,7 @@ function Comptes() {
       if (d.role === "admin") {
         const r2 = await fetch("/api/callcenters", { headers: authHeaders() });
         const d2 = await r2.json();
-        if (d2.ok) { setCallCenters(d2.callCenters); setAssignments(d2.assignments); setAccords(d2.accords ?? []); }
+        if (d2.ok) { setCallCenters(d2.callCenters); setAssignments(d2.assignments); setAccords(d2.accords ?? []); setTeleproAssignments(d2.teleproAssignments ?? []); }
       }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
@@ -107,7 +109,7 @@ function Comptes() {
     if (!name.trim() || !username.trim() || !password.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" ? "commercial" : "telepro", name, username, email, password, phone, schemeKey, callCenterId: attachCC }) });
+      const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ type: type === "commercial" || type === "admin" ? type : "telepro", name, username, email, password, phone, schemeKey, callCenterId: attachCC }) });
       const d = await res.json();
       if (d.ok) { setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); load(); }
       else alert(d.error ?? "Erreur");
@@ -198,6 +200,13 @@ function Comptes() {
 
   async function toggleAssign(u: User, ccId: number, assigned: boolean) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, email: u.email, action: assigned ? "unassign" : "assign" }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  const isTeleproAssigned = (teleproEmail: string, commercialEmail: string) =>
+    teleproAssignments.some((a) => a.telepro_email === teleproEmail.toLowerCase() && a.commercial_email === commercialEmail.toLowerCase());
+  async function toggleTeleproAssign(teleproEmail: string, commercialEmail: string, assigned: boolean) {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: 1, teleproEmail, commercialEmail, action: assigned ? "unassignTelepro" : "assignTelepro" }) });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
@@ -522,9 +531,20 @@ function Comptes() {
             {typeBtn("commercial", "Commercial", "réalise les RDV")}
             {typeBtn("telepro", "Téléprospecteur", "crée les RDV")}
             {typeBtn("callcenter", "Call center", "équipe + responsable")}
+            {isAdmin && typeBtn("admin", "Super-admin", "accès total")}
           </div>
 
-          {type === "callcenter" ? (
+          {type === "admin" ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              <Field label="Nom"><input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom complet" /></Field>
+              <Field label="Pseudo (identifiant de connexion)"><input style={inp} value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" /></Field>
+              <Field label="Mot de passe"><input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+              <Field label="E-mail (facultatif)"><input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+              <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
+                {busy ? "…" : "Créer le super-admin"}
+              </button>
+            </div>
+          ) : type === "callcenter" ? (
             <div style={{ display: "grid", gap: 10 }}>
               <Field label="Nom du call center"><input style={inp} value={ccName} onChange={(e) => setCcName(e.target.value)} placeholder="Call Center Hanan" /></Field>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: T.ink }}>
@@ -622,6 +642,23 @@ function Comptes() {
             <button onClick={() => patch(u.id, { active: u.active === false })} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>{u.active === false ? "Réactiver" : "Désactiver"}</button>
           </div>
         )}
+
+        {isAdmin && u.is_teleprospector && (() => {
+          const agenceId = rootOf(Number(u.call_center_id));
+          const coms = agenceId ? commercialsOfAgence(agenceId) : [];
+          if (coms.length === 0) return null;
+          return (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
+              <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center", marginRight: 4 }}>Commerciaux assignés (vide = tous) :</span>
+              {coms.map((c) => {
+                const on = isTeleproAssigned(u.email, c.email);
+                return (
+                  <button key={c.id} onClick={() => toggleTeleproAssign(u.email, c.email, on)} style={bascule(on)}>{c.name}</button>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Rémunération : barèmes retirés le temps de refaire la page Barèmes (chiffres non fiables). */}
       </div>

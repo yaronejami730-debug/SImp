@@ -10,6 +10,7 @@ import { signBooking } from "@/lib/auth";
 import { scheduleFollowup, cancelFollowupOfType } from "@/lib/followups";
 import { getUserByEmail } from "@/lib/users";
 import { isFrenchMobile } from "@/lib/parse";
+import { themeForCallCenter } from "@/lib/callcenters";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -199,9 +200,10 @@ export async function POST(req: Request, { params }: Params) {
     switch (action) {
       case "resend_confirmation_mail": {
         if (!email) return NextResponse.json({ error: "Pas d'e-mail client." }, { status: 400 });
+        const theme = await themeForCallCenter(s.callCenterId ?? 1).catch(() => null);
         const mail = deplacement
           ? mobileConfirmationEmail({ civility, firstName, lastName, startDateTime: startIso, address, conseiller: commercial, phone: conseillerPhone })
-          : confirmationEmail({ civility, firstName, lastName, startDateTime: startIso, location, platform: p.platform, listingUrl: p.listingUrl, whatsappUrl: whatsappUrl(), rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined });
+          : confirmationEmail({ civility, firstName, lastName, startDateTime: startIso, location, platform: p.platform, listingUrl: p.listingUrl, whatsappUrl: whatsappUrl(), rescheduleUrl: ev.id ? rescheduleUrl(base, ev.id) : undefined, theme: theme ? { name: theme.name, logo: theme.logo } : undefined });
         await sendEmail({ to: email, toName: firstName, subject: mail.subject, html: mail.html, log: { ...logBase, templateKey: deplacement ? "mobile_confirmation" : "confirmation" } });
         return NextResponse.json({ ok: true, message: `Mail de confirmation${deplacement ? " (déplacement)" : ""} renvoyé à ${email}.` });
       }

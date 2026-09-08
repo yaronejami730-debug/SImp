@@ -145,6 +145,35 @@ export async function listAssignments(): Promise<{ call_center_id: number; comme
   );
   return rows.map((r) => ({ call_center_id: Number(r.call_center_id), commercial_email: r.commercial_email.toLowerCase() }));
 }
+/** Assigne un commercial précis à un téléprospecteur précis (restriction plus fine que le call center entier). */
+export async function assignTeleproCommercial(teleproEmail: string, commercialEmail: string) {
+  await getPool().query(
+    `insert into telepro_commercials (telepro_email, commercial_email) values (lower($1), lower($2)) on conflict do nothing`,
+    [teleproEmail.trim(), commercialEmail.trim()],
+  );
+}
+export async function unassignTeleproCommercial(teleproEmail: string, commercialEmail: string) {
+  await getPool().query(
+    `delete from telepro_commercials where lower(telepro_email) = lower($1) and lower(commercial_email) = lower($2)`,
+    [teleproEmail.trim(), commercialEmail.trim()],
+  );
+}
+/** Toutes les affectations commercial↔téléprospecteur. */
+export async function listTeleproAssignments(): Promise<{ telepro_email: string; commercial_email: string }[]> {
+  const { rows } = await getPool().query<{ telepro_email: string; commercial_email: string }>(
+    `select telepro_email, commercial_email from telepro_commercials`,
+  );
+  return rows.map((r) => ({ telepro_email: r.telepro_email.toLowerCase(), commercial_email: r.commercial_email.toLowerCase() }));
+}
+/** Commerciaux assignés à CE téléprospecteur précis (vide = pas de restriction spécifique, on retombe sur la règle du call center). */
+export async function commercialsForTelepro(teleproEmail: string): Promise<string[]> {
+  const { rows } = await getPool().query<{ commercial_email: string }>(
+    `select commercial_email from telepro_commercials where lower(telepro_email) = lower($1)`,
+    [teleproEmail],
+  );
+  return rows.map((r) => r.commercial_email.toLowerCase());
+}
+
 /** Restriction d'un call center pour le formulaire RDV.
  *  CC 1 (racine historique) = aucune restriction (null).
  *  Sinon : commerciaux liés à CE niveau, sinon hérités du parent (agence/franchise) en remontant. */

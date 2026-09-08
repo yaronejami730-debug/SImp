@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, setGestionnaire, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments } from "@/lib/callcenters";
+import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, setGestionnaire, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments, assignTeleproCommercial, unassignTeleproCommercial, listTeleproAssignments } from "@/lib/callcenters";
 import { listAccords, upsertCcAccords } from "@/lib/remuneration";
 
 export const maxDuration = 30;
@@ -15,8 +15,8 @@ function requireAdmin(req: Request) {
 export async function GET(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const [callCenters, assignments, accords] = await Promise.all([listCallCenters(), listAssignments(), listAccords()]);
-    return NextResponse.json({ ok: true, callCenters, assignments, accords });
+    const [callCenters, assignments, accords, teleproAssignments] = await Promise.all([listCallCenters(), listAssignments(), listAccords(), listTeleproAssignments()]);
+    return NextResponse.json({ ok: true, callCenters, assignments, accords, teleproAssignments });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }
@@ -52,7 +52,15 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename" | "setGestionnaire" | "setAccords"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string };
+    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename" | "setGestionnaire" | "setAccords" | "assignTelepro" | "unassignTelepro"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string; teleproEmail?: string; commercialEmail?: string };
+    if (b.action === "assignTelepro" || b.action === "unassignTelepro") {
+      if (!b.teleproEmail?.trim() || !b.commercialEmail?.trim()) {
+        return NextResponse.json({ error: "teleproEmail et commercialEmail requis." }, { status: 400 });
+      }
+      if (b.action === "assignTelepro") await assignTeleproCommercial(b.teleproEmail, b.commercialEmail);
+      else await unassignTeleproCommercial(b.teleproEmail, b.commercialEmail);
+      return NextResponse.json({ ok: true });
+    }
     if (!b.callCenterId) return NextResponse.json({ error: "callCenterId requis." }, { status: 400 });
     if (b.action === "setAgence") {
       if (!b.parentId) return NextResponse.json({ error: "parentId (agence) requis." }, { status: 400 });

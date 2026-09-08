@@ -45,13 +45,18 @@ function btnOutline(href: string | undefined, label: string, color: string) {
   return `<tr><td style="padding:6px 0"><a href="${href}" target="_blank" style="display:block;background:#ffffff;color:${color};text-decoration:none;font-family:${FONT_BODY};font-size:13px;font-weight:600;text-align:center;padding:12px 20px;border-radius:8px;border:1.5px solid ${color}">${label}</a></td></tr>`;
 }
 
-function shell(content: string, buttons = "") {
+/** Branding d'une franchise/agence pour un e-mail : par défaut Simplicicar (variables d'env). */
+export type EmailTheme = { name?: string; logo?: string };
+
+function shell(content: string, buttons = "", theme?: EmailTheme) {
+  const business = theme?.name || BUSINESS;
+  const logo = theme?.logo || LOGO;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Cabin:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></head>
 <body style="margin:0;background:#ffffff;font-family:${FONT_BODY};color:${C.text};line-height:1.6">
   <div style="max-width:560px;margin:0 auto;padding:30px 24px;text-align:center">
     <div style="text-align:center;margin-bottom:30px">
-      <img src="${LOGO}" alt="${BUSINESS}" width="230" style="width:230px;max-width:68%;height:auto;display:inline-block;border:0"/>
+      <img src="${logo}" alt="${business}" width="230" style="width:230px;max-width:68%;height:auto;display:inline-block;border:0"/>
     </div>
     ${content}
     ${buttons ? `<table role="presentation" style="width:100%;max-width:340px;margin:26px auto 0;border-collapse:collapse">${buttons}</table>` : ""}
@@ -73,12 +78,13 @@ type ConfirmData = {
   civility?: string; firstName: string; lastName?: string;
   startDateTime: string; location: string;
   platform?: string; listingUrl?: string; whatsappUrl?: string; rescheduleUrl?: string;
-  commercial?: string; phone?: string;
+  commercial?: string; phone?: string; theme?: EmailTheme;
 };
 
 export function confirmationEmail(d: ConfirmData) {
   const { date, heure } = fmtLong(d.startDateTime);
-  const conseiller = d.commercial ? conseillerLine({ conseiller: d.commercial, phone: d.phone }) : "";
+  const business = d.theme?.name || BUSINESS;
+  const conseiller = d.commercial ? conseillerLine({ conseiller: d.commercial, phone: d.phone, business }) : "";
   const content = `
     <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${greet(d)},</p>
     <p style="margin:0 0 16px;font-size:15px">Suite à notre conversation téléphonique, je vous envoie les coordonnées de notre agence :</p>
@@ -86,17 +92,17 @@ export function confirmationEmail(d: ConfirmData) {
     <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:${C.primary}">Votre rendez-vous est prévu le ${date} à ${heure}.</p>
     ${conseiller}
     <p style="margin:0 0 4px;font-size:15px">N'oubliez pas de vous munir de votre <strong>carte grise</strong> et de votre <strong>pièce d'identité</strong>.</p>
-    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${BUSINESS.toUpperCase()}</p>`;
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">L'équipe ${business.toUpperCase()}</p>`;
   const buttons = btn(WAZE, "🧭 Itinéraire vers l'agence", C.navy) + btn(d.rescheduleUrl, "Reprogrammer le rendez-vous", C.primary);
-  return { subject: `Votre rendez-vous — ${BUSINESS}`, html: shell(content, buttons) };
+  return { subject: `Votre rendez-vous — ${business}`, html: shell(content, buttons, d.theme) };
 }
 
 // ─────────── RENDEZ-VOUS EN DÉPLACEMENT (à domicile) ───────────
 type MobileData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; address: string; conseiller: string; phone?: string };
 
-function conseillerLine(d: { conseiller: string; phone?: string }) {
+function conseillerLine(d: { conseiller: string; phone?: string; business?: string }) {
   const tel = d.phone ? ` — <a href="tel:${d.phone.replace(/\s/g, "")}" style="color:${C.link};text-decoration:none;font-weight:700">${d.phone}</a>` : "";
-  return `<p style="margin:0 0 16px;font-size:15px">Votre conseiller ${BUSINESS} : <strong>M. ${d.conseiller}</strong>${tel}.</p>`;
+  return `<p style="margin:0 0 16px;font-size:15px">Votre conseiller ${d.business || BUSINESS} : <strong>M. ${d.conseiller}</strong>${tel}.</p>`;
 }
 
 /** Confirmation d'un RDV en déplacement (chez le client). */

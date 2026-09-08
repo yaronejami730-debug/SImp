@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
     const b = (await req.json()) as {
-      type?: "commercial" | "telepro";
+      type?: "commercial" | "telepro" | "admin";
       email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number; username?: string;
     };
     if (!b.username?.trim() || !b.password?.trim() || !b.name?.trim()) {
@@ -40,6 +40,14 @@ export async function POST(req: Request) {
     // Un responsable ne peut créer QUE des téléprospecteurs, dans son propre call center.
     if (s.role === "responsable" && b.type !== "telepro") {
       return NextResponse.json({ error: "Un responsable ne peut ajouter que des téléprospecteurs." }, { status: 403 });
+    }
+    // Seul un super-admin peut créer un autre super-admin.
+    if (b.type === "admin" && s.role !== "admin") {
+      return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
+    }
+    if (b.type === "admin") {
+      const user = await createUser({ email: b.email, username: b.username, password: b.password, name: b.name, role: "admin", callCenterId: 1 });
+      return NextResponse.json({ ok: true, user });
     }
     const sch = schemeByKey(b.schemeKey);
     const isCommercial = b.type === "commercial";

@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/brevo";
 import { confirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { cancelFollowup } from "@/lib/followups";
+import { themeForCallCenter } from "@/lib/callcenters";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
   const p = verifyBooking(t);
   if (!p) return NextResponse.json({ ok: false, error: "Lien invalide ou expiré." }, { status: 400 });
   const vehicle = [p.carBrand, p.carModel, p.carFinish].filter(Boolean).join(" ");
+  const theme = await themeForCallCenter(p.callCenterId ?? 1).catch(() => null);
   return NextResponse.json({
     ok: true,
     civility: p.civility ?? "",
@@ -26,6 +28,7 @@ export async function GET(req: Request) {
     date: p.date ?? "",
     time: p.time ?? "",
     needEmail: !p.email,           // le client doit saisir son e-mail si non pré-rempli
+    theme,                          // logo/couleurs de l'agence du commercial qui a envoyé le lien
   });
 }
 
@@ -84,11 +87,13 @@ export async function POST(req: Request) {
     let emailSent = false;
     try {
       const base = baseUrlFrom(req);
+      const theme = await themeForCallCenter(p.callCenterId ?? 1).catch(() => null);
       const mail = confirmationEmail({
         civility: appt.civility, firstName: appt.firstName, lastName: appt.lastName,
         startDateTime: appt.startDateTime, location: appt.location,
         whatsappUrl: whatsappUrl(),
         rescheduleUrl: event.id ? rescheduleUrl(base, event.id) : undefined,
+        theme: theme ? { name: theme.name, logo: theme.logo } : undefined,
       });
       await sendEmail({ to: appt.email, toName: `${appt.firstName} ${appt.lastName}`, subject: mail.subject, html: mail.html, log: { templateKey: "confirmation", clientName: `${appt.firstName} ${appt.lastName}`.trim(), owner: p.owner, eventId: event.id ?? undefined } });
       emailSent = true;

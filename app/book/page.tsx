@@ -36,6 +36,8 @@ export default function Book() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState<{ startDateTime: string } | null>(null);
   const [err, setErr] = useState("");
+  const [logo, setLogo] = useState(LOGO);
+  const [business, setBusiness] = useState("Simplicicar");
 
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("t") ?? "";
@@ -49,6 +51,8 @@ export default function Book() {
       setFixedSlot(!!d.fixedSlot);
       setNeedEmail(!!d.needEmail);
       if (d.fixedSlot) { setDate(d.date); setTime(d.time); }
+      if (d.theme?.logo) setLogo(d.theme.logo);
+      if (d.theme?.name) setBusiness(d.theme.name);
     }).catch(() => setValid(false));
   }, []);
 
@@ -73,7 +77,7 @@ export default function Book() {
       <div style={{ maxWidth: 520, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 26 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LOGO} alt="Simplicicar" width={230} style={{ width: 230, maxWidth: "68%", height: "auto" }} />
+          <img src={logo} alt={business} width={230} style={{ width: 230, maxWidth: "68%", height: "auto" }} />
         </div>
 
         {valid === false && <p style={{ color: "#dc2626", textAlign: "center" }}>❌ Lien invalide ou expiré. Contactez l&apos;agence.</p>}

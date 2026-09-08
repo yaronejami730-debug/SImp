@@ -6,7 +6,7 @@ import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, mobileConfirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { getAuth } from "@/lib/auth";
-import { callCenterRule } from "@/lib/callcenters";
+import { callCenterRule, themeForCallCenter } from "@/lib/callcenters";
 import { cancelFollowup } from "@/lib/followups";
 import { notify } from "@/lib/notifications";
 import { isBlocked } from "@/lib/bookers";
@@ -119,6 +119,7 @@ export async function POST(req: Request) {
     let emailError: string | undefined;
     if (!noNotify) try {
       const base = baseUrlFrom(req);
+      const theme = await themeForCallCenter(auth.callCenterId ?? 1).catch(() => null);
       const mail = isDeplacement
         ? mobileConfirmationEmail({
             civility: appt.civility, firstName: appt.firstName, lastName: appt.lastName,
@@ -131,6 +132,7 @@ export async function POST(req: Request) {
             platform: appt.platform, listingUrl: appt.listingUrl, whatsappUrl: whatsappUrl(),
             rescheduleUrl: event.id ? rescheduleUrl(base, event.id) : undefined,
             commercial: appt.commercial, phone: commPhone,
+            theme: theme ? { name: theme.name, logo: theme.logo } : undefined,
           });
       await sendEmail({
         to: appt.email,
