@@ -12,10 +12,11 @@ type User = {
   commission_base?: number; commission_pct?: number;
   call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string; last_seen_at?: string | null;
 };
-type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean };
+type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; telepro_pay_mode?: "gestionnaire" | "responsable" };
 type Assignment = { call_center_id: number; commercial_email: string };
 type TeleproAssignment = { telepro_email: string; commercial_email: string };
 type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
+type PricingAgreement = { id: number; call_center_id: number; commercial_name: string; base_amount: number; gestionnaire_amount: number | null; call_center_amount: number | null; status: string; trigger_kind?: string };
 type TeleproEarning = { email: string; name: string; callCenter: string; base: number; pct: number; rdv: number; signes: number; du: number; paye: number; solde: number };
 type TimeOff = { id: number; start_date: string; end_date: string; label: string };
 type Delegation = { id: number; delegate_email: string; delegate_name: string; start_date: string; end_date: string };
@@ -55,6 +56,7 @@ function Comptes() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [teleproAssignments, setTeleproAssignments] = useState<TeleproAssignment[]>([]);
   const [accords, setAccords] = useState<Accord[]>([]);
+  const [pricingAgreements, setPricingAgreements] = useState<PricingAgreement[]>([]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [selection, setSelection] = useState<{ kind: "agence" | "cc"; id: number } | null>(null);
@@ -111,6 +113,10 @@ function Comptes() {
         const r2 = await fetch("/api/callcenters", { headers: authHeaders() });
         const d2 = await r2.json();
         if (d2.ok) { setCallCenters(d2.callCenters); setAssignments(d2.assignments); setAccords(d2.accords ?? []); setTeleproAssignments(d2.teleproAssignments ?? []); }
+        // Vue lecture seule de ce qui est réglé dans la partie Barèmes (pricing_agreements).
+        const r3 = await fetch("/api/pricing-agreements", { headers: authHeaders() });
+        const d3 = await r3.json();
+        if (d3.ok) setPricingAgreements(d3.agreements ?? []);
       }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
@@ -232,6 +238,11 @@ function Comptes() {
   }
   async function setGestionnaire(ccId: number, email: string) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setGestionnaire", email }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  async function setPayMode(ccId: number, payMode: "gestionnaire" | "responsable") {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setPayMode", payMode }) });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
@@ -570,6 +581,24 @@ function Comptes() {
                 </section>
 
                 <section>
+                  <div style={legendeSection}>Mode de rémunération des téléprospecteurs</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => setPayMode(noeud.id, "gestionnaire")} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: (noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire" ? "none" : `1px solid ${T.line}`, background: (noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire" ? T.brand : T.surface, color: (noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire" ? "#fff" : T.ink2 }}>
+                      Gestionnaire direct
+                    </button>
+                    <button onClick={() => setPayMode(noeud.id, "responsable")} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: noeud.telepro_pay_mode === "responsable" ? "none" : `1px solid ${T.line}`, background: noeud.telepro_pay_mode === "responsable" ? T.brand : T.surface, color: noeud.telepro_pay_mode === "responsable" ? "#fff" : T.ink2 }}>
+                      Responsable
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>
+                    {(noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire"
+                      ? "Le gestionnaire fixe lui-même le barème (€/RDV) de chaque téléprospecteur de ce call center."
+                      : "Le gestionnaire donne un montant global au call center ; la redistribution interne est décidée par le responsable."}
+                    {" "}Édition toujours réservée au super-admin — ce réglage sert de repère dans la vue Rémunération ci-dessous.
+                  </div>
+                </section>
+
+                <section>
                   <div style={legendeSection}>Deuxième responsable (50/50)</div>
                   <select value={noeud.responsable_email_2 ?? ""} onChange={(e) => setResponsable2(noeud.id, e.target.value)} style={{ ...champ, maxWidth: 320 }}>
                     <option value="">— aucun —</option>
@@ -622,6 +651,43 @@ function Comptes() {
                 })}
               </div>
             </section>
+
+            {!estAgence && (
+              <section>
+                <div style={legendeSection}>💰 Rémunération — vue Barèmes (lecture seule)</div>
+                <p style={{ fontSize: 12.5, color: T.ink3, margin: "0 0 10px" }}>
+                  Ce qui est réglé dans la page Barèmes pour ce call center. Pour modifier, va sur Barèmes.
+                </p>
+                {(() => {
+                  const deals = pricingAgreements.filter((p) => Number(p.call_center_id) === noeud.id && p.status === "active");
+                  const telepros = users.filter((u) => u.is_teleprospector && Number(u.call_center_id) === noeud.id);
+                  return (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {deals.length === 0 ? (
+                        <div style={{ fontSize: 13, color: T.ink3 }}>Aucun accord actif avec un commercial dans Barèmes.</div>
+                      ) : deals.map((d) => (
+                        <div key={d.id} style={{ background: T.surface2, borderRadius: R.sm, padding: "8px 12px", fontSize: 13 }}>
+                          <strong>{d.commercial_name}</strong> — {Number(d.base_amount)} € / RDV signé
+                          {d.gestionnaire_amount != null && <span style={{ color: T.ink3 }}> (dont gestionnaire {Number(d.gestionnaire_amount)} €, call center {Number(d.call_center_amount)} €)</span>}
+                        </div>
+                      ))}
+                      {telepros.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, margin: "6px 0 4px" }}>Barème par téléprospecteur</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {telepros.map((t) => (
+                              <span key={t.id} style={{ fontSize: 12.5, background: T.surface2, borderRadius: 999, padding: "4px 10px" }}>
+                                {t.name} : {Number(t.commission_base ?? 0)} €{Number(t.commission_pct ?? 0) > 0 ? ` + ${t.commission_pct}%` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </section>
+            )}
           </div>
         </Fenetre>
       )}

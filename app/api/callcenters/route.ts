@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, setGestionnaire, setResponsable2, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments, assignTeleproCommercial, unassignTeleproCommercial, listTeleproAssignments } from "@/lib/callcenters";
+import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, setGestionnaire, setResponsable2, setTeleproPayMode, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments, assignTeleproCommercial, unassignTeleproCommercial, listTeleproAssignments } from "@/lib/callcenters";
 import { listAccords, upsertCcAccords } from "@/lib/remuneration";
 
 export const maxDuration = 30;
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename" | "setGestionnaire" | "setResponsable2" | "setAccords" | "assignTelepro" | "unassignTelepro"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string; teleproEmail?: string; commercialEmail?: string };
+    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename" | "setGestionnaire" | "setResponsable2" | "setAccords" | "setPayMode" | "assignTelepro" | "unassignTelepro"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string; teleproEmail?: string; commercialEmail?: string; payMode?: "gestionnaire" | "responsable" };
     if (b.action === "assignTelepro" || b.action === "unassignTelepro") {
       if (!b.teleproEmail?.trim() || !b.commercialEmail?.trim()) {
         return NextResponse.json({ error: "teleproEmail et commercialEmail requis." }, { status: 400 });
@@ -79,6 +79,11 @@ export async function PATCH(req: Request) {
     }
     if (b.action === "setResponsable2") {
       await setResponsable2(b.callCenterId, b.email ?? "");
+      return NextResponse.json({ ok: true });
+    }
+    if (b.action === "setPayMode") {
+      if (b.payMode !== "gestionnaire" && b.payMode !== "responsable") return NextResponse.json({ error: "payMode invalide." }, { status: 400 });
+      await setTeleproPayMode(b.callCenterId, b.payMode);
       return NextResponse.json({ ok: true });
     }
     if (b.action === "rename") {
