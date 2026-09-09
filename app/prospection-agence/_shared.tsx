@@ -53,8 +53,8 @@ export function EnvoiModal({ prospect, defaultPrices, onClose, onSent }: {
 }) {
   const [civilite, setCivilite] = useState("Monsieur");
   const [prix, setPrix] = useState<Prices>(prospect.last_sent_prices ?? defaultPrices);
-  const [signataireNom, setSignataireNom] = useState("Yaron");
-  const [signataireTitre, setSignataireTitre] = useState("Fondateur");
+  const [signataireNom, setSignataireNom] = useState("Yaron Jami");
+  const [signataireTitre, setSignataireTitre] = useState("");
   const [signataireTel, setSignataireTel] = useState("");
   const [etape, setEtape] = useState<"prix" | "confirmation">("prix");
   const [envoi, setEnvoi] = useState(false);
@@ -120,7 +120,7 @@ export function EnvoiModal({ prospect, defaultPrices, onClose, onSent }: {
         ) : (
           <>
             <div style={{ background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 10, padding: S.md, fontSize: 13.5, lineHeight: 1.7 }}>
-              Ce mail sera signé <strong>{signataireNom}</strong> ({signataireTitre} — YJ Solutions, jamais Simplicicar),
+              Ce mail sera signé <strong>{signataireNom}</strong> ({signataireTitre ? `${signataireTitre} — ` : ""}YJ Solutions, jamais Simplicicar),
               envoyé à <strong>{prospect.email}</strong>, avec la formule « {civilite} {prospect.name}, », les tarifs RDV signé
               (<strong>{prix.citadine} € / {prix.suv} € / {prix.premium} € TTC</strong>) et lead
               (<strong>{prix.lead} € TTC</strong>), avec un lien vers le questionnaire de cadrage des besoins.

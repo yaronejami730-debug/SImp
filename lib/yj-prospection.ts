@@ -2,9 +2,8 @@
 // Volontairement séparé de lib/email-templates.ts (branding client Simplicicar) pour ne
 // jamais mélanger les deux expéditeurs, comme demandé explicitement.
 //
-// Ton volontairement sobre : une lettre personnelle qu'on croirait écrite à la main par le
-// signataire, pas un template marketing de masse — pas de cartes/badges/pictogrammes, une
-// mise en page simple, du vocabulaire professionnel mais naturel.
+// Texte validé tel quel par le client (voir conversation) — ne pas reformuler son contenu,
+// seulement les variables (civilité/nom, tarifs, signataire, lien besoins).
 
 const BUSINESS = "YJ Solutions";
 const LOGO_URL = "https://rz18xsip6ybhgfji.public.blob.vercel-storage.com/yj-solutions/logo.png";
@@ -15,7 +14,7 @@ const FONT_BODY = "Georgia,'Times New Roman',serif";
 export type ProspectionPrices = { citadine: number; suv: number; premium: number; lead: number };
 export const DEFAULT_PROSPECTION_PRICES: ProspectionPrices = { citadine: 80, suv: 100, premium: 150, lead: 20 };
 export type Signataire = { name: string; title: string; phone?: string };
-export const DEFAULT_SIGNATAIRE: Signataire = { name: "Yaron", title: "Fondateur", phone: "" };
+export const DEFAULT_SIGNATAIRE: Signataire = { name: "Yaron Jami", title: "", phone: "" };
 
 function shell(content: string) {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -29,90 +28,73 @@ function shell(content: string) {
 </body></html>`;
 }
 
+const puce = (texte: string) =>
+  `<tr><td style="padding:3px 12px 3px 0;font-size:15px;vertical-align:top">•</td><td style="padding:3px 0;font-size:15px;line-height:1.7">${texte}</td></tr>`;
+
 /** Génère le mail "proposition commerciale" YJ Solutions pour un contact d'agence. */
 export function agencyProposalEmail(d: { civility?: string; name: string; prices: ProspectionPrices; signataire?: Signataire; needsUrl?: string }) {
   const civility = d.civility || "Monsieur";
   const p = d.prices;
   const sig = d.signataire ?? DEFAULT_SIGNATAIRE;
-  const psNeeds = d.needsUrl
-    ? `<div style="margin:0 0 28px">
-        <p style="margin:0 0 12px;font-size:14px;line-height:1.75;color:${C.muted}">
-          P.-S. — Pour que je puisse affiner cette proposition à votre situation, trois minutes suffisent :
-        </p>
+  const ctaBesoins = d.needsUrl
+    ? `<p style="margin:0 0 10px;font-size:14px;line-height:1.75;color:${C.muted}">
+        Pour aller plus loin, si vous le souhaitez — identifions ensemble vos besoins précis (facultatif, deux minutes) :
+      </p>
+      <p style="margin:0 0 28px">
         <a href="${d.needsUrl}" style="display:inline-block;padding:11px 20px;border-radius:6px;background:${C.navy};color:#ffffff;text-decoration:none;font-size:13.5px;font-weight:700">
-          Identifier les besoins de mon agence
+          Identifions ensemble vos besoins
         </a>
-        <p style="margin:10px 0 0;font-size:12px;color:${C.muted};line-height:1.6">
-          Lien personnel et confidentiel, à usage unique — valable 72h après ouverture.
-        </p>
-      </div>`
+      </p>`
     : "";
+
   const content = `
-  <p style="margin:0 0 20px;font-size:15px;line-height:1.75">${civility} ${d.name},</p>
+  <p style="margin:0 0 20px;font-size:15px;line-height:1.75">Bonjour ${civility} ${d.name},</p>
 
   <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
-    Je me permets de revenir vers vous suite à notre échange téléphonique — je vous remercie du temps que vous
-    m'avez accordé.
-  </p>
-
-  <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
-    Comme convenu, je vous détaille ci-dessous notre proposition.
+    Suite à notre échange, je vous fais un petit récapitulatif des différentes possibilités que nous pouvons
+    mettre en place.
   </p>
 
   <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
-    Le marché de l'occasion connaît une croissance soutenue, dans un contexte où le démarchage téléphonique à
-    froid est désormais encadré par la loi et suppose le consentement préalable du prospect. C'est la raison
-    pour laquelle nous travaillons exclusivement à partir de campagnes de leads consentis, conformes au RGPD.
+    Pour les leads qualifiés avec consentement, le tarif est de <strong>${p.lead} € TTC</strong> par lead. Votre
+    équipe peut ensuite reprendre directement contact avec le propriétaire.
   </p>
 
-  <p style="margin:0 0 6px;font-size:15px;line-height:1.75">
-    Nous proposons deux formules, que vous pouvez combiner selon vos besoins.
+  <p style="margin:0 0 8px;font-size:15px;line-height:1.75">
+    Pour les rendez-vous, le tarif dépend principalement du type et de la valeur du véhicule :
   </p>
-
-  <p style="margin:22px 0 8px;font-size:15px;line-height:1.75"><strong>Le rendez-vous signé</strong></p>
-  <p style="margin:0 0 10px;font-size:15px;line-height:1.75">
-    Nous alimentons le planning de vos commerciaux avec des clients déjà informés de votre façon de travailler.
-    Le rendez-vous a lieu, et c'est au commercial de le mener sans pression ni angoisse. Dès que le client signe
-    le mandat, vous nous réglez le montant correspondant à la gamme du véhicule :
-  </p>
-  <table role="presentation" style="border-collapse:collapse;margin:0 0 10px">
-    <tr><td style="padding:2px 14px 2px 0;font-size:14.5px;vertical-align:top">–</td><td style="padding:2px 0;font-size:14.5px">une citadine (Clio, 208, Polo…) : <strong>${p.citadine} € TTC</strong></td></tr>
-    <tr><td style="padding:2px 14px 2px 0;font-size:14.5px;vertical-align:top">–</td><td style="padding:2px 0;font-size:14.5px">un SUV ou intermédiaire (Range Rover, Q5, X3…) : <strong>${p.suv} € TTC</strong></td></tr>
-    <tr><td style="padding:2px 14px 2px 0;font-size:14.5px;vertical-align:top">–</td><td style="padding:2px 0;font-size:14.5px">un véhicule premium, à partir de 150 000 € (Classe S, GT3 RS…) : <strong>${p.premium} € TTC</strong></td></tr>
+  <table role="presentation" style="border-collapse:collapse;margin:0 0 16px">
+    ${puce(`<strong>${p.citadine} € TTC</strong> pour les citadines et petits véhicules`)}
+    ${puce(`<strong>${p.suv} € TTC</strong> pour les SUV, berlines et véhicules intermédiaires`)}
+    ${puce(`<strong>${p.premium} € TTC</strong> pour les véhicules haut de gamme et de plus forte valeur`)}
+    ${puce(`Pour les véhicules à partir de 150 000 €, nous définissons directement le tarif ensemble.`)}
   </table>
-  <p style="margin:0 0 4px;font-size:13.5px;color:${C.muted};line-height:1.7">
-    La facturation se fait groupée, tous les 15 à 30 rendez-vous, selon les modalités que nous définirons
-    ensemble. Dans les faits, la grande majorité de nos dossiers se situent entre la citadine et le SUV.
-  </p>
 
-  <p style="margin:22px 0 8px;font-size:15px;line-height:1.75"><strong>Le lead qualifié</strong></p>
-  <p style="margin:0 0 10px;font-size:15px;line-height:1.75">
-    Un contact direct, issu de nos campagnes, livré sans engagement de signature de votre part : <strong>${p.lead} € TTC</strong>
-    par lead. Un tarif dégressif est possible à partir de 100 leads par semaine — je me ferai un plaisir de vous
-    en dire davantage de vive voix. Le règlement intervient sous 48 heures après la livraison de la campagne,
-    par virement, carte bancaire ou prélèvement.
-  </p>
-
-  <p style="margin:22px 0 16px;font-size:15px;line-height:1.75">
-    Nos critères de sélection restent stricts : véhicules de moins de 150 000 km avec entretiens à jour, de
-    moins de 10 ans, une demande systématique du SOH pour l'électrique, et une vigilance particulière sur les
-    véhicules accidentés.
+  <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
+    Nous pouvons également fonctionner sur une formule où le rendez-vous est rémunéré uniquement lorsqu'il
+    aboutit à la signature d'un mandat. Dans ce cas, le tarif est défini en fonction du véhicule et des critères
+    recherchés.
   </p>
 
   <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
-    Si cette proposition vous convient, nous formaliserons ensemble un petit contrat précisant la formule
-    retenue, les volumes souhaités et les engagements de chacun.
+    L'idée est vraiment de pouvoir adapter les conditions en fonction de vos besoins, du volume et des véhicules
+    que vous souhaitez rentrer. Les tarifs ne sont donc pas figés.
+  </p>
+
+  <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
+    Pour commencer, je peux également vous proposer des conditions intéressantes sur les premiers dossiers afin
+    que vous puissiez voir concrètement la qualité des rendez-vous.
   </p>
 
   <p style="margin:0 0 28px;font-size:15px;line-height:1.75">
-    Je reste à votre entière disposition pour en discuter plus en détail, par téléphone ou de vive voix.
+    Je reste disponible pour en discuter et voir ce qui serait le plus intéressant pour vous.
   </p>
 
-  ${psNeeds}
+  ${ctaBesoins}
 
   <p style="margin:0;font-size:15px;line-height:1.6">Bien cordialement,</p>
   <p style="margin:4px 0 0;font-size:15px;font-weight:700;color:${C.navy}">${sig.name}</p>
-  <p style="margin:0;font-size:13.5px;color:${C.muted}">${sig.title}${sig.title ? " — " : ""}${BUSINESS}${sig.phone ? ` · ${sig.phone}` : ""}</p>`;
+  <p style="margin:0;font-size:13.5px;color:${C.muted}">${sig.title ? `${sig.title} — ` : ""}${BUSINESS}${sig.phone ? ` · ${sig.phone}` : ""}</p>`;
 
   return { subject: `Proposition commerciale — ${BUSINESS}`, html: shell(content) };
 }

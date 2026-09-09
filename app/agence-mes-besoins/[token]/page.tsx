@@ -7,56 +7,76 @@ type QType = "text" | "tel" | "email" | "date" | "textarea" | "radio" | "checkbo
 type Question = {
   id: string; section: string; label: string; hint?: string;
   type: QType; options?: string[]; required?: boolean; placeholder?: string;
+  // Question conditionnelle : n'apparaît (et ne compte dans la progression/validation) que si le
+  // formulaire est déjà dans cet état — c'est ça, "le CRM affiche uniquement les questions qui
+  // le concernent" : le rayon "Autre" ne sert à rien tant que "Autre" n'est pas coché, etc.
+  showIf?: (a: Record<string, string>) => boolean;
 };
 
+const SEGMENTS_HINT =
+  "Citadines/compactes : Clio, 208, 2008, Captur, C3, C4, Yaris, Polo, Golf, Ibiza, Leon, Fiesta, Focus, Corsa, Astra, Mini Cooper, A1, A3, Série 1, Classe A. — " +
+  "SUV/familiaux : 3008, 5008, Austral, Espace, Tiguan, T-Roc, Q3, Q5, X1, X3, X5, GLA, GLC, GLE, XC40, XC60, Evoque, Sportage, Tucson, RAV4. — " +
+  "Gros gabarits/haut de gamme : Q7, X5, X6, X7, GLE, GLS, Classe E, Classe S, Range Rover, Range Rover Sport, Cayenne, Panamera, XC90. — " +
+  "Ultra-sélect : Classe S, 911, GTS, Cayenne Turbo, Panamera, M, RS, AMG, Range Rover Autobiography, Bentley, Aston Martin, Ferrari, Lamborghini.";
+
 const QUESTIONS: Question[] = [
-  { id: "societe", section: "Votre établissement", label: "Raison sociale", type: "text", required: true },
-  { id: "contact", section: "Votre établissement", label: "Votre nom et fonction", type: "text", required: true },
-  { id: "tel", section: "Votre établissement", label: "Téléphone", type: "tel", required: true },
-  { id: "email", section: "Votre établissement", label: "E-mail", type: "email", required: true },
-  { id: "adresse", section: "Votre établissement", label: "Adresse du point de vente", type: "text" },
+  { id: "societe", section: "Votre société", label: "Raison sociale / nom de l'établissement", type: "text", required: true },
+  { id: "contactNom", section: "Votre société", label: "Nom et prénom du contact", type: "text", required: true },
+  { id: "fonction", section: "Votre société", label: "Fonction", type: "text" },
+  { id: "adresse", section: "Votre société", label: "Adresse du point de vente", type: "text" },
+  { id: "tel", section: "Votre société", label: "Téléphone", type: "tel", required: true },
+  { id: "email", section: "Votre société", label: "E-mail", type: "email", required: true },
+  { id: "attentes", section: "Votre société", label: "Parlez-nous de votre activité et de ce que vous souhaitez développer avec nous.", type: "textarea" },
 
-  { id: "prestation", section: "Ce que vous attendez de nous", label: "Quel type de prestation recherchez-vous ?", type: "radio", required: true, options: [
-    "Des rendez-vous clé en main — vous appelez, vous placez le rendez-vous",
-    "Des leads seuls — nos commerciaux font la prospection téléphonique",
-    "Les deux, à répartir",
+  { id: "prestation", section: "Ce que vous recherchez", label: "Quelle prestation souhaitez-vous mettre en place ?", type: "radio", required: true, options: [
+    "Rendez-vous clé en main — nous nous chargeons de la prospection et de la prise de rendez-vous, votre commercial reçoit le prospect et gère la suite du dossier",
+    "Leads qualifiés — nous vous transmettons les leads, vos commerciaux assurent eux-mêmes la prospection téléphonique",
+    "Les deux",
   ] },
-  { id: "source", section: "Ce que vous attendez de nous", label: "Sur quelle source travaillons-nous en priorité ?", type: "radio", required: true, options: [
-    "Vos annonces leboncoin et La Centrale", "Vos leads", "Les deux",
-  ] },
-  { id: "volume", section: "Ce que vous attendez de nous", label: "Quel volume mensuel visez-vous ?", hint: "Ce choix détermine le palier de facturation.", type: "radio", required: true, options: [
-    "Moins de 15", "15 à 30", "30 à 50", "Plus de 50",
-  ] },
-  { id: "sens", section: "Ce que vous attendez de nous", label: "Cherchez-vous des vendeurs ou des acheteurs ?", type: "radio", required: true, options: [
-    "Vendeurs — reprise et achat", "Acheteurs", "Les deux",
+  { id: "source", section: "Ce que vous recherchez", label: "Sur quelle source souhaitez-vous que nous travaillions en priorité ?", type: "radio", required: true, options: [
+    "Sur les leads que nous vous fournissons", "Sur d'autres supports ou sources", "Les deux",
   ] },
 
-  { id: "zone", section: "Zone et véhicules", label: "Ville ou département couvert", type: "text", required: true },
-  { id: "rayon", section: "Zone et véhicules", label: "Rayon autour du point de vente", type: "radio", options: ["20 km", "50 km", "100 km", "National"] },
-  { id: "segments", section: "Zone et véhicules", label: "Quels segments vous intéressent ?", hint: "Plusieurs réponses possibles.", type: "checkbox", required: true, options: [
-    "Citadines et compactes — Clio, 208, Polo, Golf",
-    "SUV et gros gabarits — Q5, X5, GLE, Range Rover",
-    "Ultra select — Classe S, RS, Porsche, sportives",
+  { id: "objectifType", section: "Volume souhaité", label: "Comment souhaitez-vous définir votre objectif commercial ?", type: "radio", required: true, options: [
+    "Par commercial", "Par semaine", "Par mois", "Autre",
   ] },
+  { id: "nbCommerciaux", section: "Volume souhaité", label: "Nombre de commerciaux concernés", type: "text", showIf: (a) => a.objectifType === "Par commercial" },
+  { id: "rdvSemaine", section: "Volume souhaité", label: "Nombre de rendez-vous souhaités par semaine", type: "text", showIf: (a) => a.objectifType === "Par semaine" },
+  { id: "rdvMois", section: "Volume souhaité", label: "Nombre de rendez-vous souhaités par mois", type: "text", showIf: (a) => a.objectifType === "Par mois" },
+  { id: "objectifAutre", section: "Volume souhaité", label: "Précisez votre objectif", type: "text", showIf: (a) => a.objectifType === "Autre" },
 
-  { id: "jours", section: "Votre organisation", label: "Jours d'ouverture", type: "text", placeholder: "Lundi au samedi" },
-  { id: "horaires", section: "Votre organisation", label: "Créneaux acceptés", type: "text", placeholder: "9h–12h et 14h–18h30" },
-  { id: "commerciaux", section: "Votre organisation", label: "Commerciaux disponibles pour recevoir", type: "text" },
-  { id: "referent", section: "Votre organisation", label: "Référent opérationnel chez vous", type: "text" },
-  { id: "outil", section: "Votre organisation", label: "Où voulez-vous recevoir les rendez-vous ?", type: "radio", options: ["Dans votre CRM", "Agenda Google ou Outlook", "Le tableau partagé YJ Solutions"] },
+  { id: "clientele", section: "Vendeurs ou acheteurs", label: "Quelle clientèle recherchez-vous ?", type: "radio", required: true, options: ["Vendeurs", "Acheteurs", "Les deux"] },
 
-  { id: "schema", section: "Transaction et encaissement", label: "Comment se dénoue une vente chez vous ?", hint: "Plusieurs réponses possibles.", type: "checkbox", required: true, options: [
-    "Rachat immédiat du véhicule, paiement du vendeur sous 48 h",
-    "Compte séquestre chez un tiers de confiance",
-    "Bon de commande avec acompte du client final",
+  { id: "ville", section: "Zone et véhicules recherchés", label: "Ville du point de vente", type: "text", required: true },
+  { id: "departement", section: "Zone et véhicules recherchés", label: "Département (si vous le connaissez)", type: "text" },
+  { id: "rayon", section: "Zone et véhicules recherchés", label: "Rayon de recherche autour du point de vente", type: "radio", required: true, options: ["5 km", "10 km", "15 km", "20 km", "25 km", "30 km", "35 km", "Autre"] },
+  { id: "rayonAutre", section: "Zone et véhicules recherchés", label: "Précisez le rayon", type: "text", showIf: (a) => a.rayon === "Autre" },
+  { id: "segments", section: "Zone et véhicules recherchés", label: "Quels types de véhicules recherchez-vous ?", hint: SEGMENTS_HINT, type: "checkbox", required: true, options: [
+    "Citadines / compactes", "SUV / véhicules familiaux", "Gros gabarits / haut de gamme", "Ultra-sélect / très forte valeur",
   ] },
-  { id: "acompte", section: "Transaction et encaissement", label: "Pourcentage d'acompte habituel", type: "text", placeholder: "15 %" },
+  { id: "marques", section: "Zone et véhicules recherchés", label: "Marques recherchées", type: "text" },
+  { id: "modeles", section: "Zone et véhicules recherchés", label: "Modèles recherchés", type: "text" },
+  { id: "anneeMin", section: "Zone et véhicules recherchés", label: "Année minimum", type: "text" },
+  { id: "anneeMax", section: "Zone et véhicules recherchés", label: "Année maximum", type: "text" },
+  { id: "kmMax", section: "Zone et véhicules recherchés", label: "Kilométrage maximum", type: "text" },
+  { id: "budget", section: "Zone et véhicules recherchés", label: "Budget / valeur (minimum ou maximum)", type: "text" },
+  { id: "autresCriteres", section: "Zone et véhicules recherchés", label: "Autres critères spécifiques", type: "textarea" },
 
-  { id: "palier", section: "Facturation et démarrage", label: "Palier de facturation souhaité", type: "radio", required: true, options: ["Tous les 15 rendez-vous", "Tous les 30 rendez-vous"] },
-  { id: "paiement", section: "Facturation et démarrage", label: "Moyen de paiement retenu", type: "radio", required: true, options: ["Virement bancaire", "Prélèvement SEPA", "Carte bancaire"] },
-  { id: "duree", section: "Facturation et démarrage", label: "Durée d'engagement envisagée", type: "radio", options: ["Test d'un mois", "3 mois", "6 mois", "12 mois"] },
+  { id: "jours", section: "Organisation des rendez-vous", label: "Quels sont vos jours d'ouverture ?", type: "text", placeholder: "Lundi au samedi" },
+  { id: "creneaux", section: "Organisation des rendez-vous", label: "Quels créneaux pouvez-vous accepter pour les rendez-vous ?", type: "checkbox", required: true, options: ["Matin", "Après-midi", "Journée complète", "Créneaux personnalisés"] },
+  { id: "creneauxPerso", section: "Organisation des rendez-vous", label: "Précisez vos créneaux", type: "text", showIf: (a) => (a.creneaux || "").includes("Créneaux personnalisés") },
+  { id: "outil", section: "Organisation des rendez-vous", label: "Où souhaitez-vous recevoir les rendez-vous ?", type: "radio", required: true, options: ["Notre CRM, mis à votre disposition", "Google Agenda", "Tableau partagé", "Autre"] },
+  { id: "outilAutre", section: "Organisation des rendez-vous", label: "Précisez", type: "text", showIf: (a) => a.outil === "Autre" },
+
+  { id: "transaction", section: "Transaction et encaissement", label: "Comment se déroule habituellement la transaction chez vous ?", type: "radio", required: true, options: [
+    "Rachat immédiat du véhicule lorsque l'acheteur final a versé son acompte", "Passage par un compte séquestre / tiers de confiance", "Autre fonctionnement",
+  ] },
+  { id: "transactionAutre", section: "Transaction et encaissement", label: "Précisez", type: "text", showIf: (a) => a.transaction === "Autre fonctionnement" },
+
+  { id: "palier", section: "Facturation et démarrage", label: "À quel palier souhaitez-vous être facturé ?", type: "radio", required: true, options: ["Tous les 15 rendez-vous", "Tous les 30 rendez-vous", "Autre"] },
+  { id: "palierAutre", section: "Facturation et démarrage", label: "Précisez", type: "text", showIf: (a) => a.palier === "Autre" },
+  { id: "paiement", section: "Facturation et démarrage", label: "Moyen de paiement souhaité", type: "radio", required: true, options: ["Virement bancaire", "Prélèvement", "Carte bancaire"] },
   { id: "demarrage", section: "Facturation et démarrage", label: "Date de démarrage souhaitée", type: "date" },
-  { id: "libre", section: "Facturation et démarrage", label: "Autre chose à nous dire ?", hint: "Contraintes, saisonnalité, expérience passée avec un prestataire…", type: "textarea" },
 ];
 
 const SECTIONS = [...new Set(QUESTIONS.map((q) => q.section))];
@@ -102,11 +122,16 @@ export default function AgenceMesBesoinsPage({ params }: { params: Promise<{ tok
     }
   }
 
+  // Questions réellement affichées compte tenu des réponses déjà données (voir showIf) — c'est
+  // ça, "le CRM n'affiche que ce qui concerne le professionnel" : sert à la progression, la
+  // validation et le récapitulatif, pas seulement au rendu des sections.
+  const visibles = useMemo(() => QUESTIONS.filter((q) => !q.showIf || q.showIf(answers)), [answers]);
+
   const progres = useMemo(() => {
-    const total = QUESTIONS.length;
-    const remplis = QUESTIONS.filter((q) => (answers[q.id] || "").trim().length > 0).length;
+    const total = visibles.length;
+    const remplis = visibles.filter((q) => (answers[q.id] || "").trim().length > 0).length;
     return total ? Math.round((remplis / total) * 100) : 0;
-  }, [answers]);
+  }, [answers, visibles]);
 
   function setValeur(id: string, v: string) {
     setAnswers((a) => ({ ...a, [id]: v }));
@@ -121,7 +146,7 @@ export default function AgenceMesBesoinsPage({ params }: { params: Promise<{ tok
   function construireRecap() {
     const lignes: string[] = [`QUESTIONNAIRE DE CADRAGE — ${nomAgence}`, `Reçu le ${new Date().toLocaleDateString("fr-FR")}`, ""];
     for (const section of SECTIONS) {
-      const qs = QUESTIONS.filter((q) => q.section === section && (answers[q.id] || "").trim());
+      const qs = visibles.filter((q) => q.section === section && (answers[q.id] || "").trim());
       if (!qs.length) continue;
       lignes.push(section.toUpperCase());
       for (const q of qs) lignes.push(`  ${q.label} : ${answers[q.id]}`);
@@ -131,7 +156,7 @@ export default function AgenceMesBesoinsPage({ params }: { params: Promise<{ tok
   }
 
   async function envoyer() {
-    const manquants = new Set(QUESTIONS.filter((q) => q.required && !(answers[q.id] || "").trim()).map((q) => q.id));
+    const manquants = new Set(visibles.filter((q) => q.required && !(answers[q.id] || "").trim()).map((q) => q.id));
     setErreurs(manquants);
     setErreurConsentement(!consentement);
     if (manquants.size) {
@@ -202,7 +227,7 @@ export default function AgenceMesBesoinsPage({ params }: { params: Promise<{ tok
       {SECTIONS.map((section) => (
         <Card key={section} title={section}>
           <div style={{ display: "grid", gap: S.lg }}>
-            {QUESTIONS.filter((q) => q.section === section).map((q) => (
+            {visibles.filter((q) => q.section === section).map((q) => (
               <div key={q.id} id={`q-${q.id}`}>
                 <ChampQuestion q={q} valeur={answers[q.id] || ""} onChange={(v) => setValeur(q.id, v)} onToggle={(opt) => toggleCheckbox(q.id, opt)} enErreur={erreurs.has(q.id)} />
               </div>
