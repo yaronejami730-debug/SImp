@@ -98,6 +98,7 @@ export async function GET(req: Request, { params }: Params) {
         presence: p.present === "1" ? "present" : p.present === "0" ? "absent" : "unknown",
         signStatus: p.signStatus ?? "",
         negotiation: p.negotiation ? Number(p.negotiation) : 0,
+        askingPrice: p.askingPrice ? Number(p.askingPrice) : 0,
         owner: p.owner ?? "",
         commercial: p.commercial ?? "",
         createdAt: ev.created ?? null,

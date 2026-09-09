@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "commercial et apptIds requis." }, { status: 400 });
     }
 
-    const email = await commercialEmailByName(commercialName);
+    const email = await commercialEmailByName(commercialName, true);
     if (!email) {
       return NextResponse.json({ error: `Aucun e-mail enregistré pour ${commercialName} — complète sa fiche dans Comptes.` }, { status: 400 });
     }

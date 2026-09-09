@@ -1,7 +1,7 @@
 import { getPool } from "./db";
 import { createUser } from "./users";
 
-export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string; telepro_pay_mode?: "gestionnaire" | "responsable" };
+export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean; deleted_at?: string | null };
 export type BrandTheme = { name: string; primary: string; dark: string; logo: string; headerDark: boolean };
 
 /** Thème de marque pour un utilisateur : on remonte la hiérarchie jusqu'à la RACINE
@@ -32,7 +32,7 @@ export type CallCenterDetail = CallCenter & { parent_name: string | null; commer
 export async function listCallCenters(): Promise<CallCenterDetail[]> {
   const { rows } = await getPool().query<CallCenterDetail>(
     `select c.id, c.name, c.agence_only, c.responsable_email, c.responsable_email_2, c.gestionnaire_email, c.parent_id,
-            c.brand_primary, c.brand_dark, c.logo_url, c.header_dark, c.telepro_pay_mode,
+            c.brand_primary, c.brand_dark, c.logo_url, c.header_dark, c.telepro_pay_mode, c.active, c.deleted_at,
             p.name as parent_name,
             (select count(*) from call_center_commercials x where x.call_center_id = c.id) as commercials_count,
             (select count(*) from users u where u.call_center_id = c.id and u.is_teleprospector = true and u.active = true) as telepros_count
@@ -46,9 +46,30 @@ export async function listCallCenters(): Promise<CallCenterDetail[]> {
     id: Number(r.id),
     parent_id: r.parent_id == null ? null : Number(r.parent_id),
     agence_only: !!r.agence_only,
+    active: r.active !== false,
     commercials_count: Number(r.commercials_count),
     telepros_count: Number(r.telepros_count),
   }));
+}
+
+/** Chaîne d'ancêtres (parent, grand-parent, …) de chaque call center — pure, calculée depuis
+ *  `parent_id`, sans accès DB. Sert à faire "matcher" un accord scopé à une AGENCE (racine ou
+ *  intermédiaire) contre les RDV de ses call centers descendants (voir remuneration.ts). */
+export function ancestryMap(ccs: CallCenterDetail[]): Map<number, number[]> {
+  const parentOf = new Map<number, number | null>(ccs.map((c) => [c.id, c.parent_id]));
+  const cache = new Map<number, number[]>();
+  const chain = (id: number, seen: Set<number> = new Set()): number[] => {
+    if (cache.has(id)) return cache.get(id)!;
+    if (seen.has(id)) return []; // boucle défensive
+    seen.add(id);
+    const parent = parentOf.get(id);
+    const result = parent == null ? [] : [parent, ...chain(parent, seen)];
+    cache.set(id, result);
+    return result;
+  };
+  const out = new Map<number, number[]>();
+  for (const c of ccs) out.set(c.id, chain(c.id));
+  return out;
 }
 
 export async function getCallCenter(id: number): Promise<CallCenter | undefined> {
@@ -100,6 +121,16 @@ export async function setGestionnaire(ccId: number, email: string) {
   await getPool().query(`update call_centers set gestionnaire_email = $2 where id = $1`, [ccId, email.trim().toLowerCase()]);
 }
 
+/** Cet e-mail est-il gestionnaire d'au moins un call center ? (apporteur d'affaires — rôle non exclusif :
+ *  cumulable avec admin, responsable, commercial ou téléprospecteur, voir telepro_pay_mode / /baremes.) */
+export async function isGestionnaireEmail(email: string): Promise<boolean> {
+  const { rows } = await getPool().query<{ c: string }>(
+    `select count(*)::int as c from call_centers where lower(gestionnaire_email) = lower($1)`,
+    [email.trim()],
+  );
+  return Number(rows[0]?.c ?? 0) > 0;
+}
+
 /** Mode de rémunération télépros de ce call center (voir CallCenter.telepro_pay_mode). Super-admin uniquement. */
 export async function setTeleproPayMode(ccId: number, mode: "gestionnaire" | "responsable") {
   await getPool().query(`update call_centers set telepro_pay_mode = $2 where id = $1`, [ccId, mode]);
@@ -123,17 +154,19 @@ export async function setBrandTheme(ccId: number, theme: { primary?: string; dar
   );
 }
 
-/** Supprime un call center / une agence : coupe l'ACCÈS (comptes désactivés, plus de login)
- *  mais ne touche à AUCUNE donnée métier (RDV, bilan, facturation restent intacts). */
+/** Supprime un call center / une agence : coupe l'ACCÈS (comptes désactivés, plus de login,
+ *  call center retiré des listes actives) mais ne touche à AUCUNE donnée métier — la ligne
+ *  call_centers elle-même est désactivée (active=false), jamais effacée, pour que l'historique
+ *  de facturation (accords, factures, paiements) reste résoluble indéfiniment. */
 export async function deleteCallCenter(id: number) {
   if (id === 1) throw new Error("Agence principale protégée.");
   const pool = getPool();
-  const kids = await pool.query<{ c: string }>(`select count(*)::int as c from call_centers where parent_id = $1`, [id]);
+  const kids = await pool.query<{ c: string }>(`select count(*)::int as c from call_centers where parent_id = $1 and active`, [id]);
   if (Number(kids.rows[0].c) > 0) throw new Error("Cette agence a des call centers rattachés. Détache-les ou supprime-les d'abord.");
   // Comptes du call center : désactivés (accès coupé), conservés pour l'historique/facturation.
-  await pool.query(`update users set active = false where call_center_id = $1 and role <> 'admin'`, [id]);
+  await pool.query(`update users set active = false, deleted_at = now() where call_center_id = $1 and role <> 'admin'`, [id]);
   await pool.query(`delete from call_center_commercials where call_center_id = $1`, [id]);
-  await pool.query(`delete from call_centers where id = $1`, [id]);
+  await pool.query(`update call_centers set active = false, deleted_at = now() where id = $1`, [id]);
 }
 
 export async function assignCommercial(ccId: number, email: string) {

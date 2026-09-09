@@ -11,8 +11,9 @@ type User = {
   is_commercial?: boolean; is_teleprospector?: boolean; phone?: string; active?: boolean;
   commission_base?: number; commission_pct?: number;
   call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string; last_seen_at?: string | null;
+  is_gestionnaire?: boolean; is_associe?: boolean;
 };
-type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; telepro_pay_mode?: "gestionnaire" | "responsable" };
+type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean };
 type Assignment = { call_center_id: number; commercial_email: string };
 type TeleproAssignment = { telepro_email: string; commercial_email: string };
 type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
@@ -59,7 +60,7 @@ function Comptes() {
   const [pricingAgreements, setPricingAgreements] = useState<PricingAgreement[]>([]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [selection, setSelection] = useState<{ kind: "agence" | "cc"; id: number } | null>(null);
+  const [selection, setSelection] = useState<{ kind: "agence" | "cc" | "utilisateurs"; id: number } | null>(null);
   const [reglagesOuverts, setReglagesOuverts] = useState(false);
   const [creationOuverte, setCreationOuverte] = useState(false);
   const [recapOuvert, setRecapOuvert] = useState(false);
@@ -73,7 +74,7 @@ function Comptes() {
   const [delegateDates, setDelegateDates] = useState<Record<string, { start: string; end: string }>>({});
   // Mini-form "ajouter un télépro à CE call center"
 
-  const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin">("commercial");
+  const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin" | "gestionnaire" | "associe">("commercial");
   // Compte commercial / télépro
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -112,7 +113,9 @@ function Comptes() {
       if (d.role === "admin") {
         const r2 = await fetch("/api/callcenters", { headers: authHeaders() });
         const d2 = await r2.json();
-        if (d2.ok) { setCallCenters(d2.callCenters); setAssignments(d2.assignments); setAccords(d2.accords ?? []); setTeleproAssignments(d2.teleproAssignments ?? []); }
+        // Call centers/agences retirés (soft-delete) : disparaissent de cette vue de gestion,
+        // mais leur historique (accords, factures) reste intact ailleurs — voir deleteCallCenter.
+        if (d2.ok) { setCallCenters((d2.callCenters as CallCenter[]).filter((c) => c.active !== false)); setAssignments(d2.assignments); setAccords(d2.accords ?? []); setTeleproAssignments(d2.teleproAssignments ?? []); }
         // Vue lecture seule de ce qui est réglé dans la partie Barèmes (pricing_agreements).
         const r3 = await fetch("/api/pricing-agreements", { headers: authHeaders() });
         const d3 = await r3.json();
@@ -181,17 +184,23 @@ function Comptes() {
     chargerVacations();
   }
 
+  // Gestionnaire/associé/super-admin : identités "libres", sans rattachement à la création —
+  // c'est dans le Deal (ou, pour l'admin, jamais) qu'on les relie ensuite à une agence/call center/commercial.
+  const SANS_RATTACHEMENT = ["gestionnaire", "associe", "admin"] as const;
+
   async function addUser() {
     if (!name.trim() || !username.trim() || !password.trim()) return;
     setBusy(true);
     try {
+      const typeEnvoye = ["commercial", "admin", "gestionnaire", "associe"].includes(type) ? type : "telepro";
+      const sansRattachement = (SANS_RATTACHEMENT as readonly string[]).includes(type);
       const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
-        type: type === "commercial" || type === "admin" ? type : "telepro", name, username, email, password, phone, schemeKey, callCenterId: attachCC,
+        type: typeEnvoye, name, username, email, password, phone, schemeKey, callCenterId: sansRattachement ? 1 : attachCC,
         ...(type === "telepro" ? { commissionBase: teleBase, commissionPct: telePct } : {}),
       }) });
       const d = await res.json();
-      if (d.ok) { setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); setTeleBase(60); setTelePct(0); load(); }
-      else alert(d.error ?? "Erreur");
+      if (!d.ok) { alert(d.error ?? "Erreur"); return; }
+      setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); setTeleBase(60); setTelePct(0); load();
     } finally { setBusy(false); }
   }
 
@@ -217,7 +226,7 @@ function Comptes() {
     } finally { setBusy(false); }
   }
   async function delCallCenter(id: number, label: string) {
-    if (!confirm(`Supprimer ${label} ?`)) return;
+    if (!confirm(`Retirer ${label} ? Le call center disparaît des listes actives ; son historique (accords, factures, RDV) reste intact.`)) return;
     const res = await fetch(`/api/callcenters?id=${id}`, { method: "DELETE", headers: authHeaders() });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
@@ -334,7 +343,7 @@ function Comptes() {
   }
 
   async function del(u: User) {
-    if (!confirm(`Supprimer le compte de ${u.name} ?`)) return;
+    if (!confirm(`Retirer le compte de ${u.name} ? Il disparaît des listes actives (plus de login) ; son historique de facturation reste intact.`)) return;
     const res = await fetch(`/api/users?id=${u.id}`, { method: "DELETE", headers: authHeaders() });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
@@ -360,11 +369,14 @@ function Comptes() {
     <button onClick={() => setType(v)} style={{ flex: "1 1 140px", padding: "10px 12px", borderRadius: R.sm, fontSize: 13.5, fontWeight: 700, cursor: "pointer", border: type === v ? "none" : `1px solid ${T.line}`, background: type === v ? T.ink : T.surface, color: type === v ? "#fff" : T.ink2 }}>{label}<br /><span style={{ fontWeight: 400, fontSize: 11.5, opacity: 0.8 }}>{sub}</span></button>
   );
 
-  // Sélection courante dans l'arborescence : une agence ou un call center.
+  // Sélection courante dans l'arborescence : une agence ou un call center (rien si "Utilisateurs").
   const noeud = selection?.kind === "cc"
     ? callCenters.find((c) => c.id === selection.id)
+    : selection?.kind === "utilisateurs" ? undefined
     : agences.find((a) => a.id === selection?.id) ?? agences[0];
   const estAgence = !noeud?.parent_id;
+  // Comptes libres : sans rattachement organisationnel — gestionnaires, associés, super-admins.
+  const utilisateursLibres = users.filter((u) => u.role === "admin" || u.is_gestionnaire || u.is_associe);
 
   /** Comptes rattachés au nœud sélectionné. */
   const comptesDuNoeud = (): User[] => {
@@ -401,6 +413,9 @@ function Comptes() {
             </button>
             <button onClick={ouvrirRecap} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
               💰 Récap télépros
+            </button>
+            <button onClick={() => setCreationOuverte(true)} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
+              + Créer un utilisateur
             </button>
           </div>
         ) : undefined}
@@ -440,6 +455,14 @@ function Comptes() {
               );
             })}
 
+            <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: T.ink3, padding: "10px 12px 6px" }}>
+              Utilisateurs
+            </div>
+            <button onClick={() => setSelection({ kind: "utilisateurs", id: 0 })} style={lienArbre(selection?.kind === "utilisateurs", false)}>
+              <span>Gestionnaires, associés, admins</span>
+              <span style={{ fontSize: 12, opacity: 0.75 }}>{utilisateursLibres.length}</span>
+            </button>
+
             <button
               onClick={addAgence} disabled={busy}
               style={{ width: "100%", height: 36, marginTop: 8, borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
@@ -450,7 +473,30 @@ function Comptes() {
 
           {/* ── Colonne droite : le détail du nœud sélectionné ── */}
           <div style={{ minWidth: 0 }}>
-            {!noeud ? (
+            {selection?.kind === "utilisateurs" ? (
+              <Card
+                title={`Utilisateurs libres (${utilisateursLibres.length})`}
+                description="Sans rattachement à une agence ou un call center : gestionnaires et associés (reliés à un commercial/call center au cas par cas dans Deal), super-admins."
+                actions={<button onClick={() => { setType("gestionnaire"); setCreationOuverte(true); }} style={{ height: 36, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>+ Créer un utilisateur</button>}
+              >
+                {utilisateursLibres.length === 0 ? (
+                  <div style={{ color: T.ink2, fontSize: 15 }}>Aucun pour l&apos;instant.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {utilisateursLibres.map((u) => (
+                      <div key={u.id}>
+                        <div style={{ marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {u.role === "admin" && <Badge ton="danger">Super-admin</Badge>}
+                          {u.is_gestionnaire && <Badge ton="info">Gestionnaire</Badge>}
+                          {u.is_associe && <Badge ton="succes">Associé</Badge>}
+                        </div>
+                        {renderUser(u)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            ) : !noeud ? (
               <Card><div style={{ color: T.ink2 }}>Crée une première agence pour commencer.</div></Card>
             ) : (
               <>
@@ -592,9 +638,9 @@ function Comptes() {
                   </div>
                   <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>
                     {(noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire"
-                      ? "Le gestionnaire fixe lui-même le barème (€/RDV) de chaque téléprospecteur de ce call center."
+                      ? "Le gestionnaire fixe lui-même le deal € (par RDV) de chaque téléprospecteur de ce call center."
                       : "Le gestionnaire donne un montant global au call center ; la redistribution interne est décidée par le responsable."}
-                    {" "}Édition toujours réservée au super-admin — ce réglage sert de repère dans la vue Rémunération ci-dessous.
+                    {" "}Ce réglage décide qui édite le deal € des téléprospecteurs dans l&apos;onglet Deal (super-admin toujours autorisé, quel que soit le mode).
                   </div>
                 </section>
 
@@ -654,9 +700,9 @@ function Comptes() {
 
             {!estAgence && (
               <section>
-                <div style={legendeSection}>💰 Rémunération — vue Barèmes (lecture seule)</div>
+                <div style={legendeSection}>💰 Rémunération — vue Deal (lecture seule)</div>
                 <p style={{ fontSize: 12.5, color: T.ink3, margin: "0 0 10px" }}>
-                  Ce qui est réglé dans la page Barèmes pour ce call center. Pour modifier, va sur Barèmes.
+                  Ce qui est réglé dans la page Deal pour ce call center. Pour modifier, va sur Deal.
                 </p>
                 {(() => {
                   const deals = pricingAgreements.filter((p) => Number(p.call_center_id) === noeud.id && p.status === "active");
@@ -664,7 +710,7 @@ function Comptes() {
                   return (
                     <div style={{ display: "grid", gap: 10 }}>
                       {deals.length === 0 ? (
-                        <div style={{ fontSize: 13, color: T.ink3 }}>Aucun accord actif avec un commercial dans Barèmes.</div>
+                        <div style={{ fontSize: 13, color: T.ink3 }}>Aucun accord actif avec un commercial dans Deal.</div>
                       ) : deals.map((d) => (
                         <div key={d.id} style={{ background: T.surface2, borderRadius: R.sm, padding: "8px 12px", fontSize: 13 }}>
                           <strong>{d.commercial_name}</strong> — {Number(d.base_amount)} € / RDV signé
@@ -673,7 +719,7 @@ function Comptes() {
                       ))}
                       {telepros.length > 0 && (
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, margin: "6px 0 4px" }}>Barème par téléprospecteur</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, margin: "6px 0 4px" }}>Deal € par téléprospecteur</div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                             {telepros.map((t) => (
                               <span key={t.id} style={{ fontSize: 12.5, background: T.surface2, borderRadius: 999, padding: "4px 10px" }}>
@@ -694,12 +740,22 @@ function Comptes() {
 
       {/* ── Fenêtre : création d'un compte ou d'un call center ── */}
       {creationOuverte && (
-        <Fenetre titre="Créer un compte" onFermer={() => setCreationOuverte(false)}>
+        <Fenetre titre="Créer un utilisateur" onFermer={() => setCreationOuverte(false)}>
+          {isAdmin && (
+            <>
+              <div style={legendeSection}>Identités libres — rattachées ensuite dans Deal</div>
+              <div style={{ display: "flex", gap: 8, marginBottom: S.sm, flexWrap: "wrap" }}>
+                {typeBtn("gestionnaire", "Gestionnaire", "négocie les deals")}
+                {typeBtn("associe", "Associé", "partage un bénéfice")}
+                {typeBtn("admin", "Super-admin", "accès total")}
+              </div>
+            </>
+          )}
+          <div style={legendeSection}>Comptes rattachés à une organisation</div>
           <div style={{ display: "flex", gap: 8, marginBottom: S.md, flexWrap: "wrap" }}>
             {typeBtn("commercial", "Commercial", "réalise les RDV")}
             {typeBtn("telepro", "Téléprospecteur", "crée les RDV")}
             {typeBtn("callcenter", "Call center", "équipe + responsable")}
-            {isAdmin && typeBtn("admin", "Super-admin", "accès total")}
           </div>
 
           {type === "admin" ? (
@@ -748,18 +804,37 @@ function Comptes() {
                   </div>
                 </Field>
               )}
-              <Field label="Rattachement">
-                <select style={inp} value={attachCC} onChange={(e) => setAttachCC(Number(e.target.value))}>
-                  {agences.map((a) => (
-                    <optgroup key={a.id} label={a.name}>
-                      <option value={a.id}>{a.name} (agence)</option>
-                      {callCenters.filter((c) => c.parent_id === a.id).map((c) => <option key={c.id} value={c.id}>↳ {c.name}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </Field>
+              {type === "commercial" && (
+                <Field label="Rattachement" hint="Un commercial se rattache à une agence entière, jamais à un call center précis.">
+                  <select style={inp} value={attachCC} onChange={(e) => setAttachCC(Number(e.target.value))}>
+                    {agences.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </Field>
+              )}
+              {type === "telepro" && (
+                <Field label="Rattachement" hint="Une agence entière (indépendant qui travaille pour elle), ou un call center précis.">
+                  <select style={inp} value={attachCC} onChange={(e) => setAttachCC(Number(e.target.value))}>
+                    {agences.map((a) => (
+                      <optgroup key={a.id} label={a.name}>
+                        <option value={a.id}>{a.name} (agence)</option>
+                        {callCenters.filter((c) => c.parent_id === a.id).map((c) => <option key={c.id} value={c.id}>↳ {c.name}</option>)}
+                      </optgroup>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {type === "associe" && (
+                <p style={{ margin: 0, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
+                  Compte simple, sans rattachement — il devient sélectionnable comme associé dans la partie Deal.
+                </p>
+              )}
+              {type === "gestionnaire" && (
+                <p style={{ margin: 0, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
+                  Compte simple, sans rattachement — c'est dans la partie Deal qu'il se relie à un commercial, un call center ou un téléprospecteur.
+                </p>
+              )}
               <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
-                {busy ? "…" : type === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
+                {busy ? "…" : type === "commercial" ? "Créer le commercial" : type === "telepro" ? "Créer le téléprospecteur" : type === "gestionnaire" ? "Créer le gestionnaire" : "Créer l'associé"}
               </button>
             </div>
           )}
@@ -892,6 +967,8 @@ function Comptes() {
               )}
               {u.is_commercial && <Badge ton="succes">Commercial</Badge>}
               {u.is_teleprospector && <Badge ton="info">Téléprospecteur</Badge>}
+              {u.is_gestionnaire && <Badge ton="info">Gestionnaire</Badge>}
+              {u.is_associe && <Badge ton="succes">Associé</Badge>}
               {u.role === "responsable" && <Badge ton="neutre">Responsable</Badge>}
               {u.active === false && <Badge ton="danger">Désactivé</Badge>}
             </div>
@@ -921,6 +998,8 @@ function Comptes() {
             <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center", marginRight: 4 }}>Rôles :</span>
             <button onClick={() => patch(u.id, { isCommercial: !u.is_commercial })} style={bascule(!!u.is_commercial)}>Commercial</button>
             <button onClick={() => patch(u.id, { isTeleprospector: !u.is_teleprospector })} style={bascule(!!u.is_teleprospector)}>Téléprospecteur</button>
+            <button onClick={() => patch(u.id, { isGestionnaire: !u.is_gestionnaire })} style={bascule(!!u.is_gestionnaire)}>Gestionnaire</button>
+            <button onClick={() => patch(u.id, { isAssocie: !u.is_associe })} style={bascule(!!u.is_associe)}>Associé</button>
             <button onClick={() => patch(u.id, { active: u.active === false })} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>{u.active === false ? "Réactiver" : "Désactiver"}</button>
           </div>
         )}

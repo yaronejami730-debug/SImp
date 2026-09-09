@@ -17,12 +17,13 @@ export async function POST(req: Request) {
   if (!getAuth(req)) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
 
   try {
-    const { eid, present, signStatus, negotiation, bcSigned, vehicleSold, sendMails } = (await req.json()) as {
+    const { eid, present, signStatus, negotiation, askingPrice, bcSigned, vehicleSold, sendMails } = (await req.json()) as {
       eid?: string;
       present?: boolean;
       signStatus?: string;
       sendMails?: boolean; // les relances ne partent que sur autorisation explicite
       negotiation?: number;
+      askingPrice?: number;
       bcSigned?: boolean;
       vehicleSold?: boolean;
     };
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Identifiant manquant." }, { status: 400 });
     }
 
-    await patchTracking(eid, { present, signStatus, negotiation, bcSigned, vehicleSold });
+    await patchTracking(eid, { present, signStatus, negotiation, askingPrice, bcSigned, vehicleSold });
 
     // Déclenche les actions post-signature (best-effort, n'empêche pas la réponse).
     if (signStatus !== undefined) {

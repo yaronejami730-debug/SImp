@@ -2,7 +2,7 @@
 
 import { clearCache } from "./cache";
 
-export type ClientUser = { email: string; name: string; role: "admin" | "responsable" | "collab"; callCenterId?: number; isCommercial?: boolean; isTeleprospector?: boolean };
+export type ClientUser = { email: string; name: string; role: "admin" | "responsable" | "collab"; callCenterId?: number; isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean };
 
 export function getToken(): string | null {
   return typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;

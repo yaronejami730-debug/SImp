@@ -16,6 +16,8 @@ export default function AppShell({ active, children, wide }: { active: string; c
   const [pret, setPret] = useState(false);
   const [connecte, setConnecte] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
+  const [isGestionnaire, setIsGestionnaire] = useState<boolean | null>(null);
+  const [espaceChoisi, setEspaceChoisi] = useState(false);
 
   useEffect(() => {
     applyTheme();
@@ -23,12 +25,23 @@ export default function AppShell({ active, children, wide }: { active: string; c
     // plutôt que d'afficher un écran vide qui répondrait « Non connecté » partout.
     if (tokenValide()) {
       setConnecte(true);
+      try { setEspaceChoisi(sessionStorage.getItem("yj_espace") !== null); } catch { setEspaceChoisi(true); }
     } else {
       clearAuth();
       setConnecte(false);
     }
     setPret(true);
   }, []);
+
+  // Statut gestionnaire vérifié en direct (pas seulement au login) : visible dans la nav
+  // dès qu'un admin te rattache à un call center, sans attendre une reconnexion.
+  useEffect(() => {
+    if (!connecte) return;
+    fetch("/api/me", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setIsGestionnaire(!!d.isGestionnaire); })
+      .catch(() => {});
+  }, [connecte]);
 
   // Présence : ping "connecté" toutes les 45s tant que le CRM reste ouvert (voir /comptes).
   useEffect(() => {
@@ -40,9 +53,41 @@ export default function AppShell({ active, children, wide }: { active: string; c
   }, [connecte]);
 
   if (!pret) return null;
-  if (!connecte) return <Login onLogin={() => setConnecte(true)} />;
+  if (!connecte) return <Login onLogin={() => { try { sessionStorage.removeItem("yj_espace"); } catch {} setEspaceChoisi(false); setConnecte(true); }} />;
 
-  const user = getUser();
+  const userBase = getUser();
+
+  // Super-admin uniquement : à chaque connexion, on choisit son espace de travail — le CRM
+  // Simplicicar (RDV, prospection lead, bilan, stock…) ou la prospection agences YJ Solutions
+  // (démarchage B2B, e-mails au nom de YJ Solutions). Les deux univers ne se mélangent jamais :
+  // aucun autre rôle ne voit ce choix ni la prospection agences.
+  if (userBase?.role === "admin" && !espaceChoisi) {
+    return (
+      <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" }}>
+        <div style={{ maxWidth: 560, width: "100%", textAlign: "center" }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: T.ink, margin: "0 0 8px" }}>Quel espace ?</h1>
+          <p style={{ fontSize: 14, color: T.ink2, margin: "0 0 24px" }}>Réservé au super-administrateur — les deux espaces ne se mélangent jamais.</p>
+          <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
+            <button
+              onClick={() => { try { sessionStorage.setItem("yj_espace", "crm"); } catch {} setEspaceChoisi(true); }}
+              style={{ padding: "28px 20px", borderRadius: R.md, border: `1.5px solid ${T.line}`, background: T.surface, cursor: "pointer", textAlign: "left" }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, marginBottom: 6 }}>CRM Simplicicar</div>
+              <div style={{ fontSize: 13, color: T.ink2 }}>Agenda, prise de RDV, prospection lead, bilan, stock…</div>
+            </button>
+            <button
+              onClick={() => { try { sessionStorage.setItem("yj_espace", "agence"); } catch {} window.location.href = "/prospection-agence"; }}
+              style={{ padding: "28px 20px", borderRadius: R.md, border: `1.5px solid ${T.line}`, background: T.surface, cursor: "pointer", textAlign: "left" }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, marginBottom: 6 }}>Prospection agences</div>
+              <div style={{ fontSize: 13, color: T.ink2 }}>Démarchage B2B — e-mails au nom de YJ Solutions.</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const user = userBase && isGestionnaire !== null ? { ...userBase, isGestionnaire } : userBase;
   const theme = getTheme();
   const marque = theme?.name || "Simplicicar";
   const logo = theme?.logo || "/logo.png";
@@ -61,6 +106,7 @@ export default function AppShell({ active, children, wide }: { active: string; c
 
   function deconnexion() {
     localStorage.removeItem("auth_backup");
+    try { sessionStorage.removeItem("yj_espace"); } catch {}
     clearAuth();
     window.location.href = "/simplicicar";
   }

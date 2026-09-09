@@ -5,6 +5,7 @@ export type ClientUserLite = {
   role: "admin" | "responsable" | "collab";
   isCommercial?: boolean;
   isTeleprospector?: boolean;
+  isGestionnaire?: boolean; // apporteur d'affaires d'au moins un call center — cumulable avec tout autre rôle
 };
 
 export type Entree = {
@@ -53,7 +54,7 @@ export const GROUPES: Groupe[] = [
     titre: "Administration",
     entrees: [
       { key: "comptes", label: "Comptes", href: "/comptes", icone: "personnes", visible: restreint((u) => estAdmin(u) || u?.role === "responsable") },
-      { key: "baremes", label: "Barèmes", href: "/baremes", icone: "euro", visible: restreint((u) => estAdmin(u) || u?.role === "responsable") },
+      { key: "baremes", label: "Deal", href: "/baremes", icone: "euro", visible: restreint((u) => estAdmin(u) || u?.role === "responsable" || !!u?.isGestionnaire) },
       { key: "templates", label: "Modèles d'e-mails", href: "/templates", icone: "enveloppe", visible: restreint(estAdmin) },
       { key: "avis-admin", label: "Avis clients", href: "/avis-admin", icone: "etoile", visible: restreint(estAdmin) },
       { key: "parametres", label: "Paramètres", href: "/parametres", icone: "reglages", visible: espaceCommercial },

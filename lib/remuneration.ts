@@ -15,13 +15,22 @@ export type Tier = { minCount: number; amountEur: number; pctNego: number };
 
 export type Accord = {
   id: number; call_center_id: number | null; commercial_email: string;
-  payee_email: string; payee_kind: "call_center" | "gestionnaire" | "telepro" | "apporteur";
+  payee_email: string; payee_kind: "call_center" | "gestionnaire" | "telepro" | "apporteur" | "associe";
   base_eur: number; pct_nego: number; sold_eur: number; sold_pct: number; // sortie : € fixes et/ou % du négocié, versés quand le véhicule est VENDU
+  sold_pct_base: "negocie" | "plusvalue"; // base du % sortie : le négocié total, ou la plus-value (négocié - prix initial du mandat)
   trigger_kind: "signed" | "honored"; // entrée payée au mandat SIGNÉ ou dès que le RDV est HONORÉ (client venu)
   payer_email: string; // qui paie (ex : le commercial) — vide = payé par la structure
   label: string; active: boolean;
   tier_mode: TierMode; tiers: Tier[]; // paliers de volume journalier (voir TierMode), triés par minCount croissant
+  payment_method: string; // libre : virement, chèque, espèces… vide = non précisé
+  payment_delay_days: number; // délai de règlement en jours après le déclencheur ; 0 = immédiat
+  includes_descendants: boolean; // portée AGENCE : call_center_id désigne une agence/CC racine, l'accord s'applique aussi à tous ses call centers descendants
+  deal_ref: string | null; // relie les 2-4 lignes créées ensemble par un même "Nouveau deal" (voir /api/deals brokerDeal)
+  deal_name: string | null; // nom donné au deal par celui qui l'a créé, affiché dans la liste
 };
+/** Ancêtres (parent, grand-parent, …) de chaque call center — voir lib/callcenters.ts `ancestryMap`.
+ *  Paramètre optionnel de scopeMatch/linesFor : omis, le comportement reste l'exact-match d'avant. */
+export type Ancestry = Map<number, number[]>;
 export type RemuLine = { payee: string; payer: string; kind: Accord["payee_kind"]; amount: number; accordId: number; apptId: string };
 /** count/rank du RDV dans la journée du bénéficiaire, DANS LE PÉRIMÈTRE de l'accord — voir buildTierContext. */
 type TierIndex = Map<number, Map<string, { count: number; rank: number }>>; // accordId -> apptId -> {count, rank}
@@ -29,7 +38,8 @@ type TierIndex = Map<number, Map<string, { count: number; rank: number }>>; // a
 export async function listAccords(): Promise<Accord[]> {
   const { rows } = await getPool().query<Accord & { tiers: { minCount: number; amountEur: string; pctNego: string }[] }>(
     `select a.id, a.call_center_id, a.commercial_email, a.payee_email, a.payee_kind, a.base_eur, a.pct_nego,
-            a.sold_eur, a.sold_pct, a.trigger_kind, a.payer_email, a.label, a.active, a.tier_mode,
+            a.sold_eur, a.sold_pct, a.sold_pct_base, a.trigger_kind, a.payer_email, a.label, a.active, a.tier_mode,
+            a.payment_method, a.payment_delay_days, a.includes_descendants, a.deal_ref, a.deal_name,
             coalesce(
               (select json_agg(json_build_object('minCount', t.min_count, 'amountEur', t.amount_eur, 'pctNego', t.pct_nego) order by t.min_count)
                  from remuneration_tiers t where t.accord_id = a.id),
@@ -48,6 +58,12 @@ export async function listAccords(): Promise<Accord[]> {
     commercial_email: (r.commercial_email || "").toLowerCase(),
     tier_mode: (r.tier_mode === "threshold" || r.tier_mode === "progressive") ? r.tier_mode : "none",
     tiers: (r.tiers ?? []).map((t) => ({ minCount: Number(t.minCount), amountEur: Number(t.amountEur), pctNego: Number(t.pctNego) })),
+    payment_method: r.payment_method ?? "",
+    payment_delay_days: Number(r.payment_delay_days ?? 0),
+    includes_descendants: !!r.includes_descendants,
+    deal_ref: r.deal_ref ?? null,
+    deal_name: r.deal_name ?? null,
+    sold_pct_base: r.sold_pct_base === "plusvalue" ? "plusvalue" : "negocie",
   }));
 }
 
@@ -69,17 +85,22 @@ const tok = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").to
 
 /** Un RDV est-il dans le périmètre de cet accord (call center, et éventuellement commercial/télépro précis) ?
  *  Indépendant du déclencheur (signé/honoré) : sert aussi à compter le VOLUME journalier (RDV pris, pas juste payés). */
-function scopeMatch(a: AppointmentItem, r: Accord): boolean {
+function scopeMatch(a: AppointmentItem, r: Accord, ancestry?: Ancestry): boolean {
   const cc = a.callCenterId ?? 1;
   const commEmail = (a.commercialEmail || "").toLowerCase();
   const commName = tok(a.commercial || "");
   if (r.call_center_id != null) {
-    if (cc !== r.call_center_id) return false;
+    const ccMatches = cc === r.call_center_id ||
+      (r.includes_descendants && !!ancestry?.get(cc)?.includes(r.call_center_id));
+    if (!ccMatches) return false;
     if (r.commercial_email) {
       const okC = (commEmail && commEmail === r.commercial_email) ||
         (!commEmail && commName && commName === tok(r.commercial_email.split("@")[0]));
       if (!okC) return false;
     }
+    // Un accord "ce téléprospecteur touche X€" ne doit matcher QUE ses propres RDV, pas tout
+    // le call center — même garde que la branche commercial_email ci-dessous.
+    if (r.payee_kind === "telepro" && (a.owner || "").toLowerCase() !== r.payee_email) return false;
     return true;
   } else if (r.commercial_email) {
     const matchEmail = commEmail && commEmail === r.commercial_email;
@@ -96,14 +117,14 @@ const parisDay = (iso: string | null) => iso ? new Intl.DateTimeFormat("en-CA", 
 /** Pour chaque accord à paliers : regroupe les RDV du périmètre par (bénéficiaire, jour) et calcule,
  *  pour chaque RDV, son rang dans la journée et le total de RDV pris ce jour-là (tous statuts, hors annulés) —
  *  c'est le VOLUME ("RDV pris"), pas le nombre payé, qui détermine le palier. */
-export function buildTierContext(appts: AppointmentItem[], accords: Accord[]): TierIndex {
+export function buildTierContext(appts: AppointmentItem[], accords: Accord[], ancestry?: Ancestry): TierIndex {
   const result: TierIndex = new Map();
   for (const r of accords) {
     if (r.tier_mode === "none" || !r.tiers.length) continue;
     const groups = new Map<string, AppointmentItem[]>();
     for (const a of appts) {
       if (a.cancelled || !a.startDateTime) continue;
-      if (!scopeMatch(a, r)) continue;
+      if (!scopeMatch(a, r, ancestry)) continue;
       const key = `${(a.owner || "").toLowerCase()}|${parisDay(a.startDateTime)}`;
       (groups.get(key) ?? groups.set(key, []).get(key)!).push(a);
     }
@@ -132,19 +153,21 @@ function effectiveRate(r: Accord, ctx?: { count: number; rank: number }): { base
  *  - 'honored' : client venu au RDV (présent), même sans signature.
  *  `tierIndex` (voir buildTierContext) donne le rang/volume du jour pour les accords à paliers —
  *  sans lui, un accord à paliers applique le tarif du 1er palier (RDV isolé, hors contexte de lot). */
-export function linesFor(a: AppointmentItem, accords: Accord[], tierIndex?: TierIndex): RemuLine[] {
+export function linesFor(a: AppointmentItem, accords: Accord[], tierIndex?: TierIndex, ancestry?: Ancestry): RemuLine[] {
   const out: RemuLine[] = [];
   if (a.cancelled) return out;
   const isSigned = a.signStatus === "signed" && !a.mandatRemoved;
   const isHonored = a.presence === "present" || a.present || isSigned;
   const nego = a.negotiation || 0;
   for (const r of accords) {
-    if (!scopeMatch(a, r)) continue;
+    if (!scopeMatch(a, r, ancestry)) continue;
     // Entrée selon le déclencheur de l'accord + sortie (véhicule vendu) en € et/ou %.
     const entryOk = r.trigger_kind === "honored" ? isHonored : isSigned;
     if (!entryOk) continue;
     const { base, pct } = effectiveRate(r, tierIndex?.get(r.id)?.get(a.id));
-    const amount = base + (pct / 100) * nego + (a.vehicleSold ? r.sold_eur + (r.sold_pct / 100) * nego : 0);
+    // Sortie (véhicule vendu) : % soit du négocié total, soit de la plus-value (négocié - prix initial du mandat).
+    const pctBase = r.sold_pct_base === "plusvalue" ? Math.max(0, nego - (a.askingPrice || 0)) : nego;
+    const amount = base + (pct / 100) * nego + (a.vehicleSold ? r.sold_eur + (r.sold_pct / 100) * pctBase : 0);
     if (amount > 0) out.push({ payee: r.payee_email, payer: r.payer_email, kind: r.payee_kind, amount, accordId: r.id, apptId: a.id });
   }
   return out;
@@ -174,25 +197,44 @@ export async function accordsForCc(ccId: number): Promise<Accord[]> {
 }
 
 /** Ce qu'un PAYEUR (ex : le commercial) doit sur un lot de RDV signés, ligne par ligne. */
-export function linesPaidBy(payerEmail: string, appts: AppointmentItem[], accords: Accord[]): (RemuLine & { appt: AppointmentItem })[] {
+export function linesPaidBy(payerEmail: string, appts: AppointmentItem[], accords: Accord[], ancestry?: Ancestry): (RemuLine & { appt: AppointmentItem })[] {
   const me = payerEmail.toLowerCase();
-  const tierIndex = buildTierContext(appts, accords);
+  const tierIndex = buildTierContext(appts, accords, ancestry);
   const out: (RemuLine & { appt: AppointmentItem })[] = [];
-  for (const a of appts) for (const l of linesFor(a, accords, tierIndex)) if (l.payer === me) out.push({ ...l, appt: a });
+  for (const a of appts) for (const l of linesFor(a, accords, tierIndex, ancestry)) if (l.payer === me) out.push({ ...l, appt: a });
   return out;
 }
 
 /** Somme des lignes d'un bénéficiaire sur un lot de RDV signés. */
-export function totalFor(payeeEmail: string, appts: AppointmentItem[], accords: Accord[]): { total: number; count: number; byKind: Record<string, number> } {
+export function totalFor(payeeEmail: string, appts: AppointmentItem[], accords: Accord[], ancestry?: Ancestry): { total: number; count: number; byKind: Record<string, number> } {
   const me = payeeEmail.toLowerCase();
-  const tierIndex = buildTierContext(appts, accords);
+  const tierIndex = buildTierContext(appts, accords, ancestry);
   let total = 0; const ids = new Set<string>(); const byKind: Record<string, number> = {};
   for (const a of appts) {
-    for (const l of linesFor(a, accords, tierIndex)) {
+    for (const l of linesFor(a, accords, tierIndex, ancestry)) {
       if (l.payee !== me) continue;
       total += l.amount; ids.add(l.apptId);
       byKind[l.kind] = (byKind[l.kind] ?? 0) + l.amount;
     }
   }
   return { total: Math.round(total), count: ids.size, byKind };
+}
+
+const PAYEE_LABEL: Record<Accord["payee_kind"], string> = {
+  call_center: "le call center", gestionnaire: "le gestionnaire", telepro: "le téléprospecteur", apporteur: "l'apporteur", associe: "l'associé",
+};
+
+/** Phrase claire "qui paie qui, comment, sous quel délai" — affichée telle quelle dans /baremes
+ *  et /paiements (bandeau "Mon deal"), pour que chaque compte comprenne son propre accord sans
+ *  avoir à déchiffrer des colonnes brutes. */
+export function explainAccord(a: Accord, opts: { payeeName?: string; payerName?: string } = {}): string {
+  const payeur = opts.payerName || a.payer_email || "L'entreprise (pas d'intermédiaire précis)";
+  const cible = opts.payeeName || PAYEE_LABEL[a.payee_kind];
+  const montant = a.pct_nego > 0 ? `${a.base_eur} € + ${a.pct_nego} % du négocié` : `${a.base_eur} €`;
+  const declencheur = a.trigger_kind === "honored" ? "au rendez-vous honoré" : "au mandat signé";
+  const sortieParts = [a.sold_eur > 0 ? `${a.sold_eur} €` : "", a.sold_pct > 0 ? `${a.sold_pct} % ${a.sold_pct_base === "plusvalue" ? "de la plus-value (négocié − prix initial)" : "du négocié"}` : ""].filter(Boolean);
+  const sortie = sortieParts.length ? ` + ${sortieParts.join(" + ")} si le véhicule est vendu` : "";
+  const methode = a.payment_method ? `, par ${a.payment_method}` : "";
+  const delai = a.payment_delay_days > 0 ? `, sous ${a.payment_delay_days} jour${a.payment_delay_days > 1 ? "s" : ""}` : "";
+  return `${payeur} verse ${montant} à ${cible} ${declencheur}${sortie}${methode}${delai}.`;
 }

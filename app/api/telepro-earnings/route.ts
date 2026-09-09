@@ -15,12 +15,14 @@ export async function GET(req: Request) {
   const s = getAuth(req);
   if (s?.role !== "admin") return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
+    // Pas de filtre "active" : un téléprospecteur désactivé (compte supprimé) doit rester
+    // dans ce récap tant qu'il a de l'historique — voir champ `active` dans la réponse.
     const { rows: telepros } = await getPool().query<{
-      email: string; name: string; commission_base: string; commission_pct: string; call_center_name: string | null;
+      email: string; name: string; commission_base: string; commission_pct: string; call_center_name: string | null; active: boolean;
     }>(
-      `select u.email, u.name, u.commission_base, u.commission_pct, cc.name as call_center_name
+      `select u.email, u.name, u.commission_base, u.commission_pct, u.active, cc.name as call_center_name
          from users u left join call_centers cc on cc.id = u.call_center_id
-        where u.is_teleprospector = true and u.active = true
+        where u.is_teleprospector = true
         order by u.name`,
     );
     if (telepros.length === 0) return NextResponse.json({ ok: true, telepros: [] });
@@ -47,8 +49,8 @@ export async function GET(req: Request) {
       const du = signes.reduce((n, a) => n + commissionOf(base, pct, Number(a.negotiation || 0)), 0);
       const paye = paiements.filter((p) => (p.commercial_email || "").toLowerCase() === email).reduce((n, p) => n + Number(p.amount || 0), 0);
       return {
-        email: t.email, name: t.name, callCenter: t.call_center_name ?? "", base, pct,
-        rdv: miens.length, signes: signes.length, du, paye, solde: du - paye,
+        email: t.email, name: t.active === false ? `${t.name} (compte supprimé)` : t.name, callCenter: t.call_center_name ?? "", base, pct,
+        rdv: miens.length, signes: signes.length, du, paye, solde: du - paye, active: t.active !== false,
       };
     });
 

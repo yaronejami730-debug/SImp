@@ -21,7 +21,7 @@ type Appt = {
   carBrand: string; carModel: string; carFinish: string; location: string;
   immatriculation?: string; vehiclePhotoUrl?: string; teleprospector?: string;
   note: string;
-  present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; owner: string; commercial: string; operatedBy?: string;
+  present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; askingPrice?: number; owner: string; commercial: string; operatedBy?: string;
   commissionBase?: number; commissionPct?: number; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean; confirmed?: boolean;
@@ -499,7 +499,7 @@ function ClientPage({ id }: { id: string }) {
     } finally { setBusy(""); }
   }
 
-  async function saveStatus(patch: { present?: boolean | null; signStatus?: Sign; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean; sendMails?: boolean }) {
+  async function saveStatus(patch: { present?: boolean | null; signStatus?: Sign; negotiation?: number; askingPrice?: number; bcSigned?: boolean; vehicleSold?: boolean; sendMails?: boolean }) {
     if (!a) return;
     const { sendMails, ...visible } = patch;
     setA({ ...a, ...(visible as Partial<Appt>) });
@@ -1051,6 +1051,18 @@ function ClientPage({ id }: { id: string }) {
               })()}
 
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: S.md }}>
+                <label htmlFor="prixInitial" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Prix initial (mandat)</label>
+                <input
+                  id="prixInitial" type="number" inputMode="numeric"
+                  value={a.askingPrice || ""}
+                  onChange={(e) => setA({ ...a, askingPrice: Number(e.target.value) })}
+                  onBlur={(e) => saveStatus({ askingPrice: Number(e.target.value) })}
+                  placeholder="—"
+                  style={{ ...champ, width: 140, height: 38, textAlign: "right" }}
+                />
+                <span style={{ fontSize: 13.5, color: T.ink2 }}>€</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: S.sm }}>
                 <label htmlFor="nego" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Prix négocié</label>
                 <input
                   id="nego" type="number" inputMode="numeric"
@@ -1061,6 +1073,9 @@ function ClientPage({ id }: { id: string }) {
                   style={{ ...champ, width: 140, height: 38, textAlign: "right" }}
                 />
                 <span style={{ fontSize: 13.5, color: T.ink2 }}>€</span>
+                {!!a.askingPrice && !!a.negotiation && (
+                  <span style={{ fontSize: 12.5, color: T.ink2 }}>plus-value : {(a.negotiation - a.askingPrice).toLocaleString("fr-FR")} €</span>
+                )}
               </div>
             </div>
             <ChaineFacturation

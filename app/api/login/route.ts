@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserByLogin } from "@/lib/users";
-import { themeForCallCenter } from "@/lib/callcenters";
+import { themeForCallCenter, isGestionnaireEmail } from "@/lib/callcenters";
 import { verifyPassword, signToken } from "@/lib/auth";
 
 export const maxDuration = 30;
@@ -25,8 +25,11 @@ export async function POST(req: Request) {
     }
     const session = { email: u.email, name: u.name, role: u.role, callCenterId: u.call_center_id ?? 1, isCommercial: !!u.is_commercial, isTeleprospector: !!u.is_teleprospector };
     // Thème de la franchise (racine de la hiérarchie) -> l'interface prend les couleurs de sa marque.
-    const theme = await themeForCallCenter(session.callCenterId).catch(() => null);
-    return NextResponse.json({ ok: true, token: signToken(session), ...session, theme });
+    const [theme, isGestionnaire] = await Promise.all([
+      themeForCallCenter(session.callCenterId).catch(() => null),
+      isGestionnaireEmail(u.email).catch(() => false),
+    ]);
+    return NextResponse.json({ ok: true, token: signToken(session), ...session, isGestionnaire, theme });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

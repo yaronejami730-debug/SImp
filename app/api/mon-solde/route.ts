@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getPool } from "@/lib/db";
 import { listAppointments } from "@/lib/google";
+import { listAccords, linesFor } from "@/lib/remuneration";
+import { listCallCenters, ancestryMap } from "@/lib/callcenters";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -52,7 +54,15 @@ export async function GET(req: Request) {
 
     // Historique complet : un commercial doit voir tous ses dossiers, pas les 60 derniers jours.
     const now = Date.now();
-    const items = await listAppointments(new Date(now - 5 * 365 * 86400e3), new Date(now + 2 * 365 * 86400e3));
+    const [items, accordsAll, ccs] = await Promise.all([
+      listAppointments(new Date(now - 5 * 365 * 86400e3), new Date(now + 2 * 365 * 86400e3)),
+      listAccords(), listCallCenters(),
+    ]);
+    const ancestry = ancestryMap(ccs);
+    // Le Deal (remuneration_accords, payer = moi) prime sur l'ancien barème plat u.commission_base/pct
+    // dès qu'il existe : un commercial avec un Deal ne "gagne" pas une commission, il PAYE ce que
+    // le Deal fixe — l'ancien champ ne doit plus s'appliquer une fois le Deal en place.
+    const mesAccordsDeal = accordsAll.filter((a) => a.payer_email.toLowerCase() === cible);
 
     // Deux lectures possibles du même dossier :
     //  - commercial : ce qu'il DOIT au téléprospecteur qui lui a apporté le rendez-vous ;
@@ -99,9 +109,19 @@ export async function GET(req: Request) {
       .map((a) => {
         const statut = statutDe(a);
         const negociation = Number(a.negotiation || 0);
-        // Le commercial doit sa commission dès que le mandat est signé.
-        const fixe = statut === "signe" ? base : 0;
-        const variable = statut === "signe" ? (pct / 100) * negociation : 0;
+        // Le commercial doit sa commission dès que le mandat est signé — via le Deal si configuré
+        // (remuneration_accords), sinon via l'ancien barème plat commission_base/pct (compat).
+        let fixe: number, variable: number;
+        if (sens === "doit" && mesAccordsDeal.length) {
+          const duDeal = statut === "signe"
+            ? linesFor(a, mesAccordsDeal, undefined, ancestry).filter((l) => l.payer === cible).reduce((n, l) => n + l.amount, 0)
+            : 0;
+          fixe = Math.round(duDeal);
+          variable = 0;
+        } else {
+          fixe = statut === "signe" ? base : 0;
+          variable = statut === "signe" ? (pct / 100) * negociation : 0;
+        }
         const montant = fixe + variable;
         // Deux lignes de facturation par dossier : le frais fixe (ff) et la part
         // variable sur le négocié (comm). Chacune a son propre état, posé à la main.
@@ -171,6 +191,7 @@ export async function GET(req: Request) {
         email: moi.email, name: moi.name, base, pct,
         callCenter: moi.call_center_name ?? "", agence: moi.agence_name ?? "",
         sens, // "doit" = commercial qui paie ; "recoit" = téléprospecteur payé
+        dealActif: sens === "doit" && mesAccordsDeal.length > 0, // le Deal remplace l'ancien barème base/pct pour le calcul
       },
       periode: { from: debut, to: fin },
       totaux: {

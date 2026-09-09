@@ -5,7 +5,7 @@ import Shell from "@/components/Shell";
 import { PricingAgreement } from "@/components/PricingAgreement";
 import { authHeaders, sessionExpiree, getUser } from "@/lib/client";
 import {
-  PageHeader, Card, StatCard, StatRow, Badge, DataTable, Euro, DateRange, T, S, R, type Colonne, type Ton,
+  PageHeader, Card, StatCard, StatRow, Badge, Button, Field, FormGrid, DataTable, Euro, DateRange, champ, T, S, R, type Colonne, type Ton,
 } from "@/components/ui";
 
 type Statut = "signe" | "reflexion" | "non_signe" | "absent" | "honore" | "a_venir";
@@ -21,7 +21,7 @@ type Dossier = {
 type Paiement = { id: number; amount: number; status: string; created_at: string };
 
 type Solde = {
-  commercial: { email: string; name: string; base: number; pct: number; callCenter: string; agence: string; sens: "doit" | "recoit" };
+  commercial: { email: string; name: string; base: number; pct: number; callCenter: string; agence: string; sens: "doit" | "recoit"; dealActif?: boolean };
   totaux: {
     rdv: number; signes: number; honores: number; absents: number; aVenir: number;
     ca: number; du: number; facture: number; paye: number; solde: number;
@@ -116,6 +116,84 @@ function PaiementsPage() {
   const [global, setGlobal] = useState<Solde | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [mesDeals, setMesDeals] = useState<string[]>([]);
+  const [mesRdvDus, setMesRdvDus] = useState<{ apptId: string; date: string | null; client: string; total: number; declencheur: string; gestionnaireName: string }[]>([]);
+  const [mesAccordsDirects, setMesAccordsDirects] = useState<{ id: number; commercial_email: string; commercial_name: string | null; base_eur: string; pct_nego: string; sold_eur: string; sold_pct: string; sold_pct_base: "negocie" | "plusvalue"; trigger_kind: string }[]>([]);
+  const [commerciauxDispo, setCommerciauxDispo] = useState<{ email: string; name: string }[]>([]);
+  const [accordFormOuvert, setAccordFormOuvert] = useState(false);
+  const [accordCommercial, setAccordCommercial] = useState("");
+  const [accordBase, setAccordBase] = useState("");
+  const [accordPct, setAccordPct] = useState("");
+  const [accordSoldEur, setAccordSoldEur] = useState("");
+  const [accordSoldPct, setAccordSoldPct] = useState("");
+  const [accordSoldBase, setAccordSoldBase] = useState<"negocie" | "plusvalue">("negocie");
+  const [accordTrigger, setAccordTrigger] = useState<"signed" | "honored">("signed");
+  const [savingAccord, setSavingAccord] = useState(false);
+
+  const chargerAccordsDirects = useCallback(async () => {
+    const r = await fetch("/api/accords-telepro", { headers: authHeaders() });
+    const d = await r.json();
+    if (d.ok) setMesAccordsDirects(d.accords);
+  }, []);
+
+  useEffect(() => {
+    if (!getUser()?.isTeleprospector) return;
+    chargerAccordsDirects();
+    fetch("/api/me", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
+      if (d.ok) setCommerciauxDispo(d.commercials ?? []);
+    }).catch(() => {});
+  }, [chargerAccordsDirects]);
+
+  async function creerAccordDirect() {
+    if (!accordCommercial) { alert("Choisis le commercial."); return; }
+    if (!accordBase && !accordPct && !accordSoldEur && !accordSoldPct) { alert("Indique un montant fixe ou un pourcentage."); return; }
+    setSavingAccord(true);
+    try {
+      const res = await fetch("/api/accords-telepro", {
+        method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({
+          commercialEmail: accordCommercial, baseEur: parseFloat(accordBase) || 0, pctNego: parseFloat(accordPct) || 0, trigger: accordTrigger,
+          soldEur: parseFloat(accordSoldEur) || 0, soldPct: parseFloat(accordSoldPct) || 0, soldPctBase: accordSoldBase,
+        }),
+      });
+      const d = await res.json();
+      if (!d.ok) { alert(d.error ?? "Erreur"); return; }
+      setAccordCommercial(""); setAccordBase(""); setAccordPct(""); setAccordSoldEur(""); setAccordSoldPct(""); setAccordSoldBase("negocie"); setAccordFormOuvert(false);
+      chargerAccordsDirects();
+    } finally {
+      setSavingAccord(false);
+    }
+  }
+
+  async function supprimerAccordDirect(id: number) {
+    if (!confirm("Retirer cet accord ? La trace est conservée.")) return;
+    await fetch(`/api/accords-telepro?id=${id}`, { method: "DELETE", headers: authHeaders() });
+    chargerAccordsDirects();
+  }
+
+  useEffect(() => {
+    fetch("/api/deals", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
+      if (!d.ok) return;
+      const me = (d.myEmail as string) ?? "";
+      // Vue commercial : jamais le détail interne (gestionnaire, associés, répartition) —
+      // juste "je paie X €, je travaille avec Y" (mesDealsSimplifies, déjà groupé côté API).
+      const simplifies = (d.mesDealsSimplifies as { explain: string }[] ?? []).map((x) => x.explain);
+      // Vue bénéficiaire (téléprospecteur, associé…) sur un deal dont je ne suis PAS le commercial :
+      // là, montrer son propre montant ne révèle la part de personne d'autre.
+      const recus = (d.deals as { payer_email: string; payee_email: string; commercial_email: string; explain: string }[])
+        .filter((x) => x.payee_email.toLowerCase() === me && x.commercial_email.toLowerCase() !== me)
+        .map((x) => x.explain);
+      // Accords directs indépendants (téléprospecteur↔commercial, sans call center ni deal_ref)
+      // où JE suis le commercial qui paie : accord simple 1:1, rien à cacher. Ne PAS élargir ce
+      // filtre à payee_kind !== 'telepro' — un deal broker (gestionnaire/call_center/associé) créé
+      // sans deal_ref (données historiques) doit rester invisible en détail au commercial.
+      const accordsDirectsPayes = (d.deals as { payer_email: string; deal_ref: string | null; payee_kind: string; call_center_id: number | null; explain: string }[])
+        .filter((x) => x.payer_email.toLowerCase() === me && !x.deal_ref && x.payee_kind === "telepro" && x.call_center_id == null)
+        .map((x) => x.explain);
+      setMesDeals([...simplifies, ...accordsDirectsPayes, ...recus]);
+      setMesRdvDus(d.mesRdvDus ?? []);
+    }).catch(() => {});
+  }, []);
 
   const periode = useMemo(() => {
     if (mode === "tout") return null;
@@ -173,6 +251,7 @@ function PaiementsPage() {
 
   const dossiers = solde.dossiers.filter(FILTRES[filtre].garde);
   const estAdmin = getUser()?.role === "admin";
+  const estTeleprospecteur = !!getUser()?.isTeleprospector;
 
   /** Pose l'état de règlement d'un dossier (admin) : à payer / facturé / payé.
    *  Écrit là où vivent déjà les marquages manuels du Bilan : ffStatus (frais fixe)
@@ -292,9 +371,103 @@ function PaiementsPage() {
     <Shell active="paiements" wide>
       <PageHeader
         title="Mes paiements"
-        subtitle={`${commercial.agence || "Agence non renseignée"}${commercial.callCenter && commercial.callCenter !== commercial.agence ? ` · ${commercial.callCenter}` : ""} — ${recoit ? "ce qui t'est dû pour chaque mandat signé que tu as généré" : "ce que tu dois au téléprospecteur pour chaque mandat signé"} : ${commercial.base} €${commercial.pct ? ` + ${commercial.pct} % du montant négocié` : ""}.`}
+        subtitle={`${commercial.agence || "Agence non renseignée"}${commercial.callCenter && commercial.callCenter !== commercial.agence ? ` · ${commercial.callCenter}` : ""} — ${
+          recoit
+            ? "ce qui t'est dû pour chaque mandat signé que tu as généré"
+            : commercial.dealActif
+              ? "ce que tu dois par mandat signé, selon ton deal (détail ci-dessous)"
+              : `ce que tu dois au téléprospecteur pour chaque mandat signé : ${commercial.base} €${commercial.pct ? ` + ${commercial.pct} % du montant négocié` : ""}`
+        }.`}
         actions={<button onClick={exporterPDF} style={{ height: 38, padding: "0 16px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Éditer le relevé PDF</button>}
       />
+
+      {mesDeals.length > 0 && (
+        <Card title="Mon deal" description="Ce que tu payes ou reçois, en clair, en plus de ton barème de base ci-dessus.">
+          <div style={{ display: "grid", gap: 8 }}>
+            {mesDeals.map((texte, i) => (
+              <div key={i} style={{ fontSize: 14, padding: "8px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>{texte}</div>
+            ))}
+          </div>
+          {mesRdvDus.length > 0 && (
+            <div style={{ marginTop: S.md }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 6 }}>Rendez-vous concernés (90 derniers jours)</div>
+              <div style={{ display: "grid", gap: 6 }}>
+                {mesRdvDus.map((r) => (
+                  <div key={r.apptId} style={{ fontSize: 13.5, padding: "6px 0", borderTop: `1px solid ${T.line}`, display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <span>{fmtDate(r.date)} — {r.client || "Client"} ({r.declencheur})</span>
+                    <span style={{ fontWeight: 700 }}>{eur(r.total)} à {r.gestionnaireName}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {estTeleprospecteur && (
+        <Card
+          title="Accord direct"
+          description="Un accord direct que tu passes toi-même avec un commercial précis : il te paie directement pour chaque rendez-vous que tu lui apportes, sans passer par un call center ni un gestionnaire."
+          actions={<Button variante={accordFormOuvert ? "secondaire" : "principal"} onClick={() => setAccordFormOuvert((v) => !v)}>{accordFormOuvert ? "Fermer" : "+ Nouvel accord"}</Button>}
+        >
+          {accordFormOuvert && (
+            <div style={{ background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 12, padding: S.md, marginBottom: S.md }}>
+              <FormGrid>
+                <Field label="Avec quel commercial ?">
+                  <select value={accordCommercial} onChange={(e) => setAccordCommercial(e.target.value)} style={champ}>
+                    <option value="">— à choisir —</option>
+                    {commerciauxDispo.map((c) => <option key={c.email} value={c.email}>{c.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Ça se déclenche quand ?">
+                  <select value={accordTrigger} onChange={(e) => setAccordTrigger(e.target.value as "signed" | "honored")} style={champ}>
+                    <option value="signed">Au mandat signé</option>
+                    <option value="honored">Dès que le client est venu</option>
+                  </select>
+                </Field>
+              </FormGrid>
+              <FormGrid colonnes="repeat(auto-fit, minmax(160px, 1fr))">
+                <Field label="Montant fixe (€)"><input type="number" step="0.01" value={accordBase} onChange={(e) => setAccordBase(e.target.value)} placeholder="50" style={{ ...champ, textAlign: "right" }} /></Field>
+                <Field label="+ % du négocié" hint="Facultatif."><input type="number" step="0.1" value={accordPct} onChange={(e) => setAccordPct(e.target.value)} style={{ ...champ, textAlign: "right" }} /></Field>
+              </FormGrid>
+              <div style={{ marginTop: S.md, fontSize: 13, fontWeight: 700, color: T.ink }}>En plus, si le véhicule est vendu (facultatif)</div>
+              <FormGrid colonnes="repeat(auto-fit, minmax(160px, 1fr))">
+                <Field label="Montant fixe (€)"><input type="number" step="0.01" value={accordSoldEur} onChange={(e) => setAccordSoldEur(e.target.value)} placeholder="0" style={{ ...champ, textAlign: "right" }} /></Field>
+                <Field label="Pourcentage (%)"><input type="number" step="0.1" value={accordSoldPct} onChange={(e) => setAccordSoldPct(e.target.value)} style={{ ...champ, textAlign: "right" }} /></Field>
+              </FormGrid>
+              {parseFloat(accordSoldPct) > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: S.sm }}>
+                  <Button variante={accordSoldBase === "negocie" ? "principal" : "secondaire"} onClick={() => setAccordSoldBase("negocie")}>% du négocié total</Button>
+                  <Button variante={accordSoldBase === "plusvalue" ? "principal" : "secondaire"} onClick={() => setAccordSoldBase("plusvalue")}>% de la plus-value</Button>
+                </div>
+              )}
+              <div style={{ marginTop: S.md }}>
+                <Button variante="principal" onClick={creerAccordDirect} disabled={savingAccord}>{savingAccord ? "Création…" : "Créer l'accord"}</Button>
+              </div>
+            </div>
+          )}
+          {mesAccordsDirects.length === 0 ? (
+            <div style={{ color: T.ink2, fontSize: 14 }}>Aucun accord direct pour l&apos;instant.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {mesAccordsDirects.map((a) => (
+                <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "8px 0", borderTop: `1px solid ${T.line}` }}>
+                  <div style={{ fontSize: 14 }}>
+                    <strong>{a.commercial_name ?? a.commercial_email}</strong> te paie {Number(a.base_eur) > 0 ? <Euro montant={Number(a.base_eur)} /> : null}
+                    {Number(a.pct_nego) > 0 ? ` + ${Number(a.pct_nego)} % du négocié` : ""}
+                    {" "}{a.trigger_kind === "honored" ? "dès que le client est venu" : "au mandat signé"}.
+                    {(Number(a.sold_eur) > 0 || Number(a.sold_pct) > 0) && (
+                      <> {" "}+ {Number(a.sold_eur) > 0 ? <Euro montant={Number(a.sold_eur)} /> : null}
+                      {Number(a.sold_pct) > 0 ? ` ${Number(a.sold_pct)} % ${a.sold_pct_base === "plusvalue" ? "de la plus-value" : "du négocié"}` : ""} si le véhicule est vendu.</>
+                    )}
+                  </div>
+                  <Button variante="danger" onClick={() => supprimerAccordDirect(a.id)}>Retirer</Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card title="Période" description="Mois calendaire du 1er au dernier jour, période glissante entre deux dates, ou tout l'historique.">
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: S.md }}>

@@ -415,6 +415,7 @@ export type AppointmentItem = {
   signStatusAt: string | null; // date du dernier changement de statut de signature
   note: string; // note interne (ex: raison d'une non-signature)
   negotiation: number; // montant de la négociation en euros (0 si non saisi)
+  askingPrice: number; // prix initial du mandat, avant négociation (0 si non saisi) — sert au calcul de plus-value
   owner: string; // email du collaborateur ayant créé le RDV
   commercial: string; // nom du commercial qui gère le RDV
   commercialEmail: string; // e-mail du compte commercial affecté (lien robuste)
@@ -503,6 +504,7 @@ export async function listAppointments(
       signStatusAt: p.signStatusAt || null,
       note: p.note ?? "",
       negotiation: p.negotiation ? Number(p.negotiation) : 0,
+      askingPrice: p.askingPrice ? Number(p.askingPrice) : 0,
       owner: p.owner ?? "",
       commercial: p.commercial ?? "",
       commercialEmail: p.commercialEmail ?? "",
@@ -666,7 +668,7 @@ export function colorIdForStatus(opts: {
 /** Met à jour les champs de suivi (présent / signature / négo / BC / vendu) d'un RDV. */
 export async function patchTracking(
   eventId: string,
-  fields: { present?: boolean | null; signStatus?: string; negotiation?: number; bcSigned?: boolean; vehicleSold?: boolean },
+  fields: { present?: boolean | null; signStatus?: string; negotiation?: number; askingPrice?: number; bcSigned?: boolean; vehicleSold?: boolean },
 ) {
   const cal = calendarClient();
   const priv: Record<string, string> = {};
@@ -677,6 +679,7 @@ export async function patchTracking(
     priv.signStatusAt = new Date().toISOString(); // date de la décision de signature
   }
   if (fields.negotiation !== undefined) priv.negotiation = String(fields.negotiation);
+  if (fields.askingPrice !== undefined) priv.askingPrice = String(fields.askingPrice);
   if (fields.bcSigned !== undefined) {
     priv.bcSigned = fields.bcSigned ? "1" : "";
     priv.bcSignedAt = fields.bcSigned ? new Date().toISOString() : "";

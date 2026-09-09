@@ -25,7 +25,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       });
       const d = await res.json();
       if (d.ok) {
-        setAuth(d.token, { email: d.email, name: d.name, role: d.role, callCenterId: d.callCenterId, isCommercial: d.isCommercial, isTeleprospector: d.isTeleprospector }, d.theme ?? null);
+        setAuth(d.token, { email: d.email, name: d.name, role: d.role, callCenterId: d.callCenterId, isCommercial: d.isCommercial, isTeleprospector: d.isTeleprospector, isGestionnaire: d.isGestionnaire }, d.theme ?? null);
         onLogin();
       } else setErr(d.error ?? "Erreur");
     } catch (e) {

@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import Icone from "./Icone";
-import { groupesVisibles, type ClientUserLite } from "./navigation";
+import { groupesVisibles, type ClientUserLite, type Groupe } from "./navigation";
 import { T, R, S } from "@/components/ui/tokens";
 
-/** Navigation latérale : où on est, ce à quoi on a droit, rien d'autre. */
-export default function Sidebar({ active, user, marque, logo, onNaviguer }: {
-  active: string; user: ClientUserLite | null; marque: string; logo: string; onNaviguer?: () => void;
+/** Navigation latérale : où on est, ce à quoi on a droit, rien d'autre.
+ *  `groupes` : passe outre la navigation Simplicicar par défaut — sert aux univers isolés
+ *  (ex. prospection agences YJ Solutions) qui veulent le même design système, une autre carte. */
+export default function Sidebar({ active, user, marque, logo, onNaviguer, groupes: groupesForces, logoCentre }: {
+  active: string; user: ClientUserLite | null; marque: string; logo: string; onNaviguer?: () => void; groupes?: Groupe[]; logoCentre?: boolean;
 }) {
-  const groupes = groupesVisibles(user);
+  const groupes = groupesForces ?? groupesVisibles(user);
 
   return (
     <nav aria-label="Navigation principale" style={{ display: "flex", flexDirection: "column", height: "100%", background: T.surface, borderRight: `1px solid ${T.line}` }}>
-      <div style={{ padding: `${S.md}px ${S.md}px ${S.sm}px`, borderBottom: `1px solid ${T.line}` }}>
+      <div style={{ padding: `${S.md}px ${S.md}px ${S.sm}px`, borderBottom: `1px solid ${T.line}`, textAlign: logoCentre ? "center" : "left" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logo} alt={marque} style={{ maxWidth: "100%", maxHeight: 40, objectFit: "contain", objectPosition: "left" }} />
+        <img src={logo} alt={marque} style={{ maxWidth: "100%", maxHeight: logoCentre ? 56 : 40, objectFit: "contain", objectPosition: logoCentre ? "center" : "left" }} />
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: `${S.md}px ${S.sm}px` }}>

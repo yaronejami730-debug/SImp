@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getUserByEmail, listCommercials, listTeleprospectors, listUsers } from "@/lib/users";
-import { callCenterRule, commercialsForCallCenterInherited, commercialsForTelepro } from "@/lib/callcenters";
+import { callCenterRule, commercialsForCallCenterInherited, commercialsForTelepro, isGestionnaireEmail } from "@/lib/callcenters";
 
 export const dynamic = "force-dynamic";
 
@@ -37,11 +37,13 @@ export async function GET(req: Request) {
       ? await listTeleprospectors()
       : (await listUsers(s.callCenterId)).filter((u) => u.is_teleprospector && u.active).map((u) => ({ email: u.email, name: u.name, phone: u.phone }));
 
+    const isGestionnaire = await isGestionnaireEmail(s.email).catch(() => false);
     return NextResponse.json({
       ok: true,
       email: s.email, name: s.name, role: s.role, callCenterId: s.callCenterId,
       isCommercial: !!me?.is_commercial,
       isTeleprospector: !!me?.is_teleprospector,
+      isGestionnaire,
       commercials,
       teleprospectors,
       commerciaux: commercials.map((c) => c.name),
