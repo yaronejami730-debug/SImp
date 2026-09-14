@@ -113,19 +113,6 @@ export default function ConfidentialitePage() {
               contre tout accès non autorisé, perte ou divulgation.
             </p>
           </section>
-
-          <section>
-            <h2 style={{ fontSize: 20, marginBottom: 8 }}>8. Contact</h2>
-            <p>
-              Pour toute question relative à cette politique de
-              confidentialité ou à l'utilisation de vos données, vous pouvez
-              nous contacter à l'adresse suivante :{" "}
-              <a href="mailto:contact@simplicicar.com">
-                contact@simplicicar.com
-              </a>
-              .
-            </p>
-          </section>
         </main>
     </div>
   );
