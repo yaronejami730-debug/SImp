@@ -6,13 +6,13 @@ import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, mobileConfirmationEmail } from "@/lib/email-templates";
 import { whatsappUrl, baseUrlFrom, rescheduleUrl } from "@/lib/links";
 import { getAuth } from "@/lib/auth";
-import { callCenterRule, themeForCallCenter } from "@/lib/callcenters";
+import { callCenterRule, themeForCallCenter, commercialsForTelepro } from "@/lib/callcenters";
 import { cancelFollowup } from "@/lib/followups";
 import { notify } from "@/lib/notifications";
 import { isBlocked } from "@/lib/bookers";
 
 const nameTok = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
-import { commercialPhoneByName } from "@/lib/users";
+import { commercialPhoneByName, getUserByEmail, listCommercials } from "@/lib/users";
 import { DEFAULT_LOCATION } from "@/lib/parse";
 
 export const maxDuration = 60;
@@ -54,6 +54,34 @@ export async function POST(req: Request) {
     // 1. Champs du formulaire -> rendez-vous structuré (sans IA)
     const appt = buildAppointment(body as AppointmentInput);
 
+    // 1a-auto. Téléprospecteur en mode "attribution automatique" (Comptes > assignation) : pas de
+    // commercial choisi manuellement -> le système prend le premier libre dans l'ordre de priorité.
+    let autoForced = false;
+    if (!appt.commercial) {
+      try {
+        const me = await getUserByEmail(auth.email).catch(() => undefined);
+        if (me?.is_teleprospector && me.auto_assign) {
+          const orderedEmails = await commercialsForTelepro(auth.email);
+          if (orderedEmails.length) {
+            const pool = await listCommercials();
+            const byEmail = new Map(pool.map((c) => [c.email.toLowerCase(), c.name]));
+            const isDepl = appt.type === "deplacement";
+            let picked: string | undefined;
+            for (const em of orderedEmails) {
+              const name = byEmail.get(em);
+              if (!name) continue;
+              if (await commercialConflict(name, appt.startDateTime, isDepl)) continue;
+              if (await halfDayModalityBlocked(name, appt.startDateTime, isDepl)) continue;
+              picked = name;
+              break;
+            }
+            if (!picked) { picked = byEmail.get(orderedEmails[0]); autoForced = true; } // tous occupés -> priorité 1 quand même
+            if (picked) appt.commercial = picked;
+          }
+        }
+      } catch { /* non-bloquant : la résolution échoue -> RDV part sans commercial assigné */ }
+    }
+
     // 1a. Restriction du call center du créateur (commerciaux autorisés + agence only).
     const rule = await callCenterRule(auth.callCenterId);
     if (rule) {
@@ -85,13 +113,13 @@ export async function POST(req: Request) {
       const conflict = await commercialConflict(appt.commercial, appt.startDateTime, isDeplacementReq);
       if (conflict) {
         const msg = `${appt.commercial} a déjà un RDV ${conflict.deplacement ? "en déplacement" : "physique"} à ce moment${conflict.ref ? ` (${conflict.ref})` : ""}.`;
-        if (!force) return NextResponse.json({ error: `${msg} Choisis un autre créneau.`, canForce: true }, { status: 409 });
-        commercialWarning = `⚠️ Créé malgré un conflit : ${msg}`;
+        if (!force && !autoForced) return NextResponse.json({ error: `${msg} Choisis un autre créneau.`, canForce: true }, { status: 409 });
+        commercialWarning = autoForced ? `⚠️ Attribution automatique : tous les commerciaux assignés sont pris à ce créneau, ${msg}` : `⚠️ Créé malgré un conflit : ${msg}`;
       }
       if (!commercialWarning && await halfDayModalityBlocked(appt.commercial, appt.startDateTime, isDeplacementReq)) {
         const msg = `${appt.commercial} a déjà des RDV ${isDeplacementReq ? "physiques" : "en déplacement"} sur cette demi-journée.`;
-        if (!force) return NextResponse.json({ error: `${msg} Les ${isDeplacementReq ? "déplacements" : "RDV en agence"} ne sont possibles que sur l'autre demi-journée.`, canForce: true }, { status: 409 });
-        commercialWarning = `⚠️ Créé malgré la règle demi-journée : ${msg}`;
+        if (!force && !autoForced) return NextResponse.json({ error: `${msg} Les ${isDeplacementReq ? "déplacements" : "RDV en agence"} ne sont possibles que sur l'autre demi-journée.`, canForce: true }, { status: 409 });
+        commercialWarning = autoForced ? `⚠️ Attribution automatique : tous les commerciaux assignés sont pris à ce créneau, ${msg}` : `⚠️ Créé malgré la règle demi-journée : ${msg}`;
       }
     }
 

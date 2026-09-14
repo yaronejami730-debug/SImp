@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import Shell from "@/components/Shell";
 import PlaqueLookup from "@/components/PlaqueLookup";
 import VehiclePicker from "@/components/VehiclePicker";
@@ -18,9 +18,10 @@ type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
 type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   civility: string; email: string; phone: string; platform: string; listingUrl: string;
+  isLead?: boolean; leadYear?: string; leadKm?: string; leadTransmission?: string; leadEntretiens?: string; leadHabitacle?: string; leadVices?: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
   immatriculation?: string; vehiclePhotoUrl?: string; teleprospector?: string;
-  note: string;
+  note: string; noteAuthor?: string; noteUpdatedAt?: string;
   present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; askingPrice?: number; owner: string; commercial: string; operatedBy?: string;
   commissionBase?: number; commissionPct?: number; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
@@ -387,7 +388,9 @@ function ClientPage({ id }: { id: string }) {
   const [lightbox, setLightbox] = useState<string | null>(null); // URL photo plein écran
   const [zoomed, setZoomed] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
-  const [noteDirty, setNoteDirty] = useState(false);
+  const [noteDirty, setNoteDirtyState] = useState(false);
+  const noteDirtyRef = useRef(false); // lu dans load() sans le remettre en dépendance (sinon refetch à chaque frappe)
+  const setNoteDirty = (v: boolean) => { noteDirtyRef.current = v; setNoteDirtyState(v); };
   const [timelineDraft, setTimelineDraft] = useState("");
   const [msgKey, setMsgKey] = useState(0); // force le refresh de la timeline messages
 
@@ -396,7 +399,15 @@ function ClientPage({ id }: { id: string }) {
     try {
       const r = await fetch(`/api/client/${encodeURIComponent(id)}`, { headers: authHeaders() });
       const d = await r.json();
-      if (d.ok) { setA(d.appointment); setNoteDraft(d.appointment.note ?? ""); setNoteDirty(false); setMsgKey((k) => k + 1); }
+      if (d.ok) {
+        setA(d.appointment);
+        // Ne jamais écraser une note en cours de frappe pas encore enregistrée : n'importe
+        // quelle autre action de la page (confirmer, absent, mandat...) rappelle load() en
+        // sous-main, ça ne doit pas effacer silencieusement ce que l'utilisateur est en train
+        // d'écrire dans "Notes internes".
+        if (!noteDirtyRef.current) setNoteDraft(d.appointment.note ?? "");
+        setMsgKey((k) => k + 1);
+      }
       else setErr(d.error ?? "Erreur");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erreur");
@@ -579,7 +590,12 @@ function ClientPage({ id }: { id: string }) {
         body: JSON.stringify({ note: noteDraft }),
       });
       const d = await r.json();
-      if (d.ok) { setA({ ...a, note: noteDraft }); setNoteDirty(false); setFlash({ kind: "ok", msg: "Note enregistrée" }); }
+      if (d.ok) {
+        const who = getUser()?.name || getUser()?.email || "";
+        setA({ ...a, note: noteDraft, noteAuthor: who, noteUpdatedAt: new Date().toISOString() });
+        setNoteDirty(false);
+        setFlash({ kind: "ok", msg: "Note enregistrée" });
+      }
       else setFlash({ kind: "err", msg: d.error ?? "Erreur" });
     } finally { setBusy(""); }
   }
@@ -838,6 +854,14 @@ function ClientPage({ id }: { id: string }) {
                 { cle: "E-mail", val: a.email ? <a href={`mailto:${a.email}`} style={{ color: T.ink, textDecoration: "none", fontWeight: 700, wordBreak: "break-all" }}>{a.email}</a> : "—" },
                 { cle: "Véhicule", val: vehicle },
                 { cle: "Plateforme", val: a.platform || "—" },
+                ...(a.isLead ? [{ cle: "Lead — véhicule déclaré", val: [
+                  a.leadYear && `année ${a.leadYear}`,
+                  a.leadKm && `${a.leadKm} km`,
+                  a.leadTransmission,
+                  a.leadEntretiens && `entretiens : ${a.leadEntretiens}`,
+                  a.leadHabitacle && `habitacle propre : ${a.leadHabitacle}`,
+                  a.leadVices && `vices cachés : ${a.leadVices}`,
+                ].filter(Boolean).join(" · ") || "—" }] : []),
                 { cle: "Commercial", val: a.operatedBy ? `${a.commercial} — opéré par ${a.operatedBy}` : (a.commercial || "—") },
                 { cle: "Téléprospecteur", val: a.teleprospector || "—" },
               ].map((c) => (
@@ -1253,9 +1277,32 @@ function ClientPage({ id }: { id: string }) {
             disabled={!noteDirty || busy === "note"}
             style={{ padding: "9px 16px", borderRadius: 7, background: !noteDirty || busy === "note" ? "#cbd5e1" : PINK, color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: !noteDirty ? "default" : "pointer" }}
           >
-            {busy === "note" ? "Enregistrement…" : noteDirty ? "Enregistrer la note" : "✓ Note enregistrée"}
+            {busy === "note" ? "Enregistrement…" : noteDirty ? "Enregistrer la note" : a?.note ? "✓ Note enregistrée" : "Enregistrer la note"}
           </button>
         </div>
+        {!noteDirty && a?.note && a?.noteAuthor && (
+          <div style={{ fontSize: 11.5, color: "#9aa6b8", marginTop: 6 }}>
+            Modifiée par {a.noteAuthor}{a.noteUpdatedAt ? ` le ${new Date(a.noteUpdatedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}` : ""}
+          </div>
+        )}
+
+        {/* Historique des notes — comme un vrai CRM : chaque enregistrement reste visible avec
+            qui l'a écrit et quand, même une fois remplacé par une note plus récente. */}
+        {a.history.some((h) => h.t === "note") && (
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f0f1f3" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 8 }}>
+              Historique des notes
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {a.history.filter((h) => h.t === "note").slice().reverse().map((h, i) => (
+                <div key={i} style={{ padding: "8px 10px", background: "#f8f9fa", border: "1px solid #f0f1f3", borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, color: "#232323", whiteSpace: "pre-wrap" }}>{h.info}</div>
+                  <div style={{ fontSize: 11, color: "#9aa6b8", marginTop: 3 }}>{new Date(h.at).toLocaleString("fr-FR", { timeZone: "Europe/Paris", dateStyle: "short", timeStyle: "short" })}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* === IDENTIFICATION DU VÉHICULE PAR LA PLAQUE === */}

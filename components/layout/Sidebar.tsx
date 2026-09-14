@@ -4,6 +4,7 @@ import Link from "next/link";
 import Icone from "./Icone";
 import { groupesVisibles, type ClientUserLite, type Groupe } from "./navigation";
 import { T, R, S } from "@/components/ui/tokens";
+import { agenceHref } from "@/lib/agence";
 
 /** Navigation latérale : où on est, ce à quoi on a droit, rien d'autre.
  *  `groupes` : passe outre la navigation Simplicicar par défaut — sert aux univers isolés
@@ -30,7 +31,7 @@ export default function Sidebar({ active, user, marque, logo, onNaviguer, groupe
               const courant = active === e.key;
               return (
                 <Link
-                  key={e.key} href={e.href} onClick={onNaviguer}
+                  key={e.key} href={agenceHref(e.href)} onClick={onNaviguer}
                   aria-current={courant ? "page" : undefined}
                   style={{
                     display: "flex", alignItems: "center", gap: 10, padding: "10px 10px", borderRadius: R.sm,

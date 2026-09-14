@@ -1,7 +1,33 @@
 import { getPool } from "./db";
 import { createUser } from "./users";
 
-export type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean; deleted_at?: string | null };
+export type CallCenter = { id: number; name: string; slug?: string | null; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean; deleted_at?: string | null };
+
+/** Résout un slug d'URL (ex: "simplicicar-paris-17e") vers son call center — utilisé par
+ *  middleware.ts pour déterminer sur quelle agence on navigue, sans changer de compte. */
+export async function getCallCenterBySlug(slug: string): Promise<{ id: number; name: string } | null> {
+  const { rows } = await getPool().query<{ id: string; name: string }>(
+    `select id, name from call_centers where slug = $1 and active`, [slug],
+  );
+  return rows[0] ? { id: Number(rows[0].id), name: rows[0].name } : null;
+}
+/** Slug d'URL du call center d'un compte (voir /api/me) — sert à rediriger automatiquement
+ *  vers /<slug>/... à la connexion, sans que l'utilisateur ait à taper l'URL lui-même. */
+export async function slugForCallCenter(ccId: number): Promise<string | null> {
+  const { rows } = await getPool().query<{ slug: string | null }>(
+    `select slug from call_centers where id = $1`, [ccId],
+  );
+  return rows[0]?.slug ?? null;
+}
+
+/** Nom + slug d'un call center — pour le mail "votre compte est prêt" (lib/account-email.ts). */
+export async function nameAndSlugForCallCenter(ccId: number): Promise<{ name: string; slug: string | null } | null> {
+  const { rows } = await getPool().query<{ name: string; slug: string | null }>(
+    `select name, slug from call_centers where id = $1`, [ccId],
+  );
+  return rows[0] ?? null;
+}
+
 export type BrandTheme = { name: string; primary: string; dark: string; logo: string; headerDark: boolean };
 
 /** Thème de marque pour un utilisateur : on remonte la hiérarchie jusqu'à la RACINE
@@ -31,7 +57,7 @@ export type CallCenterDetail = CallCenter & { parent_name: string | null; commer
 
 export async function listCallCenters(): Promise<CallCenterDetail[]> {
   const { rows } = await getPool().query<CallCenterDetail>(
-    `select c.id, c.name, c.agence_only, c.responsable_email, c.responsable_email_2, c.gestionnaire_email, c.parent_id,
+    `select c.id, c.name, c.slug, c.agence_only, c.responsable_email, c.responsable_email_2, c.gestionnaire_email, c.parent_id,
             c.brand_primary, c.brand_dark, c.logo_url, c.header_dark, c.telepro_pay_mode, c.active, c.deleted_at,
             p.name as parent_name,
             (select count(*) from call_center_commercials x where x.call_center_id = c.id) as commercials_count,
@@ -80,33 +106,52 @@ export async function getCallCenter(id: number): Promise<CallCenter | undefined>
   return rows[0] ? { ...rows[0], id: Number(rows[0].id), parent_id: rows[0].parent_id == null ? null : Number(rows[0].parent_id), agence_only: !!rows[0].agence_only } : undefined;
 }
 
+function slugify(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/** Slug unique pour un nouveau call center/agence — suffixe -2, -3... en cas de collision.
+ *  Chaque agence a un lien de connexion permanent (agenda-rdv.vercel.app/<slug>) dès sa
+ *  création, pas seulement celles migrées au lancement de cette fonctionnalité. */
+async function uniqueSlug(name: string): Promise<string> {
+  const base = slugify(name) || "agence";
+  const { rows } = await getPool().query<{ slug: string }>(`select slug from call_centers where slug like $1`, [`${base}%`]);
+  const taken = new Set(rows.map((r) => r.slug));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
 /** Crée un call center + son responsable (role='responsable'), rattaché à l'agence donnée (racine Simplicicar par défaut). */
 export async function createCallCenter(input: {
   name: string; agenceOnly?: boolean; parentId?: number;
   responsable: { name: string; email?: string; username?: string; password: string; phone?: string };
-}): Promise<CallCenter> {
+}): Promise<CallCenter & { responsableUserId: number }> {
   const pool = getPool();
+  const slug = await uniqueSlug(input.name);
   const cc = await pool.query<CallCenter>(
-    `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email)
-     values ($1, '', $4, $2, $3)
-     returning id, name, agence_only, responsable_email, parent_id`,
-    [input.name.trim(), !!input.agenceOnly, (input.responsable.email ?? "").trim().toLowerCase() || `${(input.responsable.username ?? "").trim().toLowerCase()}@no-mail.local`, input.parentId ?? 1],
+    `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email, slug)
+     values ($1, '', $4, $2, $3, $5)
+     returning id, name, agence_only, responsable_email, parent_id, slug`,
+    [input.name.trim(), !!input.agenceOnly, (input.responsable.email ?? "").trim().toLowerCase() || `${(input.responsable.username ?? "").trim().toLowerCase()}@no-mail.local`, input.parentId ?? 1, slug],
   );
   const ccId = Number(cc.rows[0].id);
   // Le responsable peut créer des RDV (téléprospecteur) et gère son équipe (role responsable).
-  await createUser({
+  const responsable = await createUser({
     email: input.responsable.email, username: input.responsable.username, password: input.responsable.password, name: input.responsable.name,
     role: "responsable", callCenterId: ccId, isTeleprospector: true, isCommercial: false, phone: input.responsable.phone,
   });
-  return { ...cc.rows[0], id: ccId, agence_only: !!cc.rows[0].agence_only };
+  return { ...cc.rows[0], id: ccId, agence_only: !!cc.rows[0].agence_only, responsableUserId: responsable.id };
 }
 
 /** Crée une agence = call center racine (parent_id null, sans responsable). */
 export async function createAgence(name: string): Promise<CallCenter> {
+  const slug = await uniqueSlug(name);
   const { rows } = await getPool().query<CallCenter>(
-    `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email)
-     values ($1, '', null, false, '') returning id, name, agence_only, responsable_email, parent_id`,
-    [name.trim()],
+    `insert into call_centers (name, default_commercial, parent_id, agence_only, responsable_email, slug)
+     values ($1, '', null, false, '', $2) returning id, name, agence_only, responsable_email, parent_id, slug`,
+    [name.trim(), slug],
   );
   return { ...rows[0], id: Number(rows[0].id), agence_only: !!rows[0].agence_only };
 }
@@ -123,12 +168,18 @@ export async function setGestionnaire(ccId: number, email: string) {
 
 /** Cet e-mail est-il gestionnaire d'au moins un call center ? (apporteur d'affaires — rôle non exclusif :
  *  cumulable avec admin, responsable, commercial ou téléprospecteur, voir telepro_pay_mode / /baremes.) */
+/** "Être gestionnaire" = épinglé sur un call center (gestionnaire_email) OU flag de rôle
+ *  is_gestionnaire coché sur le compte (Comptes > Rôles) — les deux signaux comptent (RÈGLE
+ *  ROLE-001), sinon un compte avec le flag mais jamais épinglé garde les droits serveur côté
+ *  /api/deals sans jamais voir le lien de navigation vers Deal. */
 export async function isGestionnaireEmail(email: string): Promise<boolean> {
   const { rows } = await getPool().query<{ c: string }>(
-    `select count(*)::int as c from call_centers where lower(gestionnaire_email) = lower($1)`,
+    `select count(*)::int as c from call_centers where lower(gestionnaire_email) = lower($1)
+     union all
+     select count(*)::int as c from users where lower(email) = lower($1) and is_gestionnaire = true`,
     [email.trim()],
   );
-  return Number(rows[0]?.c ?? 0) > 0;
+  return rows.some((r) => Number(r.c) > 0);
 }
 
 /** Mode de rémunération télépros de ce call center (voir CallCenter.telepro_pay_mode). Super-admin uniquement. */
@@ -188,11 +239,13 @@ export async function listAssignments(): Promise<{ call_center_id: number; comme
   );
   return rows.map((r) => ({ call_center_id: Number(r.call_center_id), commercial_email: r.commercial_email.toLowerCase() }));
 }
-/** Assigne un commercial précis à un téléprospecteur précis (restriction plus fine que le call center entier). */
-export async function assignTeleproCommercial(teleproEmail: string, commercialEmail: string) {
+/** Assigne un commercial précis à un téléprospecteur précis (restriction plus fine que le call center entier).
+ *  `priority` : 1 = prioritaire, 2, 3... — utilisé par l'attribution automatique des RDV. */
+export async function assignTeleproCommercial(teleproEmail: string, commercialEmail: string, priority = 0) {
   await getPool().query(
-    `insert into telepro_commercials (telepro_email, commercial_email) values (lower($1), lower($2)) on conflict do nothing`,
-    [teleproEmail.trim(), commercialEmail.trim()],
+    `insert into telepro_commercials (telepro_email, commercial_email, priority) values (lower($1), lower($2), $3)
+     on conflict (telepro_email, commercial_email) do update set priority = excluded.priority`,
+    [teleproEmail.trim(), commercialEmail.trim(), priority],
   );
 }
 export async function unassignTeleproCommercial(teleproEmail: string, commercialEmail: string) {
@@ -202,16 +255,20 @@ export async function unassignTeleproCommercial(teleproEmail: string, commercial
   );
 }
 /** Toutes les affectations commercial↔téléprospecteur. */
-export async function listTeleproAssignments(): Promise<{ telepro_email: string; commercial_email: string }[]> {
-  const { rows } = await getPool().query<{ telepro_email: string; commercial_email: string }>(
-    `select telepro_email, commercial_email from telepro_commercials`,
+export async function listTeleproAssignments(): Promise<{ telepro_email: string; commercial_email: string; priority: number }[]> {
+  const { rows } = await getPool().query<{ telepro_email: string; commercial_email: string; priority: number }>(
+    `select telepro_email, commercial_email, priority from telepro_commercials
+     order by telepro_email, (case when priority = 0 then 999999 else priority end)`,
   );
-  return rows.map((r) => ({ telepro_email: r.telepro_email.toLowerCase(), commercial_email: r.commercial_email.toLowerCase() }));
+  return rows.map((r) => ({ telepro_email: r.telepro_email.toLowerCase(), commercial_email: r.commercial_email.toLowerCase(), priority: Number(r.priority) }));
 }
-/** Commerciaux assignés à CE téléprospecteur précis (vide = pas de restriction spécifique, on retombe sur la règle du call center). */
+/** Commerciaux assignés à CE téléprospecteur précis, dans l'ordre de priorité (vide = pas de
+ *  restriction spécifique, on retombe sur la règle du call center). */
 export async function commercialsForTelepro(teleproEmail: string): Promise<string[]> {
   const { rows } = await getPool().query<{ commercial_email: string }>(
-    `select commercial_email from telepro_commercials where lower(telepro_email) = lower($1)`,
+    // priorité 0 = non précisée -> classée en dernier (pas prioritaire).
+    `select commercial_email from telepro_commercials where lower(telepro_email) = lower($1)
+     order by (case when priority = 0 then 999999 else priority end), commercial_email`,
     [teleproEmail],
   );
   return rows.map((r) => r.commercial_email.toLowerCase());

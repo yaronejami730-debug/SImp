@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { listAppointments } from "@/lib/google";
 import { getAuth } from "@/lib/auth";
 import { activeDelegationsAsDelegate } from "@/lib/availability";
+import { agenceScopeCcIds } from "@/lib/agence-scope";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -57,9 +58,13 @@ export async function GET(req: Request) {
         .filter((c) => (c.gestionnaire_email ?? "").toLowerCase() === myEmail)
         .map((c) => c.id),
     );
-    const visible = s.role === "admin" ? items
+    const visibleByRole = s.role === "admin" ? items
       : s.role === "responsable" ? items.filter((a) => a.callCenterId === s.callCenterId || managedCc.has(a.callCenterId ?? 1))
       : items.filter((a) => isCreator(a) || isAssignee(a) || managedCc.has(a.callCenterId ?? 1));
+    // Navigation sous un slug d'agence (/simplicicar-paris-17e/agenda) : restreint même un
+    // super-admin à cette agence (elle-même + descendants), comme s'il n'était connecté qu'à elle.
+    const agenceScope = await agenceScopeCcIds(req);
+    const visible = agenceScope ? visibleByRole.filter((a) => agenceScope.includes(a.callCenterId ?? 1)) : visibleByRole;
     const annotated = visible.map((a) => {
       const created = isCreator(a);
       const assigned = isAssignee(a);

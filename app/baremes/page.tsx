@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
 import {
-  PageHeader, Card, StatCard, StatRow, Badge, Button, Field, FormGrid, DataTable, Euro, champ, T, S,
+  PageHeader, Card, StatCard, StatRow, Badge, Button, Field, FormGrid, DataTable, Euro, champ, T, S, R,
 } from "@/components/ui";
 
 type TierMode = "none" | "threshold" | "progressive";
@@ -313,7 +313,7 @@ export default function BaremesPage() {
             <Card title="Mon deal" description="Ce que tu payes ou reçois, en clair.">
               <div style={{ display: "grid", gap: 8 }}>
                 {mesDeals.map((d) => (
-                  <div key={d.id} style={{ fontSize: 14, padding: "8px 0", borderTop: `1px solid ${T.line}` }}>
+                  <div key={d.id} style={{ fontSize: 14, lineHeight: 1.5, padding: "12px 14px", background: T.surface2, border: `1px solid ${T.line}`, borderRadius: R.md }}>
                     {d.explain}
                     {d.ccName && <span style={{ color: T.ink2 }}> — {d.ccName}{d.includes_descendants ? " (+ toute l'agence)" : ""}</span>}
                   </div>
@@ -600,25 +600,25 @@ export default function BaremesPage() {
           )}
 
           {(dealsGroupes.groupes.length > 0 || dealsGroupes.seuls.length > 0) && (
-            <div style={{ marginTop: nouveauOuvert ? S.md : 0, display: "grid", gap: 0 }}>
-              {dealsGroupes.groupes.map((g, i) => {
+            <div style={{ marginTop: nouveauOuvert ? S.md : 0, display: "grid", gap: 8 }}>
+              {dealsGroupes.groupes.map((g) => {
                 const ouvert = dealsOuverts.has(g.ref);
                 return (
-                  <div key={g.ref} style={{ borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}>
+                  <div key={g.ref} style={{ border: `1px solid ${T.line}`, borderRadius: R.md, overflow: "hidden" }}>
                     <div
                       onClick={() => toggleDealOuvert(g.ref)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "10px 0", cursor: "pointer" }}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "12px 14px", cursor: "pointer", background: T.surface }}
                     >
                       <div style={{ fontSize: 13.5 }}>
                         <div style={{ fontWeight: 700 }}>{g.nom}</div>
-                        <div style={{ color: T.ink2, fontSize: 12.5 }}>{g.intervenants} — {g.total} € au {g.trigger}</div>
+                        <div style={{ color: T.ink2, fontSize: 12.5, marginTop: 2 }}>{g.intervenants} — {g.total} € au {g.trigger}</div>
                       </div>
-                      <span style={{ fontSize: 12.5, color: T.ink2, fontWeight: 700 }}>{ouvert ? "▲ Fermer" : "▼ Détail"}</span>
+                      <span style={{ fontSize: 12.5, color: T.ink2, fontWeight: 700, whiteSpace: "nowrap" }}>{ouvert ? "▲ Fermer" : "▼ Détail"}</span>
                     </div>
                     {ouvert && (
-                      <div style={{ paddingBottom: 10, display: "grid", gap: 0 }}>
-                        {g.lignes.map((d, j) => (
-                          <div key={d.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "8px 0 8px 16px", borderTop: j === 0 ? "none" : `1px solid ${T.line}`, background: T.surface2 }}>
+                      <div style={{ display: "grid", gap: 1, background: T.line }}>
+                        {g.lignes.map((d) => (
+                          <div key={d.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "10px 14px", background: T.surface2 }}>
                             <div style={{ fontSize: 13 }}>{d.explain}{d.ccName && <span style={{ color: T.ink2 }}> — {d.ccName}{d.includes_descendants ? " + agence" : ""}</span>}</div>
                             {d.canEdit && <Button variante="danger" onClick={() => supprimerDeal(d.id)}>Retirer</Button>}
                           </div>
@@ -628,8 +628,8 @@ export default function BaremesPage() {
                   </div>
                 );
               })}
-              {dealsGroupes.seuls.map((d, i) => (
-                <div key={d.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "10px 0", borderTop: i === 0 && dealsGroupes.groupes.length === 0 ? "none" : `1px solid ${T.line}` }}>
+              {dealsGroupes.seuls.map((d) => (
+                <div key={d.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "12px 14px", border: `1px solid ${T.line}`, borderRadius: R.md, background: T.surface }}>
                   <div style={{ fontSize: 13.5 }}>{d.explain}{d.ccName && <span style={{ color: T.ink2 }}> — {d.ccName}{d.includes_descendants ? " + agence" : ""}</span>}</div>
                   {d.canEdit && <Button variante="danger" onClick={() => supprimerDeal(d.id)}>Retirer</Button>}
                 </div>

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { listUsers, createUser, deleteUser, updateUserFlags } from "@/lib/users";
+import { nameAndSlugForCallCenter } from "@/lib/callcenters";
 import { schemeByKey } from "@/lib/commission";
 import { getAuth } from "@/lib/auth";
+import { agenceScopeCcIds } from "@/lib/agence-scope";
+import { sendEmail } from "@/lib/brevo";
+import { accountReadyEmail } from "@/lib/account-email";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -17,7 +21,10 @@ export async function GET(req: Request) {
   const s = requireManager(req);
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
-    const users = s.role === "admin" ? await listUsers() : await listUsers(s.callCenterId);
+    const allUsers = s.role === "admin" ? await listUsers() : await listUsers(s.callCenterId);
+    // Navigation sous un slug d'agence : restreint même un super-admin à cette agence.
+    const agenceScope = await agenceScopeCcIds(req);
+    const users = agenceScope ? allUsers.filter((u) => agenceScope.includes(Number(u.call_center_id))) : allUsers;
     return NextResponse.json({ ok: true, users, role: s.role, callCenterId: s.callCenterId });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
@@ -33,7 +40,7 @@ export async function POST(req: Request) {
     const b = (await req.json()) as {
       type?: "commercial" | "telepro" | "admin" | "gestionnaire" | "associe";
       email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number; username?: string;
-      commissionBase?: number; commissionPct?: number;
+      commissionBase?: number; commissionPct?: number; notifyEmail?: boolean;
     };
     if (!b.username?.trim() || !b.password?.trim() || !b.name?.trim()) {
       return NextResponse.json({ error: "Nom, pseudo et mot de passe requis." }, { status: 400 });
@@ -67,7 +74,19 @@ export async function POST(req: Request) {
       isCommercial, isTeleprospector,
       isGestionnaire: b.type === "gestionnaire", isAssocie: b.type === "associe",
     });
-    return NextResponse.json({ ok: true, user });
+    // Lien de connexion PERMANENT de l'agence rattachée (pas un lien d'activation à usage
+    // unique) — tout le monde chez elle se connecte toujours à la même adresse.
+    const cc = await nameAndSlugForCallCenter(callCenterId).catch(() => null);
+    const base = (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
+    const connexionUrl = cc?.slug ? `${base}/${cc.slug}` : undefined;
+    // Mail auto "compte prêt" — seulement si demandé (case cochée) + vrai email fourni (pas le placeholder auto).
+    if (b.notifyEmail !== false && b.email?.trim() && !/@no-mail\.local$/i.test(b.email.trim()) && connexionUrl) {
+      const { html, subject } = accountReadyEmail({
+        name: b.name, agenceName: cc?.name, identifiant: b.username, password: b.password, loginUrl: connexionUrl,
+      });
+      sendEmail({ to: b.email.trim(), toName: b.name, subject, html, senderName: "Activer votre compte" }).catch(() => {});
+    }
+    return NextResponse.json({ ok: true, user, connexionUrl });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erreur.";
     return NextResponse.json({ error: /duplicate|unique/i.test(msg) ? "Ce pseudo (ou cet email) existe déjà." : msg }, { status: 500 });
@@ -81,7 +100,7 @@ export async function PATCH(req: Request) {
   try {
     const b = (await req.json()) as {
       id?: number; isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean; isAssocie?: boolean; active?: boolean; phone?: string;
-      schemeKey?: string; commissionBase?: number; commissionPct?: number; password?: string;
+      schemeKey?: string; commissionBase?: number; commissionPct?: number; password?: string; autoAssign?: boolean;
     };
     if (!b.id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
     if (s.role === "responsable" && !(await sameCallCenter(b.id, s.callCenterId))) {
@@ -93,7 +112,7 @@ export async function PATCH(req: Request) {
     }
     const patch: Parameters<typeof updateUserFlags>[1] = {
       isCommercial: b.isCommercial, isTeleprospector: b.isTeleprospector, active: b.active, phone: b.phone,
-      isGestionnaire: b.isGestionnaire, isAssocie: b.isAssocie,
+      isGestionnaire: b.isGestionnaire, isAssocie: b.isAssocie, autoAssign: b.autoAssign,
     };
     if (b.schemeKey) { const sch = schemeByKey(b.schemeKey); patch.commissionBase = sch.base; patch.commissionPct = sch.pct; }
     // Accord direct sur-mesure (montants libres, ex: 60€ négociés avec ce commercial précis) — admin uniquement.

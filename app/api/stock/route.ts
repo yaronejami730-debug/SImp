@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listAppointments, type AppointmentItem } from "@/lib/google";
 import { getPool } from "@/lib/db";
+import { agenceScopeCcIds } from "@/lib/agence-scope";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -46,10 +47,14 @@ export async function GET(req: Request) {
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmailLc) ||
       (!a.commercialEmail && !!myNameTok && tokset(a.commercial) === myNameTok);
 
-    const visible = s.role === "admin" ? all
+    const visibleByRole = s.role === "admin" ? all
       : s.role === "responsable" ? all.filter((a) => a.callCenterId === s.callCenterId)
       : s.isCommercial ? all.filter(isMine)
       : all.filter((a) => a.callCenterId === s.callCenterId);
+
+    // Navigation sous un slug d'agence : restreint même un super-admin à cette agence.
+    const agenceScope = await agenceScopeCcIds(req);
+    const visible = agenceScope ? visibleByRole.filter((a) => agenceScope.includes(a.callCenterId ?? 1)) : visibleByRole;
 
     const ccRows = await getPool().query<{ id: number; name: string }>(`select id, name from call_centers order by id`);
     const ccName = new Map<number, string>(ccRows.rows.map((r) => [Number(r.id), r.name]));

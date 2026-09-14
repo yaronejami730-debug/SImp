@@ -15,6 +15,7 @@ type Sign = "" | "signed" | "listed" | "thinking" | "unsigned";
 type Appt = {
   id: string; startDateTime: string | null; firstName: string; lastName: string;
   email: string; phone: string; platform: string; listingUrl: string;
+  isLead?: boolean; leadYear?: string; leadKm?: string; leadTransmission?: string; leadEntretiens?: string; leadHabitacle?: string; leadVices?: string;
   carBrand: string; carModel: string; carFinish: string; location: string;
   present: boolean; presence?: "present" | "absent" | "unknown"; note?: string; signStatus: Sign; negotiation: number; owner: string; commercial: string; commercialEmail?: string; operatedBy?: string; teleprospector: string; immatriculation: string;
   relation?: "created" | "assigned" | "both" | "none";
@@ -314,6 +315,14 @@ function Agenda() {
 
   const sectionLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: "#9aa6b8", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 14, marginBottom: 6 };
   const vehicleLabel = (a: Appt) => [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
+  const leadCaracteristiques = (a: Appt) => [
+    a.leadYear ? `année ${a.leadYear}` : "",
+    a.leadKm ? `${a.leadKm} km` : "",
+    a.leadTransmission || "",
+    a.leadEntretiens === "oui" ? "entretiens à jour" : a.leadEntretiens === "non" ? "entretiens non à jour" : "",
+    a.leadHabitacle === "oui" ? "habitacle propre" : a.leadHabitacle === "non" ? "habitacle à vérifier" : "",
+    a.leadVices === "oui" ? "vices cachés suspectés" : a.leadVices === "non" ? "pas de vices cachés" : "",
+  ].filter(Boolean).join(" · ");
 
   const card = (a: Appt) => (
     <div key={a.id} style={{ background: a.cancelled ? "#fef2f2" : "#fff", border: `1px solid ${a.cancelled ? "#fecaca" : "#e5e7eb"}`, borderLeft: `4px solid ${statusColor(a)}`, borderRadius: 10, padding: 14, opacity: a.cancelled ? 0.85 : 1 }}>
@@ -334,6 +343,7 @@ function Agenda() {
             {a.firstName} {a.lastName} <span style={{ fontSize: 11, color: PINK, fontWeight: 500 }}>→ fiche</span>
           </a>
           {vehicleLabel(a) && <div style={{ fontSize: 13, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {vehicleLabel(a)}{a.immatriculation ? ` · ${a.immatriculation}` : ""}</div>}
+          {a.isLead && leadCaracteristiques(a) && <div style={{ fontSize: 12.5, color: "#6b7280", marginTop: 2 }}>{leadCaracteristiques(a)}</div>}
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{a.phone} · {a.email}</div>
           <div style={{ fontSize: 13, color: "#6b7280" }}>{(a.type === "deplacement" ? "🚗 Déplacement" : "🏢 Agence")}{a.platform ? ` · ${a.platform}` : ""}{a.commercial ? ` · 👤 ${a.commercial}` : ""}{a.operatedBy ? ` (opéré par ${a.operatedBy})` : ""}{a.teleprospector ? ` · 📞 ${a.teleprospector}` : ""}</div>
           {(isAdmin || a.relation === "created" || a.relation === "both") && a.owner && <div style={{ fontSize: 12.5, color: "#9aa6b8" }}>✍️ Créé par : {a.owner}</div>}

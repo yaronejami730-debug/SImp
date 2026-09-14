@@ -18,7 +18,7 @@ export function verifyPassword(pw: string, stored: string): boolean {
 }
 
 export type Role = "admin" | "responsable" | "collab";
-export type Session = { email: string; name: string; role: Role; callCenterId: number; isCommercial?: boolean; isTeleprospector?: boolean };
+export type Session = { email: string; name: string; role: Role; callCenterId: number; isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean; isAssocie?: boolean };
 
 export function signToken(s: Session): string {
   const body = Buffer.from(JSON.stringify({ ...s, exp: Date.now() + TOKEN_TTL })).toString("base64url");
@@ -100,16 +100,12 @@ export function verifyReview(token: string): ReviewPayload | null {
   }
 }
 
-/** Auth d'une requête : token Bearer, ou code PIN (admin maître, rétrocompat). */
+/** Auth d'une requête : token Bearer uniquement. */
 export function getAuth(req: Request): Session | null {
   const bearer = req.headers.get("authorization");
   if (bearer?.startsWith("Bearer ")) {
     const s = verifyToken(bearer.slice(7));
     if (s) return s;
-  }
-  const pin = process.env.DASHBOARD_PIN;
-  if (pin && req.headers.get("x-pin") === pin) {
-    return { email: "admin", name: "Admin", role: "admin", callCenterId: 1 };
   }
   return null;
 }

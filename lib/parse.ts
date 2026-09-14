@@ -12,6 +12,14 @@ export const appointmentSchema = z.object({
       "Nom de la plateforme de l'annonce : LeBonCoin, LaCentrale, SeLoger, ou autre",
     ),
   listingUrl: z.string().describe("Lien (URL) de l'annonce"),
+  isLead: z.boolean().describe("Vrai si ce client est un lead (pas une annonce LeBonCoin/LaCentrale) : mini-questionnaire véhicule à la place du lien d'annonce").default(false),
+  leadYear: z.string().describe("Année du véhicule, déclarée par le lead").default(""),
+  leadKm: z.string().describe("Kilométrage du véhicule, déclaré par le lead").default(""),
+  leadTransmission: z.string().describe("Boîte manuelle ou automatique, déclarée par le lead").default(""),
+  leadEntretiens: z.string().describe("Entretiens à jour ('oui'/'non'), déclaré par le lead").default(""),
+  leadEntretiensRestants: z.string().describe("Nombre d'entretiens restant à faire si non à jour ('1'/'2'/'3+')").default(""),
+  leadHabitacle: z.string().describe("Habitacle intérieur/extérieur propre ('oui'/'non'), déclaré par le lead").default(""),
+  leadVices: z.string().describe("Vices cachés suspectés ('oui'/'non'), déclaré par le lead").default(""),
   carBrand: z.string().describe("Marque du véhicule (ex: Renault)").default(""),
   carModel: z.string().describe("Modèle du véhicule (ex: Clio)").default(""),
   carFinish: z.string().describe("Finition / version (ex: GT Line, Intens, dCi 110)").default(""),
@@ -39,6 +47,18 @@ export function isFrenchMobile(phone?: string): boolean {
   return /^0[67]\d{8}$/.test(d) || /^33[67]\d{8}$/.test(d) || /^0033[67]\d{8}$/.test(d);
 }
 
+/** Normalise un numéro français quel que soit le format saisi/importé (+33 6.., 0033 6.., espaces,
+ *  points...) vers 0XXXXXXXXX. Renvoie la valeur d'origine (trim) si elle ne ressemble pas à un
+ *  numéro français reconnaissable, plutôt que de la casser. */
+export function normalizeFrenchPhone(phone?: string): string {
+  const raw = (phone ?? "").trim();
+  const d = raw.replace(/\D/g, "");
+  if (/^33\d{9}$/.test(d)) return "0" + d.slice(2);
+  if (/^0033\d{9}$/.test(d)) return "0" + d.slice(4);
+  if (/^0\d{9}$/.test(d)) return d;
+  return raw;
+}
+
 /** Lieu de rendez-vous fixe (toujours le même). */
 export const DEFAULT_LOCATION =
   process.env.DEFAULT_LOCATION ?? "3 rue Bélidor, 75017 Paris";
@@ -52,6 +72,14 @@ export type AppointmentInput = {
   phone: string;
   listingUrl?: string;   // optionnel : le commercial peut ne pas avoir l'annonce
   source?: string;       // plateforme cochée à la main (LeBonCoin / LaCentrale / Autre)
+  isLead?: boolean;      // client issu d'un lead (pas d'une annonce) : mini-questionnaire véhicule
+  leadYear?: string;
+  leadKm?: string;
+  leadTransmission?: string; // "manuelle" | "automatique"
+  leadEntretiens?: string;   // "oui" | "non"
+  leadEntretiensRestants?: string; // "1" | "2" | "3+", si leadEntretiens === "non"
+  leadHabitacle?: string;    // "oui" | "non"
+  leadVices?: string;        // "oui" | "non"
   carBrand?: string;
   carModel?: string;
   carFinish?: string;
@@ -132,9 +160,17 @@ export function buildAppointment(input: AppointmentInput): Appointment {
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
     email: input.email.trim(),
-    phone: input.phone.trim(),
-    platform: input.source?.trim() || (input.listingUrl ? platformFromUrl(input.listingUrl) : "Autre"),
-    listingUrl: input.listingUrl?.trim() || "",
+    phone: normalizeFrenchPhone(input.phone),
+    platform: input.isLead ? "Lead" : (input.source?.trim() || (input.listingUrl ? platformFromUrl(input.listingUrl) : "Autre")),
+    listingUrl: input.isLead ? "" : (input.listingUrl?.trim() || ""),
+    isLead: !!input.isLead,
+    leadYear: input.leadYear?.trim() || "",
+    leadKm: input.leadKm?.trim() || "",
+    leadTransmission: input.leadTransmission?.trim() || "",
+    leadEntretiens: input.leadEntretiens?.trim() || "",
+    leadEntretiensRestants: input.leadEntretiensRestants?.trim() || "",
+    leadHabitacle: input.leadHabitacle?.trim() || "",
+    leadVices: input.leadVices?.trim() || "",
     carBrand: input.carBrand?.trim() || "",
     carModel: input.carModel?.trim() || "",
     carFinish: input.carFinish?.trim() || "",

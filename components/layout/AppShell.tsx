@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getUser, getTheme, clearAuth, applyTheme, tokenValide, authHeaders } from "@/lib/client";
+import { getAgenceTheme, getAgenceSlug, getAgencePref, setAgencePref, switchAgenceHref } from "@/lib/agence";
 import Login from "@/components/Login";
 import NotifBell from "@/components/NotifBell";
 import Sidebar from "./Sidebar";
@@ -18,6 +19,7 @@ export default function AppShell({ active, children, wide }: { active: string; c
   const [menuOuvert, setMenuOuvert] = useState(false);
   const [isGestionnaire, setIsGestionnaire] = useState<boolean | null>(null);
   const [espaceChoisi, setEspaceChoisi] = useState(false);
+  const [agences, setAgences] = useState<{ id: number; name: string; slug: string }[]>([]);
 
   useEffect(() => {
     applyTheme();
@@ -35,11 +37,36 @@ export default function AppShell({ active, children, wide }: { active: string; c
 
   // Statut gestionnaire vérifié en direct (pas seulement au login) : visible dans la nav
   // dès qu'un admin te rattache à un call center, sans attendre une reconnexion.
+  // Même appel : si on n'est pas déjà sous un slug d'agence, on y bascule l'URL — TOUT compte,
+  // super-admin inclus, navigue toujours "dans" une agence (branding, mails...). Pour l'admin,
+  // priorité à la dernière agence choisie au sélecteur (getAgencePref), sinon celle par défaut
+  // de son compte (agenceSlug, voir /api/me).
   useEffect(() => {
     if (!connecte) return;
     fetch("/api/me", { headers: authHeaders() })
       .then((r) => r.json())
-      .then((d) => { if (d.ok) setIsGestionnaire(!!d.isGestionnaire); })
+      .then((d) => {
+        if (!d.ok) return;
+        setIsGestionnaire(!!d.isGestionnaire);
+        const cible = (d.role === "admin" ? getAgencePref() : null) || d.agenceSlug;
+        if (cible && !getAgenceSlug()) {
+          window.location.href = `/${cible}${window.location.pathname}${window.location.search}`;
+        }
+        // Sélecteur d'agence : seul le super-admin peut se balader d'une agence à l'autre.
+        if (d.role === "admin") {
+          fetch("/api/callcenters", { headers: authHeaders() })
+            .then((r) => r.json())
+            .then((cc) => {
+              if (!cc.ok) return;
+              type Row = { id: number; name: string; slug?: string | null; parent_id: number | null; active?: boolean };
+              const roots = (cc.callCenters as Row[])
+                .filter((c) => c.parent_id == null && !!c.slug && c.active !== false)
+                .map((c) => ({ id: c.id, name: c.name, slug: c.slug as string }));
+              setAgences(roots);
+            })
+            .catch(() => {});
+        }
+      })
       .catch(() => {});
   }, [connecte]);
 
@@ -88,7 +115,9 @@ export default function AppShell({ active, children, wide }: { active: string; c
     );
   }
   const user = userBase && isGestionnaire !== null ? { ...userBase, isGestionnaire } : userBase;
-  const theme = getTheme();
+  // Sous un préfixe de slug d'agence (/simplicicar-paris-17e/...), le thème de CETTE agence
+  // prime sur celui du compte connecté — même compte, image de marque de l'agence visitée.
+  const theme = getAgenceTheme() ?? getTheme();
   const marque = theme?.name || "Simplicicar";
   const logo = theme?.logo || "/logo.png";
 
@@ -101,7 +130,7 @@ export default function AppShell({ active, children, wide }: { active: string; c
     localStorage.setItem("auth_user", backup.user);
     if (backup.theme) localStorage.setItem("auth_theme", backup.theme); else localStorage.removeItem("auth_theme");
     localStorage.removeItem("auth_backup");
-    window.location.href = "/comptes";
+    window.location.href = "/prospection-agence/comptes";
   }
 
   function deconnexion() {
@@ -140,6 +169,16 @@ export default function AppShell({ active, children, wide }: { active: string; c
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {user?.role === "admin" && agences.length > 0 && (
+              <select
+                value={getAgenceSlug() ?? ""}
+                onChange={(e) => { if (e.target.value) { setAgencePref(e.target.value); window.location.href = switchAgenceHref(e.target.value); } }}
+                title="Changer d'agence"
+                style={{ height: 36, padding: "0 10px", borderRadius: R.pill, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+              >
+                {agences.map((a) => <option key={a.id} value={a.slug}>{a.name}</option>)}
+              </select>
+            )}
             <NotifBell />
             {user && <span style={{ fontSize: 13.5, color: T.ink2 }}>{user.name}{user.role === "admin" ? " · admin" : ""}</span>}
             <button onClick={deconnexion} style={{ height: 36, padding: "0 14px", borderRadius: R.pill, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>

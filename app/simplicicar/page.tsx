@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import SlotPicker from "@/components/SlotPicker";
 import Shell from "@/components/Shell";
 import VehiclePicker from "@/components/VehiclePicker";
+import PlaqueLookup from "@/components/PlaqueLookup";
 import { authHeaders, getUser } from "@/lib/client";
 import { extractUrl } from "@/lib/parse";
 import { COMMERCIAUX, DEFAULT_COMMERCIAL } from "@/lib/commerciaux";
@@ -26,7 +27,11 @@ type Result = {
 };
 type Dup = { firstName: string; lastName: string; phone: string; startDateTime: string | null; platform: string; signStatus: string; matchedBy: string };
 
-const EMPTY = { civility: "Monsieur", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "", carBrand: "", carModel: "", carFinish: "", type: "agence", immatriculation: "", address: "", vehiclePhotoUrl: "", photos: [] as string[], teleprospector: "", teleprospectorEmail: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "" };
+const EMPTY = {
+  civility: "", firstName: "", lastName: "", email: "", phone: "", listingUrl: "", source: "LeBonCoin",
+  isLead: false, leadYear: "", leadKm: "", leadTransmission: "", leadEntretiens: "", leadEntretiensRestants: "", leadHabitacle: "", leadVices: "",
+  carBrand: "", carModel: "", carFinish: "", type: "agence", immatriculation: "", address: "", vehiclePhotoUrl: "", photos: [] as string[], teleprospector: "", teleprospectorEmail: "", commercial: DEFAULT_COMMERCIAL, date: "", time: "",
+};
 const SOURCES = ["LeBonCoin", "LaCentrale", "Autre"];
 
 const inputStyle: React.CSSProperties = {
@@ -37,6 +42,13 @@ const inputStyle: React.CSSProperties = {
     "#232323", boxSizing: "border-box", fontFamily: "inherit",
 };
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 13, color: "#6b7280", marginBottom: 6 };
+const leadLabelStyle: React.CSSProperties = { display: "block", fontSize: 14, fontWeight: 700, color: "#1a1a1a", marginBottom: 6 };
+const leadInputStyle: React.CSSProperties = { ...inputStyle, width: 140 };
+const leadToggle = (actif: boolean): React.CSSProperties => ({
+  padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+  border: actif ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
+  background: actif ? PINK : "#fff", color: actif ? "#fff" : "#6b7280",
+});
 const selectStyle: React.CSSProperties = {
   ...inputStyle, appearance: "none", cursor: "pointer", paddingRight: 38,
   backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
@@ -45,10 +57,12 @@ const selectStyle: React.CSSProperties = {
 
 function Home() {
   const searchParams = useSearchParams();
+  const isAdmin = getUser()?.role === "admin";
   const [form, setForm] = useState(EMPTY);
   const [commerciaux, setCommerciaux] = useState<string[]>([...COMMERCIAUX]);
   const [teleprospecteurs, setTeleprospecteurs] = useState<{ name: string; email: string }[]>([]);
   const [rule, setRule] = useState<{ commercials: string[]; agenceOnly?: boolean } | null>(null);
+  const [autoAssign, setAutoAssign] = useState(false); // téléprospecteur en mode "le système choisit le commercial"
   const [loading, setLoading] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [pastEntry, setPastEntry] = useState(false); // RDV déjà passé, saisi en retard -> pas de mail/SMS
@@ -68,7 +82,8 @@ function Home() {
     const email = searchParams.get("email");
     const phone = searchParams.get("phone");
     const listingUrl = searchParams.get("listingUrl");
-    if (!firstName && !lastName && !email && !phone && !listingUrl) return;
+    const isLead = searchParams.get("isLead") === "1";
+    if (!firstName && !lastName && !email && !phone && !listingUrl && !isLead) return;
     setForm((f) => ({
       ...f,
       firstName: firstName ?? f.firstName,
@@ -76,6 +91,7 @@ function Home() {
       email: email ?? f.email,
       phone: phone ?? f.phone,
       listingUrl: listingUrl ?? f.listingUrl,
+      isLead: isLead || f.isLead,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -113,6 +129,7 @@ function Home() {
         // Restriction téléprospecteur : ne garder que ses commerciaux autorisés + forcer agence.
         const tr = d.rule as { commercials: string[]; agenceOnly?: boolean } | null;
         setRule(tr ?? null);
+        setAutoAssign(!!d.autoAssign);
         if (tr?.commercials?.length) {
           const tok = (s: string) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
           const allowed = new Set(tr.commercials.map(tok));
@@ -125,7 +142,6 @@ function Home() {
           setCommerciaux(coms);
           const def = coms[0] ?? "";
           setForm((f) => ({ ...f, commercial: def, ...(tr?.agenceOnly ? { type: "agence" } : {}) }));
-          setLinkCommercial(def); setHesCommercial(def);
         }
         setTeleprospecteurs(d.teleprospectors ?? []);
         // Par défaut, le téléprospecteur = l'utilisateur connecté.
@@ -137,76 +153,11 @@ function Home() {
   const [preview, setPreview] = useState<{ platform?: string; title?: string | null; image?: string | null } | null>(null);
   const [dups, setDups] = useState<Dup[]>([]);
 
-  // Section "envoyer le lien au client"
-  const [showLink, setShowLink] = useState(false);
-  const [linkCivility, setLinkCivility] = useState("Monsieur");
-  const [linkEmail, setLinkEmail] = useState("");
-  const [linkPhone, setLinkPhone] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
-  const [linkSource, setLinkSource] = useState("");
-  const [linkCommercial, setLinkCommercial] = useState(DEFAULT_COMMERCIAL);
-  const [linkBrand, setLinkBrand] = useState("");
-  const [linkModel, setLinkModel] = useState("");
-  const [linkFinish, setLinkFinish] = useState("");
-  const [linkDate, setLinkDate] = useState("");
-  const [linkTime, setLinkTime] = useState("");
-  const [linkBusy, setLinkBusy] = useState(false);
-  const [linkResult, setLinkResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
-  const linkReady = (linkEmail.trim() || linkPhone.trim()) && !!linkDate && !!linkTime;
-
-  // Feature "client hésitant" : il ne sait pas quand -> on envoie juste un mail, il choisit.
-  const [showHes, setShowHes] = useState(false);
-  const [hesCivility, setHesCivility] = useState("Monsieur");
-  const [hesEmail, setHesEmail] = useState("");
-  const [hesPhone, setHesPhone] = useState("");
-  const [hesCommercial, setHesCommercial] = useState(DEFAULT_COMMERCIAL);
-  const [hesBrand, setHesBrand] = useState("");
-  const [hesModel, setHesModel] = useState("");
-  const [hesFinish, setHesFinish] = useState("");
-  const [hesBusy, setHesBusy] = useState(false);
-  const [hesResult, setHesResult] = useState<{ bookUrl: string; emailSent: boolean; smsSent: boolean } | null>(null);
-
-  async function sendHesitant() {
-    if (!hesEmail.trim()) return;
-    setHesBusy(true); setHesResult(null);
-    try {
-      const res = await fetch("/api/book/link", {
-        method: "POST",
-        headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ email: hesEmail, phone: hesPhone, civility: hesCivility, commercial: hesCommercial, carBrand: hesBrand, carModel: hesModel, carFinish: hesFinish }), // pas de créneau -> le client choisit
-      });
-      const d = await res.json();
-      if (d.ok) setHesResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
-      else alert(d.error ?? "Erreur");
-    } finally { setHesBusy(false); }
-  }
-
-  async function sendLink() {
-    if (!linkReady) return;
-    setLinkBusy(true);
-    setLinkResult(null);
-    try {
-      const res = await fetch("/api/book/link", {
-        method: "POST",
-        headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({
-          email: linkEmail, phone: linkPhone, civility: linkCivility, listingUrl: linkUrl, source: linkSource, commercial: linkCommercial,
-          carBrand: linkBrand, carModel: linkModel, carFinish: linkFinish, date: linkDate, time: linkTime,
-        }),
-      });
-      const d = await res.json();
-      if (d.ok) setLinkResult({ bookUrl: d.bookUrl, emailSent: d.emailSent, smsSent: d.smsSent });
-      else alert(d.error ?? "Erreur");
-    } finally {
-      setLinkBusy(false);
-    }
-  }
-
   function set(key: keyof typeof EMPTY, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  const ready = form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && form.date && form.time;
+  const ready = form.civility && form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && form.date && form.time;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -265,7 +216,7 @@ function Home() {
       const res = await fetch("/api/appointment", {
         method: "POST",
         headers: authHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({ ...form, ...(force ? { force: true } : {}), noNotify: pastEntry }),
+        body: JSON.stringify({ ...form, ...(autoAssign ? { commercial: "" } : {}), ...(force ? { force: true } : {}), noNotify: pastEntry }),
       });
       const data = await res.json();
       setResult(data);
@@ -310,36 +261,118 @@ function Home() {
           <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="jean.dupont@email.com" /></div>
           <div><label style={labelStyle}>Téléphone du client</label><input style={inputStyle} type="tel" value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="06 12 34 56 78" /></div>
         </div>
-        {/* ⚠️ Écriteau : numéros passerelle des plateformes */}
-        <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fffbeb", border: "1.5px solid #fbbf24", fontSize: 13, color: "#92400e", lineHeight: 1.55 }}>
-          <strong>⚠️ HYPER IMPORTANT — numéro de téléphone :</strong> LaCentrale (et d&apos;autres plateformes) peut afficher un numéro qui commence par <strong>01, 03, 04, 05…</strong> C&apos;est un <strong>numéro fixe / passerelle</strong> : impossible de rappeler le client derrière. Lors de la prise de rendez-vous, <strong>demande toujours au client son 06 ou son 07</strong>. Le formulaire refuse tout autre numéro.
-        </div>
-        <div>
-          <label style={labelStyle}>Lien de l&apos;annonce <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label>
-          <input style={inputStyle} value={form.listingUrl} onChange={(e) => set("listingUrl", extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); set("listingUrl", extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" />
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            {SOURCES.map((src) => (
-              <button key={src} type="button" onClick={() => set("source", form.source === src ? "" : src)}
-                style={{ flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                  border: form.source === src ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
-                  background: form.source === src ? PINK : "#fff", color: form.source === src ? "#fff" : "#6b7280" }}>
-                {src === "LeBonCoin" ? "🟠 LeBonCoin" : src === "LaCentrale" ? "🔵 LaCentrale" : "Autre"}
-              </button>
-            ))}
+        {isAdmin && (
+          <div>
+            <button type="button" onClick={() => setForm((f) => ({ ...f, isLead: !f.isLead, listingUrl: "", source: "" }))}
+              style={{ padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                border: form.isLead ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
+                background: form.isLead ? PINK : "#fff", color: form.isLead ? "#fff" : "#6b7280" }}>
+              {form.isLead ? "✓ Ce client est un lead" : "Ce client est un lead"}
+            </button>
           </div>
-          {preview && (preview.title || preview.image) && (
-            <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, padding: 10, border: "1px solid #e5e7eb", borderRadius: 10, background: "#f8f9fa" }}>
-              {preview.image && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={preview.image} alt="" width={72} height={72} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
-              )}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: PINK, textTransform: "uppercase", letterSpacing: 0.4 }}>{preview.platform}</div>
-                <div style={{ fontSize: 13, color: "#232323", lineHeight: 1.4, marginTop: 2 }}>{preview.title ?? "Aperçu indisponible"}</div>
+        )}
+        {form.isLead ? (
+          <div>
+            <label style={leadLabelStyle}>Véhicule du lead <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(déclaré par le client, pas d&apos;annonce)</span></label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 4 }}>
+              <div>
+                <label style={leadLabelStyle}>Année (1ère mise en circulation)</label>
+                <input style={leadInputStyle} value={form.leadYear} onChange={(e) => set("leadYear", e.target.value)} placeholder="2019" />
+              </div>
+              <div>
+                <label style={leadLabelStyle}>Kilométrage</label>
+                <input style={leadInputStyle} value={form.leadKm} onChange={(e) => set("leadKm", e.target.value)} placeholder="85 000" />
               </div>
             </div>
-          )}
-        </div>
+            <div style={{ marginTop: 14 }}>
+              <label style={leadLabelStyle}>Boîte</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {["manuelle", "automatique"].map((v) => (
+                  <button key={v} type="button" onClick={() => set("leadTransmission", form.leadTransmission === v ? "" : v)} style={leadToggle(form.leadTransmission === v)}>
+                    {v === "manuelle" ? "Manuelle" : "Automatique"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {[
+              { id: "leadEntretiens", label: "Entretiens à jour ?" },
+              { id: "leadHabitacle", label: "Habitacle intérieur/extérieur propre en général ?" },
+              { id: "leadVices", label: "Vices cachés suspectés ?" },
+            ].map(({ id, label }) => (
+              <div key={id} style={{ marginTop: 14 }}>
+                <label style={leadLabelStyle}>{label}</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["oui", "non"].map((v) => (
+                    <button key={v} type="button" onClick={() => set(id as keyof typeof form, (form as unknown as Record<string, string>)[id] === v ? "" : v)} style={leadToggle((form as unknown as Record<string, string>)[id] === v)}>
+                      {v === "oui" ? "Oui" : "Non"}
+                    </button>
+                  ))}
+                </div>
+                {id === "leadEntretiens" && form.leadEntretiens === "non" && (
+                  <div style={{ marginTop: 10 }}>
+                    <label style={leadLabelStyle}>Combien d&apos;entretiens reste-t-il à faire ?</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {["1", "2", "3+"].map((n) => (
+                        <button key={n} type="button" onClick={() => set("leadEntretiensRestants", form.leadEntretiensRestants === n ? "" : n)} style={leadToggle(form.leadEntretiensRestants === n)}>
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {id === "leadHabitacle" && form.leadHabitacle === "non" && (
+                  <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "#fffbeb", border: "1.5px solid #fbbf24", fontSize: 13, color: "#92400e" }}>
+                    Passez un petit coup d&apos;aspirateur — plus ou moins propre pour les photos et vidéos en agence.
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div style={{ marginTop: 18 }}>
+              <label style={leadLabelStyle}>Plaque d&apos;immatriculation <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(facultatif — remplit finition/couleur/énergie automatiquement)</span></label>
+              <PlaqueLookup
+                immatriculation={form.immatriculation}
+                onReprendre={(v) => setForm((f) => ({
+                  ...f,
+                  immatriculation: v.plaque,
+                  carBrand: v.marque || f.carBrand,
+                  carModel: v.modele || f.carModel,
+                  carFinish: v.finition || f.carFinish,
+                  leadYear: (v.miseEnCirculation.match(/\d{4}/)?.[0]) || f.leadYear,
+                  leadKm: v.kilometrage || f.leadKm,
+                  leadTransmission: /auto/i.test(v.boiteVitesses ?? "") ? "automatique" : /man/i.test(v.boiteVitesses ?? "") ? "manuelle" : f.leadTransmission,
+                }))}
+              />
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label style={labelStyle}>Lien de l&apos;annonce <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label>
+            <input style={inputStyle} value={form.listingUrl} onChange={(e) => set("listingUrl", extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); set("listingUrl", extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              {SOURCES.map((src) => (
+                <button key={src} type="button" onClick={() => set("source", form.source === src ? "" : src)}
+                  style={{ flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    border: form.source === src ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb",
+                    background: form.source === src ? PINK : "#fff", color: form.source === src ? "#fff" : "#6b7280" }}>
+                  {src === "LeBonCoin" ? "🟠 LeBonCoin" : src === "LaCentrale" ? "🔵 LaCentrale" : "Autre"}
+                </button>
+              ))}
+            </div>
+            {preview && (preview.title || preview.image) && (
+              <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, padding: 10, border: "1px solid #e5e7eb", borderRadius: 10, background: "#f8f9fa" }}>
+                {preview.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview.image} alt="" width={72} height={72} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: PINK, textTransform: "uppercase", letterSpacing: 0.4 }}>{preview.platform}</div>
+                  <div style={{ fontSize: 13, color: "#232323", lineHeight: 1.4, marginTop: 2 }}>{preview.title ?? "Aperçu indisponible"}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div>
           <label style={labelStyle}>Véhicule</label>
           <VehiclePicker brand={form.carBrand} model={form.carModel} finish={form.carFinish} onChange={(b, m, fi) => setForm((f) => ({ ...f, carBrand: b, carModel: m, carFinish: fi ?? "" }))} />
@@ -384,13 +417,22 @@ function Home() {
             <input style={inputStyle} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="N°, rue, code postal, ville" />
           </div>
         )}
-        <div>
-          <label style={labelStyle}>Commercial assigné</label>
-          <select className="sc-select" style={selectStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
-            {commerciaux.length === 0 && <option value="">— Crée un commercial dans Comptes —</option>}
-            {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        {autoAssign ? (
+          <div>
+            <label style={labelStyle}>Commercial assigné</label>
+            <div style={{ ...selectStyle, display: "flex", alignItems: "center", color: "#6b7280" }}>
+              🤖 Attribution automatique{commerciaux.length ? ` (priorité : ${commerciaux.join(" → ")})` : ""}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label style={labelStyle}>Commercial assigné</label>
+            <select className="sc-select" style={selectStyle} value={form.commercial} onChange={(e) => set("commercial", e.target.value)}>
+              {commerciaux.length === 0 && <option value="">— Crée un commercial dans Comptes —</option>}
+              {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <label style={labelStyle}>Téléprospecteur <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(qui génère le RDV)</span></label>
           <select className="sc-select" style={selectStyle} value={form.teleprospectorEmail} onChange={(e) => { const t = teleprospecteurs.find((x) => x.email === e.target.value); setForm((f) => ({ ...f, teleprospectorEmail: e.target.value, teleprospector: t?.name ?? f.teleprospector })); }}>
@@ -461,97 +503,6 @@ function Home() {
         </div>
       )}
 
-      <div style={{ marginTop: 26, borderTop: "1px solid #ececec", paddingTop: 18 }}>
-        <button type="button" onClick={() => setShowLink((s) => !s)} style={{ background: "none", border: "none", color: PINK, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-          {showLink ? "▲ " : "▼ "}📅 Imposer un créneau — le client confirme son identité
-        </button>
-        {showLink && (
-          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Tu fixes <strong>date + heure</strong> (+ véhicule), le client reçoit un SMS/mail et n&apos;a plus qu&apos;à <strong>confirmer son identité</strong>. Il ne voit ni le commercial, ni la source, ni le lien.</p>
-            <div>
-              <label style={labelStyle}>Civilité</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["Monsieur", "Madame"].map((c) => (
-                  <button key={c} type="button" onClick={() => setLinkCivility(c)} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", border: linkCivility === c ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb", background: linkCivility === c ? PINK : "#fff", color: linkCivility === c ? "#fff" : "#6b7280" }}>{c}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-              <div><label style={labelStyle}>E-mail <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(ou tél)</span></label><input style={inputStyle} type="email" value={linkEmail} onChange={(e) => setLinkEmail(e.target.value)} placeholder="client@email.com" /></div>
-              <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour SMS)</span></label><input style={inputStyle} type="tel" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
-            </div>
-            <div><label style={labelStyle}>Commercial <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour nous — invisible au client)</span></label>
-              <select style={inputStyle} value={linkCommercial} onChange={(e) => setLinkCommercial(e.target.value)}>
-                {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pré-rempli, optionnel)</span></label>
-              <VehiclePicker brand={linkBrand} model={linkModel} finish={linkFinish} onChange={(b, m, fi) => { setLinkBrand(b); setLinkModel(m); setLinkFinish(fi ?? ""); }} />
-            </div>
-            <div><label style={labelStyle}>Lien de l&apos;annonce <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel, non visible du client)</span></label><input style={inputStyle} value={linkUrl} onChange={(e) => setLinkUrl(extractUrl(e.target.value))} onPaste={(e) => { e.preventDefault(); setLinkUrl(extractUrl(e.clipboardData.getData("text"))); }} placeholder="Colle ici (texte ou lien complet)" />
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                {SOURCES.map((src) => (
-                  <button key={src} type="button" onClick={() => setLinkSource(linkSource === src ? "" : src)} style={{ flex: 1, padding: "8px 6px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", border: linkSource === src ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb", background: linkSource === src ? PINK : "#fff", color: linkSource === src ? "#fff" : "#6b7280" }}>{src === "LeBonCoin" ? "🟠 LeBonCoin" : src === "LaCentrale" ? "🔵 LaCentrale" : "Autre"}</button>
-                ))}
-              </div>
-            </div>
-            <div><label style={labelStyle}>Créneau imposé <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(date + heure)</span></label>
-              <SlotPicker commercial={linkCommercial} value={{ date: linkDate, time: linkTime }} onChange={(v) => { setLinkDate(v.date); setLinkTime(v.time); }} />
-            </div>
-            <button onClick={sendLink} disabled={linkBusy || !linkReady} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: linkBusy ? "not-allowed" : "pointer", background: linkBusy || !linkReady ? "#cbd5e1" : NAVY, color: "#fff" }}>
-              {linkBusy ? "Envoi…" : "Envoyer le lien (confirmation)"}
-            </button>
-            {linkResult && (
-              <div style={{ padding: 14, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
-                <strong>✅ {linkResult.emailSent ? "Mail envoyé" : "Lien généré"}{linkResult.smsSent ? " + SMS envoyé" : ""}</strong>
-                <p style={{ margin: "8px 0 4px", fontSize: 12, color: "#166534" }}>Lien (à copier si besoin) :</p>
-                <input readOnly value={linkResult.bookUrl} onFocus={(e) => e.currentTarget.select()} style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #bbf7d0", boxSizing: "border-box" }} />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div style={{ marginTop: 18, borderTop: "1px solid #ececec", paddingTop: 18 }}>
-        <button type="button" onClick={() => setShowHes((s) => !s)} style={{ background: "none", border: "none", color: PINK, fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-          {showHes ? "▲ " : "▼ "}🤔 Client hésitant — il ne sait pas quand (il choisit son créneau)
-        </button>
-        {showHes && (
-          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Le client veut venir mais ne sait pas quand. Tu mets <strong>juste son e-mail</strong> : il reçoit « suite à notre conversation téléphonique, choisissez un créneau » et réserve quand il veut. Suivi dans l&apos;onglet <strong>Hésitants</strong>.</p>
-            <div>
-              <label style={labelStyle}>Civilité</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["Monsieur", "Madame"].map((c) => (
-                  <button key={c} type="button" onClick={() => setHesCivility(c)} style={{ flex: 1, padding: 10, borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", border: hesCivility === c ? `1.5px solid ${PINK}` : "1.5px solid #e5e7eb", background: hesCivility === c ? PINK : "#fff", color: hesCivility === c ? "#fff" : "#6b7280" }}>{c}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-              <div><label style={labelStyle}>E-mail du client</label><input style={inputStyle} type="email" value={hesEmail} onChange={(e) => setHesEmail(e.target.value)} placeholder="client@email.com" /></div>
-              <div><label style={labelStyle}>Téléphone <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(optionnel)</span></label><input style={inputStyle} type="tel" value={hesPhone} onChange={(e) => setHesPhone(e.target.value)} placeholder="06 12 34 56 78" /></div>
-            </div>
-            <div><label style={labelStyle}>Commercial <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(pour nous — invisible au client)</span></label>
-              <select style={inputStyle} value={hesCommercial} onChange={(e) => setHesCommercial(e.target.value)}>
-                {commerciaux.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div><label style={labelStyle}>Véhicule <span style={{ color: "#9aa6b8", fontWeight: 400 }}>(marque / modèle / finition — pour savoir de quoi il s&apos;agit)</span></label>
-              <VehiclePicker brand={hesBrand} model={hesModel} finish={hesFinish} onChange={(b, m, fi) => { setHesBrand(b); setHesModel(m); setHesFinish(fi ?? ""); }} />
-            </div>
-            <button onClick={sendHesitant} disabled={hesBusy || !hesEmail.trim()} style={{ padding: "13px 20px", fontSize: 15, fontWeight: 600, borderRadius: 8, border: "none", cursor: hesBusy ? "not-allowed" : "pointer", background: hesBusy || !hesEmail.trim() ? "#cbd5e1" : NAVY, color: "#fff" }}>
-              {hesBusy ? "Envoi…" : "Envoyer l'invitation (choix du créneau)"}
-            </button>
-            {hesResult && (
-              <div style={{ padding: 14, borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
-                <strong>✅ {hesResult.emailSent ? "Mail envoyé" : "Lien généré"}{hesResult.smsSent ? " + SMS envoyé" : ""}</strong>
-                <p style={{ margin: "8px 0 4px", fontSize: 12, color: "#166534" }}>Lien (à copier si besoin) :</p>
-                <input readOnly value={hesResult.bookUrl} onFocus={(e) => e.currentTarget.select()} style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #bbf7d0", boxSizing: "border-box" }} />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { getPool } from "./db";
+import { normalizeFrenchPhone } from "./parse";
 
 export type Lead = {
   id: number;
@@ -31,7 +32,7 @@ export async function addLead(phone: string, listingUrl: string | undefined, not
     `insert into leads (phone, listing_url, note, lead_ref, call_center_id, first_name, last_name, email, campaign, raw_data)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning *`,
     [
-      phone.trim(), listingUrl?.trim() || "", note?.trim() || null, ref, callCenterId,
+      normalizeFrenchPhone(phone), listingUrl?.trim() || "", note?.trim() || null, ref, callCenterId,
       extra?.firstName?.trim() || null, extra?.lastName?.trim() || null, extra?.email?.trim() || null,
       extra?.campaign?.trim() || null, extra?.rawData ? JSON.stringify(extra.rawData) : null,
     ],

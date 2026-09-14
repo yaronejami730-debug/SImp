@@ -37,7 +37,7 @@ export const GROUPES: Groupe[] = [
       { key: "agenda", label: "Agenda", href: "/agenda", icone: "calendrier", visible: () => true },
       { key: "recherche-rdv", label: "Recherche", href: "/recherche-rdv", icone: "loupe", visible: () => true },
       { key: "crm", label: "Clients", href: "/crm", icone: "personnes", visible: restreint(() => true) },
-      { key: "prospection", label: "Prospection", href: "/prospection", icone: "cible", visible: restreint(peutCreer) },
+      { key: "prospection", label: "Lead", href: "/prospection", icone: "cible", visible: restreint(peutCreer) },
       { key: "rappels", label: "Rappels", href: "/rappels", icone: "cloche", visible: restreint(peutCreer) },
     ],
   },
@@ -53,8 +53,7 @@ export const GROUPES: Groupe[] = [
   {
     titre: "Administration",
     entrees: [
-      { key: "comptes", label: "Comptes", href: "/comptes", icone: "personnes", visible: restreint((u) => estAdmin(u) || u?.role === "responsable") },
-      { key: "baremes", label: "Deal", href: "/baremes", icone: "euro", visible: restreint((u) => estAdmin(u) || u?.role === "responsable" || !!u?.isGestionnaire) },
+      { key: "baremes", label: "Deal", href: "/baremes", icone: "euro", visible: restreint((u) => estAdmin(u) || !!u?.isGestionnaire) },
       { key: "templates", label: "Modèles d'e-mails", href: "/templates", icone: "enveloppe", visible: restreint(estAdmin) },
       { key: "avis-admin", label: "Avis clients", href: "/avis-admin", icone: "etoile", visible: restreint(estAdmin) },
       { key: "parametres", label: "Paramètres", href: "/parametres", icone: "reglages", visible: espaceCommercial },

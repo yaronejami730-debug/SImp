@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getUserByEmail, listCommercials, listTeleprospectors, listUsers } from "@/lib/users";
-import { callCenterRule, commercialsForCallCenterInherited, commercialsForTelepro, isGestionnaireEmail } from "@/lib/callcenters";
+import { callCenterRule, commercialsForCallCenterInherited, commercialsForTelepro, isGestionnaireEmail, slugForCallCenter } from "@/lib/callcenters";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +19,14 @@ export async function GET(req: Request) {
 
     // Restriction plus fine : ce téléprospecteur précis n'a que certains commerciaux assignés.
     if (me?.is_teleprospector) {
-      const allowedEmails = await commercialsForTelepro(s.email);
+      const allowedEmails = await commercialsForTelepro(s.email); // déjà triés par priorité
       if (allowedEmails.length) {
-        const allowedSet = new Set(allowedEmails);
+        const order = new Map(allowedEmails.map((e, i) => [e, i]));
         // L'assignation par-télépro est indépendante de la liste (déjà restreinte) du call center :
         // on cherche dans TOUS les commerciaux actifs, pas seulement ceux déjà liés à ce CC.
         const pool = await listCommercials();
-        const filtered = pool.filter((c) => allowedSet.has(c.email.toLowerCase()));
+        const filtered = pool.filter((c) => order.has(c.email.toLowerCase()))
+          .sort((a, b) => (order.get(a.email.toLowerCase()) ?? 0) - (order.get(b.email.toLowerCase()) ?? 0));
         if (filtered.length) {
           commercials = filtered;
           rule = { commercials: filtered.map((c) => c.name), agenceOnly: rule?.agenceOnly ?? false };
@@ -38,12 +39,18 @@ export async function GET(req: Request) {
       : (await listUsers(s.callCenterId)).filter((u) => u.is_teleprospector && u.active).map((u) => ({ email: u.email, name: u.name, phone: u.phone }));
 
     const isGestionnaire = await isGestionnaireEmail(s.email).catch(() => false);
+    // TOUT compte, super-admin inclus, navigue toujours sous le slug d'une agence — ça permet de
+    // toujours savoir "où on est" (branding, mails...). Pour l'admin c'est juste sa dernière agence
+    // choisie (voir le sélecteur dans AppShell) ; par défaut, celle de son propre call center.
+    const agenceSlug = await slugForCallCenter(s.callCenterId).catch(() => null);
     return NextResponse.json({
       ok: true,
       email: s.email, name: s.name, role: s.role, callCenterId: s.callCenterId,
       isCommercial: !!me?.is_commercial,
       isTeleprospector: !!me?.is_teleprospector,
+      autoAssign: !!me?.auto_assign,
       isGestionnaire,
+      agenceSlug,
       commercials,
       teleprospectors,
       commerciaux: commercials.map((c) => c.name),

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { authHeaders } from "@/lib/client";
-import { extractUrl } from "@/lib/parse";
+import { extractUrl, normalizeFrenchPhone } from "@/lib/parse";
 
 const NAVY = "var(--brand-dark)";
 const PINK = "var(--brand-primary)";
@@ -45,6 +45,7 @@ function rdvHref(l: Lead) {
   if (l.email) p.set("email", l.email);
   if (l.phone) p.set("phone", l.phone);
   if (l.listing_url) p.set("listingUrl", l.listing_url);
+  p.set("isLead", "1"); // toujours un lead ici, pas une annonce LeBonCoin/LaCentrale
   return `/simplicicar?${p.toString()}`;
 }
 
@@ -355,7 +356,7 @@ function Prospection() {
 
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
         <div>
-          <h1 style={{ margin: 0, fontFamily: "'Cabin','Manrope',Arial,sans-serif", fontSize: 21, fontWeight: 700, color: NAVY, textTransform: "uppercase" }}>Prospection</h1>
+          <h1 style={{ margin: 0, fontFamily: "'Cabin','Manrope',Arial,sans-serif", fontSize: 21, fontWeight: 700, color: NAVY, textTransform: "uppercase" }}>Lead</h1>
           <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 13.5 }}>Enregistre tes appels sortants et convertis les prospects chauds en RDV.</p>
         </div>
         {leads.length > 0 && (
@@ -457,7 +458,6 @@ function Prospection() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                  <a href={`/lead/${l.lead_ref}`} onClick={(e) => e.stopPropagation()} style={{ fontSize: 11, fontWeight: 700, color: PINK, background: "#fdf2f8", padding: "3px 9px", borderRadius: 999, textDecoration: "none" }}>{l.lead_ref}</a>
                   {l.campaign && <span style={{ fontSize: 11, fontWeight: 700, color: ACCENT, background: "#e6fbfd", padding: "3px 9px", borderRadius: 999 }}>{l.campaign}</span>}
                   {(() => { const st = STATUS_LABELS[l.status || "nouveau"]; return st && l.status !== "nouveau" ? (
                     <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.bg, padding: "3px 9px", borderRadius: 999 }}>{st.label}</span>
@@ -466,10 +466,10 @@ function Prospection() {
                 {displayName ? (
                   <>
                     <span style={{ fontWeight: 700, color: NAVY, fontSize: 16.5 }}>{displayName}</span>
-                    <div style={{ fontSize: 14, color: "#6b7280", fontWeight: 600 }}>{l.phone}{l.email ? ` · ${l.email}` : ""}</div>
+                    <div style={{ fontSize: 14, color: "#6b7280", fontWeight: 600 }}>{normalizeFrenchPhone(l.phone)}{l.email ? ` · ${l.email}` : ""}</div>
                   </>
                 ) : (
-                  <span style={{ fontWeight: 700, color: NAVY, fontSize: 16.5 }}>{l.phone}</span>
+                  <span style={{ fontWeight: 700, color: NAVY, fontSize: 16.5 }}>{normalizeFrenchPhone(l.phone)}</span>
                 )}
                 {model && <div style={{ fontSize: 13.5, color: NAVY, fontWeight: 600, marginTop: 2 }}>🚗 {model}</div>}
                 {l.listing_url && (
@@ -596,7 +596,6 @@ function Prospection() {
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 12px 32px rgba(26,39,58,0.2)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: PINK, background: "#fdf2f8", padding: "3px 9px", borderRadius: 999, display: "inline-block", marginBottom: 6 }}>{ficheLead.lead_ref}</div>
                 <h2 style={{ margin: 0, fontSize: 19, color: NAVY, fontFamily: "'Cabin',sans-serif" }}>
                   {[ficheLead.first_name, ficheLead.last_name].filter(Boolean).join(" ") || ficheLead.phone}
                 </h2>
@@ -605,7 +604,7 @@ function Prospection() {
             </div>
 
             <div style={{ display: "grid", gap: 8, marginTop: 16, fontSize: 14 }}>
-              <div><strong style={{ color: "#6b7280", fontWeight: 600 }}>Téléphone :</strong> {ficheLead.phone}</div>
+              <div><strong style={{ color: "#6b7280", fontWeight: 600 }}>Téléphone :</strong> {normalizeFrenchPhone(ficheLead.phone)}</div>
               {ficheLead.email && <div><strong style={{ color: "#6b7280", fontWeight: 600 }}>E-mail :</strong> {ficheLead.email}</div>}
               {ficheLead.campaign && <div><strong style={{ color: "#6b7280", fontWeight: 600 }}>Campagne :</strong> {ficheLead.campaign}</div>}
               {ficheLead.listing_url && (

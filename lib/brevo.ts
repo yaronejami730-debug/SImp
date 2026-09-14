@@ -15,6 +15,7 @@ type SendOpts = {
   toName?: string;
   subject: string;
   html: string;
+  senderName?: string; // override du nom expéditeur par défaut (BREVO_SENDER_NAME)
   log?: LogCtx; // si fourni -> journalise le mail (preuve timeline)
 };
 
@@ -49,7 +50,7 @@ export async function sendEmail(opts: SendOpts): Promise<{ messageId?: string; s
       },
       body: JSON.stringify({
         sender: {
-          name: process.env.BREVO_SENDER_NAME ?? "Simplisicar",
+          name: opts.senderName ?? process.env.BREVO_SENDER_NAME ?? "Simplisicar",
           email: process.env.BREVO_SENDER_EMAIL,
         },
         to: [{ email: opts.to, name: opts.toName }],

@@ -4,6 +4,7 @@ import { listAppointments } from "@/lib/google";
 import { listAccords, linesFor, totalFor } from "@/lib/remuneration";
 import { toParisISO } from "@/lib/parse";
 import { getPool } from "@/lib/db";
+import { agenceScopeCcIds } from "@/lib/agence-scope";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -64,9 +65,13 @@ export async function GET(req: Request) {
       (!!a.commercialEmail && a.commercialEmail.toLowerCase() === myEmailLc) ||
       (!a.commercialEmail && !!myNameTok && tokset(a.commercial ?? "") === myNameTok);
 
-    const visible = viewerRole === "admin" ? allAppts
+    const visibleByRole = viewerRole === "admin" ? allAppts
       : viewerRole === "commercial" ? allAppts.filter(isMine)
       : allAppts.filter((a) => a.callCenterId === s.callCenterId); // responsable/gestionnaire: tous du CC
+
+    // Navigation sous un slug d'agence : restreint même un super-admin à cette agence.
+    const agenceScope = await agenceScopeCcIds(req);
+    const visible = agenceScope ? visibleByRole.filter((a) => agenceScope.includes(a.callCenterId ?? 1)) : visibleByRole;
 
     const appts = visible.filter((a) => inRange(a.startDateTime));
     const active = appts.filter((a) => !a.cancelled);

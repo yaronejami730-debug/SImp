@@ -26,8 +26,10 @@ function fmtLong(dt: string | Date) {
 }
 
 function greet(d: { civility?: string; firstName: string; lastName?: string }) {
-  if (d.lastName) return `${d.civility ?? "Monsieur"} ${d.lastName}`;
-  return `${d.civility ?? "Monsieur"} ${d.firstName}`;
+  // "||" et pas "??" : la civilité n'est plus pré-cochée côté formulaire, donc souvent "" (chaîne
+  // vide, définie) plutôt que undefined -- "??" laisserait passer "" et casserait la formule.
+  if (d.lastName) return `${d.civility || "Monsieur"} ${d.lastName}`;
+  return `${d.civility || "Monsieur"} ${d.firstName}`;
 }
 
 function socialIcon(href: string, name: string, file: string) {

@@ -9,6 +9,9 @@ export type User = {
   // Cumulables, comme is_commercial/is_teleprospector : un même compte peut être téléprospecteur
   // ET commercial ET gestionnaire ET associé à la fois.
   is_gestionnaire?: boolean; is_associe?: boolean;
+  // Téléprospecteur : true = le système choisit seul le commercial (ordre de priorité) à la
+  // prise de RDV ; false = le téléprospecteur choisit lui-même dans sa liste assignée.
+  auto_assign?: boolean;
 };
 
 /** Ping de présence : appelé toutes les ~45s tant que le CRM est ouvert (voir AppShell). */
@@ -16,7 +19,7 @@ export async function touchLastSeen(email: string): Promise<void> {
   await getPool().query(`update users set last_seen_at = now() where lower(email) = lower($1)`, [email.trim()]);
 }
 
-const USER_COLS = `id, email, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active, username, deleted_at, is_gestionnaire, is_associe`;
+const USER_COLS = `id, email, name, role, call_center_id, commission_base, commission_pct, is_commercial, is_teleprospector, phone, active, username, deleted_at, is_gestionnaire, is_associe, auto_assign`;
 
 /** pg renvoie les bigint (id, call_center_id) en string : on normalise en number, sinon toute
  *  comparaison stricte (===, clé de Map) contre un id venu d'ailleurs (déjà normalisé, lui)
@@ -55,7 +58,7 @@ export async function getUserById(id: number): Promise<User | undefined> {
 /** Liste les users (tous, ou d'un call center si fourni — cloisonnement legacy). */
 export async function listUsers(callCenterId?: number): Promise<User[]> {
   // agence_name = racine de la hiérarchie du call center (parent, sinon lui-même).
-  const cols = `u.id, u.email, u.name, u.role, u.call_center_id, u.commission_base, u.commission_pct, u.is_commercial, u.is_teleprospector, u.phone, u.active, u.created_at, u.username, u.last_seen_at, u.deleted_at, u.is_gestionnaire, u.is_associe, cc.name as call_center_name, coalesce(p.name, cc.name) as agence_name`;
+  const cols = `u.id, u.email, u.name, u.role, u.call_center_id, u.commission_base, u.commission_pct, u.is_commercial, u.is_teleprospector, u.phone, u.active, u.created_at, u.username, u.last_seen_at, u.deleted_at, u.is_gestionnaire, u.is_associe, u.auto_assign, cc.name as call_center_name, coalesce(p.name, cc.name) as agence_name`;
   const from = `from users u left join call_centers cc on cc.id = u.call_center_id left join call_centers p on p.id = cc.parent_id`;
   if (callCenterId != null) {
     const { rows } = await getPool().query(`select ${cols} ${from} where u.call_center_id = $1 order by u.role, u.name`, [callCenterId]);
@@ -136,11 +139,12 @@ export async function createUser(input: CreateUserInput): Promise<User> {
 }
 
 /** Met à jour les flags/infos d'un compte (rôles cumulables, actif, tél, commission). */
-export async function updateUserFlags(id: number, patch: { isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean; isAssocie?: boolean; active?: boolean; phone?: string; commissionBase?: number; commissionPct?: number }): Promise<void> {
+export async function updateUserFlags(id: number, patch: { isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean; isAssocie?: boolean; active?: boolean; phone?: string; commissionBase?: number; commissionPct?: number; autoAssign?: boolean }): Promise<void> {
   const map: Record<string, unknown> = {
     is_commercial: patch.isCommercial, is_teleprospector: patch.isTeleprospector,
     is_gestionnaire: patch.isGestionnaire, is_associe: patch.isAssocie, active: patch.active,
     phone: patch.phone, commission_base: patch.commissionBase, commission_pct: patch.commissionPct,
+    auto_assign: patch.autoAssign,
   };
   const sets: string[] = []; const params: unknown[] = [];
   for (const [col, val] of Object.entries(map)) if (val !== undefined) { params.push(val); sets.push(`${col} = $${params.length}`); }

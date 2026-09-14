@@ -86,6 +86,13 @@ export async function GET(req: Request, { params }: Params) {
         phone: p.clientPhone ?? "",
         platform: p.platform ?? "",
         listingUrl: p.listingUrl ?? "",
+        isLead: p.isLead === "1",
+        leadYear: p.leadYear ?? "",
+        leadKm: p.leadKm ?? "",
+        leadTransmission: p.leadTransmission ?? "",
+        leadEntretiens: p.leadEntretiens ?? "",
+        leadHabitacle: p.leadHabitacle ?? "",
+        leadVices: p.leadVices ?? "",
         carBrand: p.carBrand ?? "",
         carModel: p.carModel ?? "",
         carFinish: p.carFinish ?? "",
@@ -93,6 +100,8 @@ export async function GET(req: Request, { params }: Params) {
         vehiclePhotoUrl: p.vehiclePhotoUrl ?? "",
         teleprospector: p.teleprospector ?? "",
         note: p.note ?? "",
+        noteAuthor: p.noteAuthor ?? "",
+        noteUpdatedAt: p.noteUpdatedAt ?? "",
         location: ev.location ?? "",
         present: p.present === "1",
         presence: p.present === "1" ? "present" : p.present === "0" ? "absent" : "unknown",
@@ -157,7 +166,12 @@ export async function PATCH(req: Request, { params }: Params) {
       await patchContact(id, { phone: body.phone?.trim(), email: body.email?.trim() });
     }
     if (body.note !== undefined) {
-      await patchNote(id, body.note);
+      await patchNote(id, body.note, s.name || s.email);
+      // Visible aussi dans la chronologie du client (pas seulement dans le champ "Notes
+      // internes") — sinon aucune trace de quand/par qui la note a changé, hors ce champ précis.
+      if (body.note.trim()) {
+        await appendHistory(id, "note", `${s.name || s.email} : ${body.note.trim().slice(0, 500)}`);
+      }
     }
     if (body.commercial !== undefined) {
       await patchCommercial(id, body.commercial);

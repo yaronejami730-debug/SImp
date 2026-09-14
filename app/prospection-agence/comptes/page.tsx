@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Shell from "@/components/Shell";
+import EspaceAgenceShell from "@/components/layout/EspaceAgenceShell";
+import Sidebar from "@/components/layout/Sidebar";
 import { authHeaders, getUser, setAuth } from "@/lib/client";
 import { PageHeader, Card, Badge, Field, champ, T, R, S, DateRange } from "@/components/ui";
 
@@ -11,11 +12,11 @@ type User = {
   is_commercial?: boolean; is_teleprospector?: boolean; phone?: string; active?: boolean;
   commission_base?: number; commission_pct?: number;
   call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string; last_seen_at?: string | null;
-  is_gestionnaire?: boolean; is_associe?: boolean;
+  is_gestionnaire?: boolean; is_associe?: boolean; auto_assign?: boolean;
 };
-type CallCenter = { id: number; name: string; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean };
+type CallCenter = { id: number; name: string; slug?: string | null; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean };
 type Assignment = { call_center_id: number; commercial_email: string };
-type TeleproAssignment = { telepro_email: string; commercial_email: string };
+type TeleproAssignment = { telepro_email: string; commercial_email: string; priority: number };
 type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
 type PricingAgreement = { id: number; call_center_id: number; commercial_name: string; base_amount: number; gestionnaire_amount: number | null; call_center_amount: number | null; status: string; trigger_kind?: string };
 type TeleproEarning = { email: string; name: string; callCenter: string; base: number; pct: number; rdv: number; signes: number; du: number; paye: number; solde: number };
@@ -72,6 +73,16 @@ function Comptes() {
   const [vacationCommercials, setVacationCommercials] = useState<{ email: string; name: string }[]>([]);
   const [delegatePick, setDelegatePick] = useState<Record<string, string>>({}); // email du commercial -> délégué choisi
   const [delegateDates, setDelegateDates] = useState<Record<string, { start: string; end: string }>>({});
+  const [roleModalUser, setRoleModalUser] = useState<User | null>(null);
+  const [assignModalUser, setAssignModalUser] = useState<User | null>(null);
+  const [notifyEmail, setNotifyEmail] = useState(true); // envoyer le mail "compte prêt" à la création
+  const [showInactive, setShowInactive] = useState(false); // "Supprimer" désactive (historique gardé) -> masqué par défaut
+  const [lierCommercialQuery, setLierCommercialQuery] = useState<string | null>(null); // null = picker fermé
+  // Aperçu live des couleurs de marque (Réglages > agence) — mêmes valeurs que noeud tant que
+  // rien n'est modifié, mais suit chaque changement de couleur AVANT d'enregistrer.
+  const [previewPrimary, setPreviewPrimary] = useState("#DB407A");
+  const [previewDark, setPreviewDark] = useState("#1a273a");
+  const [previewHeaderDark, setPreviewHeaderDark] = useState(false);
   // Mini-form "ajouter un télépro à CE call center"
 
   const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin" | "gestionnaire" | "associe">("commercial");
@@ -111,14 +122,16 @@ function Comptes() {
       if (d.ok) { setUsers(d.users); setRole(d.role ?? "collab"); }
       else { setErr(d.error ?? "Erreur"); return; }
       if (d.role === "admin") {
-        const r2 = await fetch("/api/callcenters", { headers: authHeaders() });
-        const d2 = await r2.json();
+        // Les deux sont indépendants -> en parallèle plutôt qu'en série (page la plus lourde du CRM).
+        const [r2, r3] = await Promise.all([
+          fetch("/api/callcenters", { headers: authHeaders() }),
+          fetch("/api/pricing-agreements", { headers: authHeaders() }),
+        ]);
+        const [d2, d3] = await Promise.all([r2.json(), r3.json()]);
         // Call centers/agences retirés (soft-delete) : disparaissent de cette vue de gestion,
         // mais leur historique (accords, factures) reste intact ailleurs — voir deleteCallCenter.
         if (d2.ok) { setCallCenters((d2.callCenters as CallCenter[]).filter((c) => c.active !== false)); setAssignments(d2.assignments); setAccords(d2.accords ?? []); setTeleproAssignments(d2.teleproAssignments ?? []); }
         // Vue lecture seule de ce qui est réglé dans la partie Barèmes (pricing_agreements).
-        const r3 = await fetch("/api/pricing-agreements", { headers: authHeaders() });
-        const d3 = await r3.json();
         if (d3.ok) setPricingAgreements(d3.agreements ?? []);
       }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
@@ -189,28 +202,58 @@ function Comptes() {
   const SANS_RATTACHEMENT = ["gestionnaire", "associe", "admin"] as const;
 
   async function addUser() {
-    if (!name.trim() || !username.trim() || !password.trim()) return;
+    // Échec silencieux corrigé : avant, un champ manquant ne faisait rien du tout, sans dire
+    // pourquoi — on ne savait jamais si le clic avait été pris en compte.
+    if (!name.trim()) { alert("Le nom est requis."); return; }
+    if (!username.trim()) { alert("Le pseudo est requis."); return; }
+    if (!password.trim()) { alert("Le mot de passe est requis."); return; }
+    const typePreview = ["commercial", "admin", "gestionnaire", "associe"].includes(type) ? type : "telepro";
+    if (!(SANS_RATTACHEMENT as readonly string[]).includes(typePreview) && !attachCC) {
+      alert("Choisis l'agence ou le call center de rattachement.");
+      return;
+    }
     setBusy(true);
     try {
       const typeEnvoye = ["commercial", "admin", "gestionnaire", "associe"].includes(type) ? type : "telepro";
       const sansRattachement = (SANS_RATTACHEMENT as readonly string[]).includes(type);
       const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
-        type: typeEnvoye, name, username, email, password, phone, schemeKey, callCenterId: sansRattachement ? 1 : attachCC,
+        type: typeEnvoye, name, username, email, password, phone, schemeKey, callCenterId: sansRattachement ? 1 : attachCC, notifyEmail,
         ...(type === "telepro" ? { commissionBase: teleBase, commissionPct: telePct } : {}),
       }) });
       const d = await res.json();
       if (!d.ok) { alert(d.error ?? "Erreur"); return; }
       setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); setTeleBase(60); setTelePct(0); load();
+      if (d.connexionUrl) copierLien(d.connexionUrl, `Compte créé pour ${d.user?.name ?? "cette personne"}`);
     } finally { setBusy(false); }
+  }
+
+  // Lien PERMANENT de connexion d'une agence (agenda-rdv.vercel.app/<slug>) — pas un lien
+  // d'activation à usage unique : tout le monde chez cette agence s'y connecte, toujours pareil.
+  function copierLien(url: string, intro: string) {
+    navigator.clipboard?.writeText(url).then(
+      () => alert(`${intro}\n\nLien de connexion (permanent) copié :\n${url}`),
+      () => alert(`${intro}\n\nLien de connexion (permanent, copie manuelle) :\n${url}`),
+    );
+  }
+
+  function copierLienDe(ccId: number | undefined, intro: string) {
+    if (!ccId) { alert("Ce compte n'a pas de call center rattaché."); return; }
+    let cur = callCenters.find((c) => c.id === ccId);
+    while (cur && cur.parent_id != null && !cur.slug) cur = callCenters.find((c) => c.id === cur!.parent_id);
+    if (!cur?.slug) { alert("Cette agence n'a pas encore de slug."); return; }
+    copierLien(`${window.location.origin}/${cur.slug}`, intro);
   }
 
   async function addCallCenter() {
     if (!ccName.trim() || !rName.trim() || !rUsername.trim() || !rPass.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, parentId: ccParentId, responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone } }) });
+      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, parentId: ccParentId, notifyEmail, responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone } }) });
       const d = await res.json();
-      if (d.ok) { setCcName(""); setRName(""); setRUsername(""); setREmail(""); setRPass(""); setRPhone(""); load(); }
+      if (d.ok) {
+        setCcName(""); setRName(""); setRUsername(""); setREmail(""); setRPass(""); setRPhone(""); load();
+        if (d.connexionUrl) copierLien(d.connexionUrl, `Call center créé, responsable ${rName}`);
+      }
       else alert(d.error ?? "Erreur");
     } finally { setBusy(false); }
   }
@@ -267,6 +310,13 @@ function Comptes() {
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
+  async function setSlugCC(ccId: number, current?: string) {
+    const slug = prompt("Slug d'URL de cette agence (ex: simplicicar-romainville) — accessible via agenda-rdv.vercel.app/<slug>/... :", current ?? "");
+    if (slug == null || slug.trim() === (current ?? "")) return;
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setSlug", slug: slug.trim() }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
   async function setHeaderDark(ccId: number, headerDark: boolean) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setTheme", headerDark }) });
     const d = await res.json();
@@ -301,10 +351,13 @@ function Comptes() {
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
-  const isTeleproAssigned = (teleproEmail: string, commercialEmail: string) =>
-    teleproAssignments.some((a) => a.telepro_email === teleproEmail.toLowerCase() && a.commercial_email === commercialEmail.toLowerCase());
   async function toggleTeleproAssign(teleproEmail: string, commercialEmail: string, assigned: boolean) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: 1, teleproEmail, commercialEmail, action: assigned ? "unassignTelepro" : "assignTelepro" }) });
+    const d = await res.json();
+    if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+  async function setTeleproPriority(teleproEmail: string, commercialEmail: string, priority: number) {
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: 1, teleproEmail, commercialEmail, priority, action: "assignTelepro" }) });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
@@ -375,18 +428,31 @@ function Comptes() {
     : selection?.kind === "utilisateurs" ? undefined
     : agences.find((a) => a.id === selection?.id) ?? agences[0];
   const estAgence = !noeud?.parent_id;
-  // Comptes libres : sans rattachement organisationnel — gestionnaires, associés, super-admins.
-  const utilisateursLibres = users.filter((u) => u.role === "admin" || u.is_gestionnaire || u.is_associe);
 
-  /** Comptes rattachés au nœud sélectionné. */
+  // Aperçu couleurs : se resynchronise sur les valeurs enregistrées à chaque ouverture des
+  // Réglages ou changement de nœud sélectionné.
+  useEffect(() => {
+    if (reglagesOuverts && noeud) {
+      setPreviewPrimary(noeud.brand_primary || "#DB407A");
+      setPreviewDark(noeud.brand_dark || "#1a273a");
+      setPreviewHeaderDark(!!noeud.header_dark);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reglagesOuverts, noeud?.id]);
+
+  // Comptes libres : sans rattachement organisationnel — gestionnaires, associés, super-admins.
+  const utilisateursLibres = users.filter((u) => (u.role === "admin" || u.is_gestionnaire || u.is_associe) && (showInactive || u.active !== false));
+
+  /** Comptes rattachés au nœud sélectionné. "Supprimer" désactive (historique gardé) plutôt que
+   *  d'effacer -> masqués de la liste par défaut, sinon "Supprimer" semble ne rien faire. */
   const comptesDuNoeud = (): User[] => {
     if (!noeud) return [];
     if (estAgence) {
-      const coms = commercialsOfAgence(noeud.id);
-      const teles = users.filter((u) => u.is_teleprospector && Number(u.call_center_id) === noeud.id);
+      const coms = commercialsOfAgence(noeud.id).filter((u) => showInactive || u.active !== false);
+      const teles = users.filter((u) => u.is_teleprospector && Number(u.call_center_id) === noeud.id && (showInactive || u.active !== false));
       return [...coms, ...teles];
     }
-    return users.filter((u) => Number(u.call_center_id) === noeud.id);
+    return users.filter((u) => Number(u.call_center_id) === noeud.id && (showInactive || u.active !== false));
   };
 
   const lienArbre = (actif: boolean, decale: boolean): React.CSSProperties => ({
@@ -446,8 +512,11 @@ function Comptes() {
                     const actifCc = selection?.kind === "cc" && selection.id === c.id;
                     return (
                       <button key={c.id} onClick={() => setSelection({ kind: "cc", id: c.id })} style={lienArbre(actifCc, true)}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                        <span style={{ fontSize: 12, opacity: 0.75 }}>{c.telepros_count}</span>
+                        <span style={{ overflow: "hidden", minWidth: 0 }}>
+                          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                          <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em", opacity: actifCc ? 0.85 : 0.55 }}>Call center</span>
+                        </span>
+                        <span style={{ fontSize: 12, opacity: 0.75, flexShrink: 0 }}>{c.telepros_count}</span>
                       </button>
                     );
                   })}
@@ -477,7 +546,14 @@ function Comptes() {
               <Card
                 title={`Utilisateurs libres (${utilisateursLibres.length})`}
                 description="Sans rattachement à une agence ou un call center : gestionnaires et associés (reliés à un commercial/call center au cas par cas dans Deal), super-admins."
-                actions={<button onClick={() => { setType("gestionnaire"); setCreationOuverte(true); }} style={{ height: 36, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>+ Créer un utilisateur</button>}
+                actions={
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: T.ink2, cursor: "pointer" }}>
+                      <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Afficher les comptes désactivés
+                    </label>
+                    <button onClick={() => { setType("gestionnaire"); setCreationOuverte(true); }} style={{ height: 36, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>+ Créer un utilisateur</button>
+                  </div>
+                }
               >
                 {utilisateursLibres.length === 0 ? (
                   <div style={{ color: T.ink2, fontSize: 15 }}>Aucun pour l&apos;instant.</div>
@@ -529,6 +605,11 @@ function Comptes() {
                   description={estAgence
                     ? "Les commerciaux liés à cette agence et les téléprospecteurs rattachés directement."
                     : "L'équipe de ce call center."}
+                  actions={
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: T.ink2, cursor: "pointer" }}>
+                      <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Afficher les comptes désactivés
+                    </label>
+                  }
                 >
                   {comptesDuNoeud().length === 0 ? (
                     <div style={{ color: T.ink2, fontSize: 15 }}>Aucun compte ici pour l&apos;instant.</div>
@@ -546,10 +627,13 @@ function Comptes() {
 
       {/* ── Fenêtre : réglages du nœud sélectionné ── */}
       {reglagesOuverts && noeud && (
-        <Fenetre titre={`Réglages — ${noeud.name}`} onFermer={() => setReglagesOuverts(false)}>
+        <Fenetre titre={`Réglages — ${noeud.name}`} onFermer={() => { setReglagesOuverts(false); setLierCommercialQuery(null); }}>
           <div style={{ display: "grid", gap: S.lg }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={() => renameCC(noeud.id, noeud.name)} style={{ height: 34, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Renommer</button>
+              <button onClick={() => setSlugCC(noeud.id, noeud.slug ?? "")} title="URL dédiée : agenda-rdv.vercel.app/<slug>/..." style={{ height: 34, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Slug{noeud.slug ? ` : /${noeud.slug}` : ""}
+              </button>
               <button
                 onClick={() => { setReglagesOuverts(false); delCallCenter(noeud.id, estAgence ? `l'agence ${noeud.name}` : `le call center ${noeud.name} ?\n\nSes comptes seront DÉSACTIVÉS, mais RDV, bilan et facturation sont conservés`); }}
                 style={{ height: 34, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.danger, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
@@ -574,34 +658,50 @@ function Comptes() {
                 </section>
 
                 <section>
-                  <div style={legendeSection}>Couleurs de la marque</div>
-                  <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
-                      Accent <input type="color" defaultValue={noeud.brand_primary || "#DB407A"} id={`th-p-${noeud.id}`} style={{ width: 46, height: 32, border: `1px solid ${T.line}`, borderRadius: R.sm, padding: 2, cursor: "pointer" }} />
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
-                      Foncé <input type="color" defaultValue={noeud.brand_dark || "#1a273a"} id={`th-d-${noeud.id}`} style={{ width: 46, height: 32, border: `1px solid ${T.line}`, borderRadius: R.sm, padding: 2, cursor: "pointer" }} />
-                    </label>
-                    <button
-                      onClick={() => {
-                        const pr = (document.getElementById(`th-p-${noeud.id}`) as HTMLInputElement)?.value;
-                        const dk = (document.getElementById(`th-d-${noeud.id}`) as HTMLInputElement)?.value;
-                        if (pr && dk) saveTheme(noeud.id, pr, dk);
-                      }}
-                      style={{ height: 34, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-                    >
-                      Enregistrer les couleurs
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>Appliqué à tous les comptes de la franchise à leur connexion.</div>
-                </section>
+                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+                    <div style={{ flex: "1 1 260px", minWidth: 240 }}>
+                      <div style={legendeSection}>Couleurs de la marque</div>
+                      <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
+                          Accent <input type="color" value={previewPrimary} onChange={(e) => setPreviewPrimary(e.target.value)} style={{ width: 46, height: 32, border: `1px solid ${T.line}`, borderRadius: R.sm, padding: 2, cursor: "pointer" }} />
+                        </label>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
+                          Foncé <input type="color" value={previewDark} onChange={(e) => setPreviewDark(e.target.value)} style={{ width: 46, height: 32, border: `1px solid ${T.line}`, borderRadius: R.sm, padding: 2, cursor: "pointer" }} />
+                        </label>
+                      </div>
+                      <button
+                        onClick={() => saveTheme(noeud.id, previewPrimary, previewDark)}
+                        style={{ marginTop: 10, height: 34, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                      >
+                        Enregistrer les couleurs
+                      </button>
+                      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>Appliqué à tous les comptes de la franchise à leur connexion.</div>
 
-                <section>
-                  <div style={legendeSection}>Fond du bandeau</div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => setHeaderDark(noeud.id, false)} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: noeud.header_dark ? `1px solid ${T.line}` : "none", background: noeud.header_dark ? T.surface : T.ink, color: noeud.header_dark ? T.ink2 : "#fff" }}>Clair</button>
-                    <button onClick={() => setHeaderDark(noeud.id, true)} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: noeud.header_dark ? "none" : `1px solid ${T.line}`, background: noeud.header_dark ? T.ink : T.surface, color: noeud.header_dark ? "#fff" : T.ink2 }}>Foncé</button>
-                    <span style={{ fontSize: 12.5, color: T.ink3, alignSelf: "center" }}>foncé = pour les logos à écriture blanche</span>
+                      <div style={{ ...legendeSection, marginTop: 18 }}>Fond du bandeau (page client)</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button onClick={() => { setPreviewHeaderDark(false); setHeaderDark(noeud.id, false); }} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: previewHeaderDark ? `1px solid ${T.line}` : "none", background: previewHeaderDark ? T.surface : T.ink, color: previewHeaderDark ? T.ink2 : "#fff" }}>Clair</button>
+                        <button onClick={() => { setPreviewHeaderDark(true); setHeaderDark(noeud.id, true); }} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: previewHeaderDark ? "none" : `1px solid ${T.line}`, background: previewHeaderDark ? T.ink : T.surface, color: previewHeaderDark ? "#fff" : T.ink2 }}>Foncé</button>
+                        <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center" }}>pour les logos à écriture blanche</span>
+                      </div>
+                    </div>
+
+                    {/* Aperçu live : la VRAIE Sidebar du CRM (mêmes menus, même composant), couleurs
+                        scopées ici via variables CSS locales — n'affecte que cet aperçu, pas le
+                        thème global tant que "Enregistrer" n'a pas été cliqué. */}
+                    <div style={{ flex: "0 0 220px" }}>
+                      <div style={legendeSection}>Aperçu — vraie sidebar CRM</div>
+                      <div style={{ width: 220, height: 340, border: `1px solid ${T.line}`, borderRadius: R.md, overflow: "hidden", pointerEvents: "none" }}>
+                        <div style={{ "--brand-primary": previewPrimary, "--brand-dark": previewDark, height: "100%" } as React.CSSProperties}>
+                          <Sidebar active="agenda" user={{ role: "admin" }} marque={noeud.name} logo={noeud.logo_url || "/logo.png"} />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8, width: 220, borderRadius: R.md, overflow: "hidden", border: `1px solid ${previewHeaderDark ? "transparent" : T.line}` }}>
+                        <div style={{ padding: "9px 12px", background: previewHeaderDark ? previewDark : "#fff", fontSize: 12, fontWeight: 700, color: previewHeaderDark ? "#fff" : "#1a273a" }}>
+                          {noeud.name}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Sidebar CRM (haut) · en-tête page client (bas)</div>
+                    </div>
                   </div>
                 </section>
               </>
@@ -680,22 +780,48 @@ function Comptes() {
 
             <section>
               <div style={legendeSection}>Commerciaux liés</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {users.filter((u) => u.is_commercial).map((u) => {
-                  const dansNoeud = estAgence && rootOf(Number(u.call_center_id)) === noeud.id;
-                  const on = dansNoeud || isAssigned(u.email, noeud.id);
-                  return (
-                    <button
-                      key={u.id} type="button" disabled={dansNoeud}
-                      title={dansNoeud ? "Compte rattaché à cette agence" : ""}
-                      onClick={() => toggleAssign(u, noeud.id, isAssigned(u.email, noeud.id))}
-                      style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: dansNoeud ? "default" : "pointer", border: on ? "none" : `1px solid ${T.line}`, background: on ? T.ink : T.surface, color: on ? "#fff" : T.ink2, opacity: dansNoeud ? 0.8 : 1 }}
-                    >
-                      {on ? `✓ ${u.name}` : `+ ${u.name}`}
-                    </button>
-                  );
-                })}
+              <p style={{ margin: "0 0 8px", fontSize: 12.5, color: T.ink2 }}>
+                Les commerciaux rattachés à cette agence sont gérés automatiquement (voir « Comptes »). Ici : lier en plus un commercial d&apos;une AUTRE agence (rare — ex. un commercial qui dépanne plusieurs agences).
+              </p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {users.filter((u) => u.is_commercial && !(estAgence && rootOf(Number(u.call_center_id)) === noeud.id) && isAssigned(u.email, noeud.id)).map((u) => (
+                  <button
+                    key={u.id} type="button" onClick={() => toggleAssign(u, noeud.id, true)}
+                    style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: "none", background: T.ink, color: "#fff" }}
+                    title={`${u.agence_name ? `Agence : ${u.agence_name} · ` : ""}retirer ce lien`}
+                  >
+                    ✓ {u.name}{u.agence_name ? ` (${u.agence_name})` : ""}
+                  </button>
+                ))}
+                {users.filter((u) => u.is_commercial && !(estAgence && rootOf(Number(u.call_center_id)) === noeud.id) && isAssigned(u.email, noeud.id)).length === 0 && (
+                  <span style={{ fontSize: 12.5, color: T.ink3 }}>Aucun lien externe pour l&apos;instant.</span>
+                )}
               </div>
+              <button onClick={() => setLierCommercialQuery("")} type="button" style={{ height: 32, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                + Lier un commercial d&apos;une autre agence
+              </button>
+              {lierCommercialQuery !== null && (
+                <div style={{ marginTop: 10, padding: 12, border: `1px solid ${T.line}`, borderRadius: R.md, background: T.surface }}>
+                  <input
+                    autoFocus value={lierCommercialQuery} onChange={(e) => setLierCommercialQuery(e.target.value)}
+                    placeholder="Chercher un commercial par nom…" style={{ ...champ, marginBottom: 8 }}
+                  />
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", maxHeight: 220, overflowY: "auto" }}>
+                    {users
+                      .filter((u) => u.is_commercial && !(estAgence && rootOf(Number(u.call_center_id)) === noeud.id) && !isAssigned(u.email, noeud.id))
+                      .filter((u) => !lierCommercialQuery.trim() || u.name.toLowerCase().includes(lierCommercialQuery.trim().toLowerCase()))
+                      .slice(0, 30)
+                      .map((u) => (
+                        <button
+                          key={u.id} type="button" onClick={() => { toggleAssign(u, noeud.id, false); setLierCommercialQuery(null); }}
+                          style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}
+                        >
+                          + {u.name}{u.agence_name ? ` — ${u.agence_name}` : ""}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
             </section>
 
             {!estAgence && (
@@ -764,6 +890,9 @@ function Comptes() {
               <Field label="Pseudo (identifiant de connexion)"><input style={inp} value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} autoCapitalize="none" /></Field>
               <Field label="Mot de passe"><input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
               <Field label="E-mail (facultatif)"><input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
+                <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} /> Envoyer un mail avec l&apos;identifiant et le mot de passe
+              </label>
               <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
                 {busy ? "…" : "Créer le super-admin"}
               </button>
@@ -785,6 +914,9 @@ function Comptes() {
               <Field label="Mot de passe"><input style={inp} value={rPass} onChange={(e) => setRPass(e.target.value)} /></Field>
               <Field label="E-mail (facultatif)"><input style={inp} type="email" value={rEmail} onChange={(e) => setREmail(e.target.value)} /></Field>
               <Field label="Téléphone (facultatif)"><input style={inp} value={rPhone} onChange={(e) => setRPhone(e.target.value)} /></Field>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
+                <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} /> Envoyer un mail avec l&apos;identifiant et le mot de passe
+              </label>
               <button onClick={addCallCenter} disabled={busy || !ccName.trim() || !rName.trim() || !rUsername.trim() || !rPass.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
                 {busy ? "…" : "Créer le call center"}
               </button>
@@ -833,6 +965,9 @@ function Comptes() {
                   Compte simple, sans rattachement — c'est dans la partie Deal qu'il se relie à un commercial, un call center ou un téléprospecteur.
                 </p>
               )}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
+                <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} /> Envoyer un mail avec l&apos;identifiant et le mot de passe
+              </label>
               <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
                 {busy ? "…" : type === "commercial" ? "Créer le commercial" : type === "telepro" ? "Créer le téléprospecteur" : type === "gestionnaire" ? "Créer le gestionnaire" : "Créer l'associé"}
               </button>
@@ -940,6 +1075,94 @@ function Comptes() {
           )}
         </Fenetre>
       )}
+
+      {roleModalUser && (
+        <Fenetre titre={`Rôles de ${roleModalUser.name}`} onFermer={() => setRoleModalUser(null)}>
+          <div style={{ display: "grid", gap: 8 }}>
+            {([
+              { patchKey: "isCommercial", userKey: "is_commercial", label: "Commercial", desc: "Réalise les RDV, reçoit les leads." },
+              { patchKey: "isTeleprospector", userKey: "is_teleprospector", label: "Téléprospecteur", desc: "Crée les RDV pour le compte de commerciaux." },
+              { patchKey: "isGestionnaire", userKey: "is_gestionnaire", label: "Gestionnaire", desc: "Négocie et pilote les deals de rémunération." },
+              { patchKey: "isAssocie", userKey: "is_associe", label: "Associé", desc: "Partage un bénéfice sur les deals." },
+            ] as const).map((r) => {
+              const on = !!roleModalUser[r.userKey];
+              return (
+                <label key={r.patchKey} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: R.md, border: `1px solid ${on ? T.brand : T.line}`, background: on ? "rgba(0,0,0,0.02)" : T.surface, cursor: "pointer" }}>
+                  <input
+                    type="checkbox" checked={on} style={{ marginTop: 3, width: 16, height: 16 }}
+                    onChange={() => {
+                      patch(roleModalUser.id, { [r.patchKey]: !on });
+                      setRoleModalUser((u) => (u ? { ...u, [r.userKey]: !on } : u));
+                    }}
+                  />
+                  <span>
+                    <div style={{ fontWeight: 700, fontSize: 14.5, color: T.ink }}>{r.label}</div>
+                    <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 1 }}>{r.desc}</div>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <p style={{ marginTop: S.md, marginBottom: S.md, fontSize: 12, color: T.ink3 }}>Les rôles sont cumulables : un même compte peut être plusieurs choses à la fois.</p>
+          <button
+            onClick={() => { patch(roleModalUser.id, { active: roleModalUser.active === false }); setRoleModalUser((u) => (u ? { ...u, active: u.active === false } : u)); }}
+            style={{ width: "100%", height: 40, borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: roleModalUser.active === false ? T.brand : T.danger, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+          >
+            {roleModalUser.active === false ? "Réactiver ce compte" : "Désactiver ce compte"}
+          </button>
+        </Fenetre>
+      )}
+
+      {assignModalUser && (() => {
+        const u = assignModalUser;
+        const agenceId = rootOf(Number(u.call_center_id));
+        const coms = agenceId ? commercialsOfAgence(agenceId) : [];
+        const mine = teleproAssignments.filter((a) => a.telepro_email === u.email.toLowerCase());
+        const isOn = (ce: string) => mine.some((a) => a.commercial_email === ce.toLowerCase());
+        const prioOf = (ce: string) => mine.find((a) => a.commercial_email === ce.toLowerCase())?.priority ?? 0;
+        return (
+          <Fenetre titre={`Commerciaux assignés — ${u.name}`} onFermer={() => setAssignModalUser(null)}>
+            <p style={{ marginTop: 0, fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
+              Aucune case cochée = tous les commerciaux de l&apos;agence sont proposés. Coche pour restreindre à certains, et donne une priorité (1 = en premier) pour l&apos;attribution automatique ci-dessous.
+            </p>
+            {coms.length === 0 ? (
+              <div style={{ color: T.ink2, fontSize: 14 }}>Aucun commercial dans cette agence pour l&apos;instant.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 6, marginBottom: S.md }}>
+                {coms.map((c) => {
+                  const on = isOn(c.email);
+                  return (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: R.sm, border: `1px solid ${on ? T.brand : T.line}` }}>
+                      <input type="checkbox" checked={on} onChange={() => toggleTeleproAssign(u.email, c.email, on)} style={{ width: 16, height: 16 }} />
+                      <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: T.ink }}>{c.name}</span>
+                      {on && (
+                        <>
+                          <span style={{ fontSize: 12, color: T.ink3 }}>Priorité</span>
+                          <input
+                            type="number" min={0} defaultValue={prioOf(c.email)}
+                            onBlur={(e) => setTeleproPriority(u.email, c.email, Number(e.target.value))}
+                            style={{ width: 56, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }}
+                          />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: R.md, border: `1px solid ${u.auto_assign ? T.brand : T.line}`, cursor: "pointer" }}>
+              <input
+                type="checkbox" checked={!!u.auto_assign} style={{ marginTop: 3, width: 16, height: 16 }}
+                onChange={() => { patch(u.id, { autoAssign: !u.auto_assign }); setAssignModalUser((x) => (x ? { ...x, auto_assign: !x.auto_assign } : x)); }}
+              />
+              <span>
+                <div style={{ fontWeight: 700, fontSize: 14.5, color: T.ink }}>🤖 Attribution automatique</div>
+                <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 1 }}>Le système choisit seul le commercial (ordre de priorité ci-dessus) à la prise de RDV. Décoché : {u.name.split(" ")[0]} choisit lui-même.</div>
+              </span>
+            </label>
+          </Fenetre>
+        );
+      })()}
     </>
   );
 
@@ -985,7 +1208,11 @@ function Comptes() {
               <>
                 <button onClick={() => seConnecterComme(u)} style={{ ...petit, border: "none", background: T.brand, color: "#fff" }}>Voir son compte</button>
                 <button onClick={() => definirMotDePasse(u)} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>Mot de passe</button>
+                <button onClick={() => copierLienDe(u.call_center_id, `Lien de connexion pour ${u.name}`)} title="Copie le lien de connexion permanent de son agence" style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>Copier le lien</button>
               </>
+            )}
+            {isAdmin && (
+              <button onClick={() => setRoleModalUser(u)} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>Rôles</button>
             )}
             {u.role !== "admin" && (
               <button onClick={() => del(u)} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.danger }}>Supprimer</button>
@@ -993,30 +1220,18 @@ function Comptes() {
           </div>
         </div>
 
-        {isAdmin && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
-            <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center", marginRight: 4 }}>Rôles :</span>
-            <button onClick={() => patch(u.id, { isCommercial: !u.is_commercial })} style={bascule(!!u.is_commercial)}>Commercial</button>
-            <button onClick={() => patch(u.id, { isTeleprospector: !u.is_teleprospector })} style={bascule(!!u.is_teleprospector)}>Téléprospecteur</button>
-            <button onClick={() => patch(u.id, { isGestionnaire: !u.is_gestionnaire })} style={bascule(!!u.is_gestionnaire)}>Gestionnaire</button>
-            <button onClick={() => patch(u.id, { isAssocie: !u.is_associe })} style={bascule(!!u.is_associe)}>Associé</button>
-            <button onClick={() => patch(u.id, { active: u.active === false })} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>{u.active === false ? "Réactiver" : "Désactiver"}</button>
-          </div>
-        )}
-
         {isAdmin && u.is_teleprospector && (() => {
           const agenceId = rootOf(Number(u.call_center_id));
           const coms = agenceId ? commercialsOfAgence(agenceId) : [];
           if (coms.length === 0) return null;
+          const mine = teleproAssignments.filter((a) => a.telepro_email === u.email.toLowerCase());
           return (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
-              <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center", marginRight: 4 }}>Commerciaux assignés (vide = tous) :</span>
-              {coms.map((c) => {
-                const on = isTeleproAssigned(u.email, c.email);
-                return (
-                  <button key={c.id} onClick={() => toggleTeleproAssign(u.email, c.email, on)} style={bascule(on)}>{c.name}</button>
-                );
-              })}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
+              <span style={{ fontSize: 12, color: T.ink3 }}>
+                {mine.length === 0 ? "Commerciaux assignés : tous" : `Commerciaux assignés : ${mine.length} (${mine.map((a) => coms.find((c) => c.email.toLowerCase() === a.commercial_email)?.name ?? a.commercial_email).join(", ")})`}
+                {u.auto_assign ? " · 🤖 attribution automatique" : ""}
+              </span>
+              <button onClick={() => setAssignModalUser(u)} style={{ ...petit, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2 }}>Assigner des commerciaux</button>
             </div>
           );
         })()}
@@ -1046,5 +1261,5 @@ function Comptes() {
 }
 
 export default function Page() {
-  return <Shell active="comptes"><Comptes /></Shell>;
+  return <EspaceAgenceShell active="comptes"><Comptes /></EspaceAgenceShell>;
 }

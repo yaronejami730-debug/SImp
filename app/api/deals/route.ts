@@ -29,16 +29,18 @@ export const dynamic = "force-dynamic";
  *  concernent (lecture) mais ne les négocie pas — son levier est le "Deal € par téléprospecteur"
  *  (/api/deal-telepro) quand le mode de rémunération le lui donne. */
 
-const seesCc = (me: string, cc: CallCenter): boolean => {
-  const isResp = me === (cc.responsable_email || "").toLowerCase() || me === (cc.responsable_email_2 || "").toLowerCase();
-  const isGest = !!cc.gestionnaire_email && me === cc.gestionnaire_email.toLowerCase();
-  return isResp || isGest;
-};
+// Le Deal est réservé au super-admin et au gestionnaire concerné — le responsable de call
+// center (patron d'agence) ne le voit plus du tout, même en lecture (avant : lecture seule via
+// responsable_email/responsable_email_2, retiré à la demande explicite du client).
 const managesCc = (me: string, cc: CallCenter): boolean =>
   !!cc.gestionnaire_email && me === cc.gestionnaire_email.toLowerCase();
 
-function nameFor(email: string, users: { email: string; name: string }[]): string {
-  return users.find((x) => x.email.toLowerCase() === email.toLowerCase())?.name ?? email;
+// Compte désactivé (soft-delete) : on le dit clairement dans le nom affiché, même logique que
+// "call center supprimé (#N)" ci-dessous — jamais un trou muet sur une donnée historique.
+function nameFor(email: string, users: { email: string; name: string; active?: boolean }[]): string {
+  const u = users.find((x) => x.email.toLowerCase() === email.toLowerCase());
+  if (!u) return email;
+  return u.active === false ? `${u.name} (compte désactivé)` : u.name;
 }
 
 /** Tous les commerciaux actifs actuellement rattachés (directement ou via un call center
@@ -88,7 +90,7 @@ export async function GET(req: Request) {
       if (s.role === "admin") return true;
       if (a.payer_email.toLowerCase() === me || a.payee_email.toLowerCase() === me) return true;
       const cc = a.call_center_id != null ? ccById.get(a.call_center_id) : undefined;
-      return !!cc && seesCc(me, cc);
+      return !!cc && managesCc(me, cc);
     });
 
     const out = visible.map((a) => {

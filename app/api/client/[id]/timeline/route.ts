@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: Params) {
     if (!ownsOrAdmin(ev, s.email, s.role)) return NextResponse.json({ error: "Interdit." }, { status: 403 });
     const { text } = (await req.json()) as { text?: string };
     if (!text || !text.trim()) return NextResponse.json({ error: "Texte vide." }, { status: 400 });
-    await appendHistory(id, "note", `${s.email}: ${text.trim().slice(0, 500)}`);
+    await appendHistory(id, "note", `${s.name || s.email} : ${text.trim().slice(0, 500)}`);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

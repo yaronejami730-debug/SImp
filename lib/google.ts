@@ -192,6 +192,21 @@ function mirrored(cal: calendar_v3.Calendar): calendar_v3.Calendar {
   return cal;
 }
 
+/** Caractéristiques déclarées par un lead, à la suite du libellé véhicule — jamais le mot
+ *  "lead" lui-même (voir createEvent : sur Google Agenda, seules les caractéristiques
+ *  apparaissent, la catégorisation lead/annonce reste interne au CRM). */
+function leadCaracteristiques(a: Appointment): string {
+  const bits = [
+    a.leadYear ? `année ${a.leadYear}` : "",
+    a.leadKm ? `${a.leadKm} km` : "",
+    a.leadTransmission || "",
+    a.leadEntretiens === "oui" ? "entretiens à jour" : a.leadEntretiens === "non" ? `entretiens non à jour${a.leadEntretiensRestants ? ` (${a.leadEntretiensRestants} restant${a.leadEntretiensRestants === "1" ? "" : "s"})` : ""}` : "",
+    a.leadHabitacle === "oui" ? "habitacle propre" : a.leadHabitacle === "non" ? "habitacle à vérifier" : "",
+    a.leadVices === "oui" ? "vices cachés suspectés" : a.leadVices === "non" ? "pas de vices cachés apparents" : "",
+  ].filter(Boolean);
+  return bits.length ? ` — ${bits.join(", ")}` : "";
+}
+
 /** Crée l'événement dans Google Agenda. Les infos client sont stockées
  *  dans extendedProperties.private pour que le cron retrouve l'e-mail. */
 export async function createEvent(a: Appointment, owner = "", callCenterId = 1) {
@@ -215,10 +230,12 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
         `Client : ${a.firstName} ${a.lastName}`,
         `E-mail : ${a.email}`,
         `Téléphone : ${a.phone}`,
-        vehicle ? `Véhicule : ${vehicle}` : "",
+        vehicle ? `Véhicule : ${vehicle}${a.isLead ? leadCaracteristiques(a) : ""}` : "",
         a.immatriculation ? `Immatriculation : ${a.immatriculation}` : "",
-        `Plateforme : ${a.platform}`,
-        `Annonce : ${a.listingUrl}`,
+        // Sur Google Agenda, on ne révèle jamais que c'est un lead (visible par n'importe qui a
+        // accès au calendrier) — seul le CRM le sait (extendedProperties.private.platform="Lead").
+        a.isLead ? "" : `Plateforme : ${a.platform}`,
+        a.isLead ? "" : `Annonce : ${a.listingUrl}`,
         a.commercial ? `Commercial : ${a.commercial}` : "",
         a.operatedBy ? `Opéré par : ${a.operatedBy} (délégation)` : "",
         a.teleprospector ? `Téléprospecteur : ${a.teleprospector}` : "",
@@ -241,6 +258,14 @@ export async function createEvent(a: Appointment, owner = "", callCenterId = 1) 
           clientLastName: a.lastName,
           platform: a.platform,
           listingUrl: a.listingUrl,
+          isLead: a.isLead ? "1" : "",
+          leadYear: a.leadYear ?? "",
+          leadKm: a.leadKm ?? "",
+          leadTransmission: a.leadTransmission ?? "",
+          leadEntretiens: a.leadEntretiens ?? "",
+          leadEntretiensRestants: a.leadEntretiensRestants ?? "",
+          leadHabitacle: a.leadHabitacle ?? "",
+          leadVices: a.leadVices ?? "",
           commercial: a.commercial ?? "",
           commercialEmail,
           commercialPhone,
@@ -403,6 +428,14 @@ export type AppointmentItem = {
   phone: string;
   platform: string;
   listingUrl: string;
+  isLead: boolean;
+  leadYear: string;
+  leadKm: string;
+  leadTransmission: string;
+  leadEntretiens: string;
+  leadEntretiensRestants: string;
+  leadHabitacle: string;
+  leadVices: string;
   carBrand: string;
   carModel: string;
   carFinish: string;
@@ -494,6 +527,14 @@ export async function listAppointments(
       phone: p.clientPhone ?? "",
       platform: p.platform ?? "",
       listingUrl: p.listingUrl ?? "",
+      isLead: p.isLead === "1",
+      leadYear: p.leadYear ?? "",
+      leadKm: p.leadKm ?? "",
+      leadTransmission: p.leadTransmission ?? "",
+      leadEntretiens: p.leadEntretiens ?? "",
+      leadEntretiensRestants: p.leadEntretiensRestants ?? "",
+      leadHabitacle: p.leadHabitacle ?? "",
+      leadVices: p.leadVices ?? "",
       carBrand: p.carBrand ?? "",
       carModel: p.carModel ?? "",
       carFinish: p.carFinish ?? "",
@@ -586,11 +627,14 @@ export async function writePhotos(eventId: string, paths: string[]) {
 }
 
 /** Met à jour la note interne (texte libre) d'un RDV. */
-export async function patchNote(eventId: string, note: string) {
+/** `author` : qui a écrit/modifié la note, pour l'afficher ("par X le ..."). */
+export async function patchNote(eventId: string, note: string, author?: string) {
+  const priv: Record<string, string> = { note: note.slice(0, 1000) };
+  if (author) { priv.noteAuthor = author; priv.noteUpdatedAt = new Date().toISOString(); }
   await calendarClient().events.patch({
     calendarId: CALENDAR_ID,
     eventId,
-    requestBody: { extendedProperties: { private: { note: note.slice(0, 1000) } } },
+    requestBody: { extendedProperties: { private: priv } },
   });
 }
 
@@ -709,6 +753,19 @@ export async function patchTracking(
       extendedProperties: { private: priv },
       ...(colorId ? { colorId } : {}),
     },
+  });
+}
+
+/** Retag rétroactif "lead" (ex : RDV créé avant l'ajout du bouton "Ce client est un lead", ou
+ *  oublié) — sert au calcul du taux de signature des leads. Ne touche que isLead/platform. */
+export async function patchLeadFlag(eventId: string, isLead: boolean) {
+  const cal = calendarClient();
+  const priv: Record<string, string> = { isLead: isLead ? "1" : "" };
+  if (isLead) priv.platform = "Lead"; // ne clobber jamais le platform existant quand on retire le flag
+  await cal.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    requestBody: { extendedProperties: { private: priv } },
   });
 }
 
