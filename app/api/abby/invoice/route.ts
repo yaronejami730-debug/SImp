@@ -53,11 +53,13 @@ export async function POST(req: Request) {
       const commToInvoice = a.bcSigned && a.commStatus === "" ? Math.round((scheme.pct / 100) * (a.negotiation || 0)) : 0;
       const clientName = `${a.lastName.toUpperCase()} ${a.firstName}`.trim();
       const immat = a.immatriculation ? ` — ${a.immatriculation}` : "";
+      const vehicle = [a.carBrand, a.carModel, a.carFinish].filter(Boolean).join(" ");
       if (ffToInvoice > 0) {
         const signDate = a.signStatusAt ? new Date(a.signStatusAt).toLocaleDateString("fr-FR") : "";
         lines.push({
           apptId: a.id, kind: "ff", amountEur: ffToInvoice,
           designation: `${clientName}${immat}${signDate ? ` — ${signDate}` : ""}`,
+          description: [signDate, vehicle, "mandat signé"].filter(Boolean).join(" · "),
         });
       }
       if (commToInvoice > 0) {
@@ -65,6 +67,7 @@ export async function POST(req: Request) {
         lines.push({
           apptId: a.id, kind: "comm", amountEur: commToInvoice,
           designation: `${clientName}${immat}${signDate ? ` — ${signDate}` : ""}`,
+          description: [signDate, vehicle, "BC signé"].filter(Boolean).join(" · "),
         });
       }
     }
