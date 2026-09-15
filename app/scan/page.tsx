@@ -142,7 +142,7 @@ function Scan() {
 
   function createRdv(url: string) {
     sessionStorage.setItem("prefillListingUrl", url);
-    window.location.href = "/simplicicar";
+    window.location.href = "/simplicicar-paris-17";
   }
 
   return (

@@ -46,7 +46,7 @@ function rdvHref(l: Lead) {
   if (l.phone) p.set("phone", l.phone);
   if (l.listing_url) p.set("listingUrl", l.listing_url);
   p.set("isLead", "1"); // toujours un lead ici, pas une annonce LeBonCoin/LaCentrale
-  return `/simplicicar?${p.toString()}`;
+  return `/simplicicar-paris-17?${p.toString()}`;
 }
 
 const platformOf = (url: string) => {

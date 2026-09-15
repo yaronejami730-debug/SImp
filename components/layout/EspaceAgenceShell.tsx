@@ -76,7 +76,7 @@ export default function EspaceAgenceShell({ active, children }: { active: string
         <div style={{ maxWidth: 420, textAlign: "center" }}>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: T.ink, margin: "0 0 8px" }}>Accès réservé</h1>
           <p style={{ fontSize: 14, color: T.ink2, margin: "0 0 20px" }}>Cet espace est réservé au super-administrateur. Connecte-toi via le CRM Simplicicar.</p>
-          <button onClick={() => { window.location.href = "/simplicicar"; }} style={{ height: 40, padding: "0 18px", borderRadius: 8, border: "none", background: "#12203a", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Aller au CRM</button>
+          <button onClick={() => { window.location.href = "/simplicicar-paris-17"; }} style={{ height: 40, padding: "0 18px", borderRadius: 8, border: "none", background: "#12203a", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Aller au CRM</button>
         </div>
       </div>
     );
@@ -91,7 +91,7 @@ export default function EspaceAgenceShell({ active, children }: { active: string
   function deconnexion() {
     clearAuth();
     try { sessionStorage.removeItem("yj_espace"); } catch {}
-    window.location.href = "/simplicicar";
+    window.location.href = "/simplicicar-paris-17";
   }
 
   const user = getUser();

@@ -137,7 +137,7 @@ export default function AppShell({ active, children, wide }: { active: string; c
     localStorage.removeItem("auth_backup");
     try { sessionStorage.removeItem("yj_espace"); } catch {}
     clearAuth();
-    window.location.href = "/simplicicar";
+    window.location.href = "/simplicicar-paris-17";
   }
 
   return (
