@@ -7,6 +7,7 @@ const FONT_HEAD = "'Cabin','Manrope',Arial,sans-serif";
 const LOGO =
   process.env.LOGO_URL ??
   `${(process.env.APP_URL ?? "https://agenda-rdv.vercel.app").replace(/\/$/, "")}/logo.png`;
+const YJ_LOGO = `${(process.env.APP_URL ?? "https://agenda-rdv.vercel.app").replace(/\/$/, "")}/yj-solutions-logo.png`;
 
 const MAPS = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(LOCATION)}`;
 const WAZE = `https://waze.com/ul?q=${encodeURIComponent(LOCATION)}&navigate=yes`;
@@ -496,7 +497,7 @@ export function formationConfirmationEmail(d: FormationData) {
     ${d.rescheduleUrl ? `<p style="margin:0 0 16px;font-size:13.5px;color:${C.muted}">Un empêchement ? Utilisez le bouton ci-dessous pour reprogrammer.</p>` : ""}
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">À bientôt,<br/>YJ Solutions — Formation &amp; Téléprospection</p>`;
   const buttons = btn(d.rescheduleUrl, "Reprogrammer la formation", C.primary);
-  return { subject: "Confirmation de votre créneau de formation — YJ Solutions", html: shell(content, buttons, { name: "YJ Solutions" }, { hideSocial: true, noLogo: true }) };
+  return { subject: "Confirmation de votre créneau de formation — YJ Solutions", html: shell(content, buttons, { name: "YJ Solutions", logo: YJ_LOGO }, { hideSocial: true }) };
 }
 
 type CancelData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; whatsappUrl?: string };
