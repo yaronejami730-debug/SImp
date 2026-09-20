@@ -19,6 +19,7 @@ export type Slot = {
   id: number; date: string; startTime: string; endTime: string;
   type: "individuel" | "groupe"; partnerId: number; partnerName: string;
   capacity: number; active: boolean; registered: number;
+  participants: { firstName: string; lastName: string }[];
 };
 
 export type Registration = {
@@ -85,9 +86,12 @@ export async function listSlots(from: string, to: string): Promise<Slot[]> {
   const { rows } = await getPool().query<{
     id: number; date: string; start_time: string; end_time: string; type: "individuel" | "groupe";
     partner_id: number; partner_name: string; capacity: number; active: boolean; registered: string;
+    participants: { firstName: string; lastName: string }[];
   }>(
     `select s.id, s.date::text as date, s.start_time, s.end_time, s.type, s.partner_id, p.name as partner_name, s.capacity, s.active,
-            coalesce((select count(*) from formation_registrations r where r.slot_id = s.id and r.status = 'inscrit'), 0) as registered
+            coalesce((select count(*) from formation_registrations r where r.slot_id = s.id and r.status = 'inscrit'), 0) as registered,
+            coalesce((select json_agg(json_build_object('firstName', r.first_name, 'lastName', r.last_name) order by r.created_at)
+                        from formation_registrations r where r.slot_id = s.id and r.status = 'inscrit'), '[]') as participants
        from formation_slots s
        join formation_partners p on p.id = s.partner_id
       where s.date between $1 and $2
@@ -97,7 +101,7 @@ export async function listSlots(from: string, to: string): Promise<Slot[]> {
   return rows.map((r) => ({
     id: Number(r.id), date: r.date, startTime: r.start_time, endTime: r.end_time, type: r.type,
     partnerId: Number(r.partner_id), partnerName: r.partner_name, capacity: Number(r.capacity),
-    active: r.active, registered: Number(r.registered),
+    active: r.active, registered: Number(r.registered), participants: r.participants ?? [],
   }));
 }
 
@@ -116,7 +120,7 @@ export async function getSlot(id: number): Promise<Slot | undefined> {
   return {
     id: Number(r.id), date: r.date, startTime: r.start_time, endTime: r.end_time, type: r.type,
     partnerId: Number(r.partner_id), partnerName: r.partner_name, capacity: Number(r.capacity),
-    active: r.active, registered: Number(r.registered),
+    active: r.active, registered: Number(r.registered), participants: [],
   };
 }
 

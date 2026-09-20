@@ -15,7 +15,7 @@ type Partner = { id: number; name: string; active: boolean };
 type SlotTemplateEntry = { weekday: number; start: string; end: string; type: "individuel" | "groupe"; capacity: number };
 type ProgrammeStep = { title: string };
 type Settings = { slotTemplate: SlotTemplateEntry[]; defaultPartnerId: number | null; autoSendEnabled: boolean; programme: ProgrammeStep[] };
-type Slot = { id: number; date: string; startTime: string; endTime: string; type: "individuel" | "groupe"; partnerId: number; partnerName: string; capacity: number; active: boolean; registered: number };
+type Slot = { id: number; date: string; startTime: string; endTime: string; type: "individuel" | "groupe"; partnerId: number; partnerName: string; capacity: number; active: boolean; registered: number; participants: { firstName: string; lastName: string }[] };
 type Registration = { id: number; slotId: number; firstName: string; lastName: string; email: string; status: "inscrit" | "annule"; emailSent: boolean };
 
 const WEEKDAYS = ["", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -197,35 +197,54 @@ function SlotsSection({ slots, partners, onReload, setFlash }: { slots: Slot[]; 
 
       {slots.length === 0 && <div style={{ fontSize: 13, color: MUTED }}>Aucun créneau à venir — génère depuis le modèle ou crée-en un.</div>}
 
-      <div style={{ display: "grid", gap: 6 }}>
-        {slots.map((slot) => {
-          const statut = !slot.active ? "Fermé" : slot.registered >= slot.capacity ? "Complet" : "Ouvert";
-          const statutColor = !slot.active ? MUTED : slot.registered >= slot.capacity ? WARN : GREEN;
-          const dateLabel = new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
-          return (
-            <div key={slot.id} style={{ border: `1px solid ${openId === slot.id ? NAVY : LINE}`, borderRadius: 10, overflow: "hidden" }}>
-              <button onClick={() => toggleOpen(slot)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#fff", border: "none", cursor: "pointer", textAlign: "left" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: NAVY, minWidth: 100 }}>{dateLabel}</span>
-                <span style={{ fontSize: 13, color: NAVY, minWidth: 90 }}>{slot.startTime}–{slot.endTime}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: MUTED, minWidth: 70 }}>{slot.type === "groupe" ? "Groupe" : "Individuel"}</span>
-                <span style={{ fontSize: 12.5, color: MUTED, flex: 1 }}>{slot.partnerName}</span>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: MUTED }}>{slot.registered}/{slot.capacity}</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: statutColor }}>{statut}</span>
-              </button>
-              {openId === slot.id && (
-                <div style={{ padding: 12, borderTop: `1px solid ${LINE}`, background: "#fafafa" }}>
-                  <RegistrationsPanel slot={slot} regs={regs} onChanged={async () => { const r = await fetch(`/api/formation/registrations?slotId=${slot.id}`, { headers: authHeaders() }); const d = await r.json(); if (d.ok) setRegs(d.registrations); await onReload(); }} setFlash={setFlash} />
-                  <button onClick={() => fermerCreneau(slot)} disabled={busy === `close-${slot.id}`} style={{ ...btnSecondaire, marginTop: 10 }}>
-                    {slot.active ? "Fermer ce créneau" : "Rouvrir ce créneau"}
+      {groupByDate(slots).map(({ date, items }) => (
+        <div key={date} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: PINK, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
+            {new Date(`${date}T12:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
+          </div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {items.map((slot) => {
+              const statut = !slot.active ? "Fermé" : slot.registered >= slot.capacity ? "Complet" : "Ouvert";
+              const statutColor = !slot.active ? MUTED : slot.registered >= slot.capacity ? WARN : GREEN;
+              const noms = slot.participants.map((p) => `${p.firstName} ${p.lastName}`.trim()).join(", ");
+              return (
+                <div key={slot.id} style={{ border: `1px solid ${openId === slot.id ? NAVY : LINE}`, borderRadius: 10, overflow: "hidden" }}>
+                  <button onClick={() => toggleOpen(slot)} style={{ width: "100%", display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px", background: "#fff", border: "none", cursor: "pointer", textAlign: "left" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 13, color: NAVY, minWidth: 90 }}>{slot.startTime}–{slot.endTime}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: MUTED, minWidth: 70 }}>{slot.type === "groupe" ? "Groupe" : "Individuel"}</span>
+                      <span style={{ fontSize: 12.5, color: MUTED, flex: 1 }}>{slot.partnerName}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: MUTED }}>{slot.registered}/{slot.capacity}</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: statutColor }}>{statut}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: noms ? NAVY : MUTED, paddingLeft: 102 }}>{noms || "Personne pour l'instant"}</div>
                   </button>
+                  {openId === slot.id && (
+                    <div style={{ padding: 12, borderTop: `1px solid ${LINE}`, background: "#fafafa" }}>
+                      <RegistrationsPanel slot={slot} regs={regs} onChanged={async () => { const r = await fetch(`/api/formation/registrations?slotId=${slot.id}`, { headers: authHeaders() }); const d = await r.json(); if (d.ok) setRegs(d.registrations); await onReload(); }} setFlash={setFlash} />
+                      <button onClick={() => fermerCreneau(slot)} disabled={busy === `close-${slot.id}`} style={{ ...btnSecondaire, marginTop: 10 }}>
+                        {slot.active ? "Fermer ce créneau" : "Rouvrir ce créneau"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
+}
+
+function groupByDate(slots: Slot[]): { date: string; items: Slot[] }[] {
+  const groups: { date: string; items: Slot[] }[] = [];
+  for (const s of slots) {
+    let g = groups.find((x) => x.date === s.date);
+    if (!g) { g = { date: s.date, items: [] }; groups.push(g); }
+    g.items.push(s);
+  }
+  return groups;
 }
 
 function RegistrationsPanel({ slot, regs, onChanged, setFlash }: { slot: Slot; regs: Registration[]; onChanged: () => Promise<void>; setFlash: (f: { kind: "ok" | "err"; msg: string } | null) => void }) {
