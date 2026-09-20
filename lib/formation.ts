@@ -86,7 +86,7 @@ export async function listSlots(from: string, to: string): Promise<Slot[]> {
     id: number; date: string; start_time: string; end_time: string; type: "individuel" | "groupe";
     partner_id: number; partner_name: string; capacity: number; active: boolean; registered: string;
   }>(
-    `select s.id, s.date, s.start_time, s.end_time, s.type, s.partner_id, p.name as partner_name, s.capacity, s.active,
+    `select s.id, s.date::text as date, s.start_time, s.end_time, s.type, s.partner_id, p.name as partner_name, s.capacity, s.active,
             coalesce((select count(*) from formation_registrations r where r.slot_id = s.id and r.status = 'inscrit'), 0) as registered
        from formation_slots s
        join formation_partners p on p.id = s.partner_id
@@ -106,7 +106,7 @@ export async function getSlot(id: number): Promise<Slot | undefined> {
     id: number; date: string; start_time: string; end_time: string; type: "individuel" | "groupe";
     partner_id: number; partner_name: string; capacity: number; active: boolean; registered: string;
   }>(
-    `select s.id, s.date, s.start_time, s.end_time, s.type, s.partner_id, p.name as partner_name, s.capacity, s.active,
+    `select s.id, s.date::text as date, s.start_time, s.end_time, s.type, s.partner_id, p.name as partner_name, s.capacity, s.active,
             coalesce((select count(*) from formation_registrations r where r.slot_id = s.id and r.status = 'inscrit'), 0) as registered
        from formation_slots s join formation_partners p on p.id = s.partner_id where s.id = $1`,
     [id],
