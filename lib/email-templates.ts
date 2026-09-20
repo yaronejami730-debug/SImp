@@ -456,6 +456,43 @@ export function phoneRappelClientEmail(d: PhoneRappelClientData) {
   return { subject: `Rappel de notre appel à venir — ${BUSINESS}`, html: shell(content) };
 }
 
+type FormationData = {
+  firstName: string;
+  date: string; // "YYYY-MM-DD"
+  startTime: string; // "HH:MM"
+  endTime: string;
+  type: "individuel" | "groupe";
+  partnerName: string;
+  programme: string[]; // puces — vient de formation_settings.programme, éditable en admin
+};
+
+/** Confirmation d'un créneau de formation (module Formation / YJ Solutions). Les puces du
+ *  programme sont injectées depuis l'admin (lib/formation.ts) — jamais de texte en dur ici. */
+export function formationConfirmationEmail(d: FormationData) {
+  const dateLabel = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${d.date}T12:00:00`));
+  const heureDebut = d.startTime.replace(":", "h");
+  const heureFin = d.endTime.replace(":", "h");
+  const format = d.type === "groupe" ? "Groupe" : "Individuel";
+  const puces = d.programme.map((p) => `<p style="margin:0 0 6px;font-size:14px">• ${p}</p>`).join("");
+  const content = `
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${d.firstName},</p>
+    <p style="margin:0 0 16px;font-size:15px">Nous vous confirmons votre créneau de formation avec YJ Solutions.</p>
+    <p style="margin:0 0 6px;font-size:15px"><strong>Votre formation :</strong></p>
+    <p style="margin:0 0 4px;font-size:15px">📅 Date : <strong>${dateLabel}</strong></p>
+    <p style="margin:0 0 4px;font-size:15px">🕐 Horaire : <strong>${heureDebut} à ${heureFin}</strong></p>
+    <p style="margin:0 0 4px;font-size:15px">👥 Format : <strong>${format}</strong></p>
+    <p style="margin:0 0 16px;font-size:15px">🤝 Partenaire : <strong>${d.partnerName}</strong></p>
+    <p style="margin:0 0 16px;font-size:15px">Cette formation a pour objectif de vous préparer concrètement à votre mission de téléprospection.</p>
+    <p style="margin:0 0 10px;font-size:15px">Nous aborderons notamment :</p>
+    ${puces}
+    <p style="margin:16px 0 16px;font-size:15px">La formation comporte également une mise en pratique afin de vous permettre d'être rapidement autonome.</p>
+    <p style="margin:0 0 16px;font-size:15px">Une fois la formation validée et après avoir démontré votre maîtrise de la prospection sur la première phase, vous pourrez passer directement à une étape supérieure : le traitement de leads qualifiés provenant de nos campagnes publicitaires.</p>
+    <p style="margin:0 0 16px;font-size:15px">L'objectif est simple : vous former, vous accompagner sur vos premiers contacts, puis vous permettre progressivement de travailler directement sur des leads générés par nos campagnes Meta Ads.</p>
+    <p style="margin:0 0 16px;font-size:15px">Nous vous invitons donc à être ponctuel et à prévoir un environnement calme afin de pouvoir participer pleinement à la formation.</p>
+    <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">À bientôt,<br/>YJ Solutions — Formation &amp; Téléprospection</p>`;
+  return { subject: "Confirmation de votre créneau de formation — YJ Solutions", html: shell(content) };
+}
+
 type CancelData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; whatsappUrl?: string };
 
 export function cancelledEmail(d: CancelData) {
