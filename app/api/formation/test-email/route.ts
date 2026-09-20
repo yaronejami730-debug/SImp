@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       firstName: s.name || "Test",
       date, startTime, endTime, type, partnerName,
       programme: settings.programme.map((p) => p.title),
-      rescheduleUrl: `${baseUrlFrom(req)}/formation/reprogrammer?rid=0`, // aperçu du bouton uniquement, pas une vraie inscription
+      rescheduleUrl: `${baseUrlFrom(req)}/yj/formation/reprogrammer?rid=0`, // aperçu du bouton uniquement, pas une vraie inscription
     });
     await sendEmail({
       to: s.email, toName: s.name || "Test", subject: `[TEST] ${mail.subject}`, html: mail.html,

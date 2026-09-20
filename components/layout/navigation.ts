@@ -59,12 +59,6 @@ export const GROUPES: Groupe[] = [
       { key: "parametres", label: "Paramètres", href: "/parametres", icone: "reglages", visible: espaceCommercial },
     ],
   },
-  {
-    titre: "Formation",
-    entrees: [
-      { key: "formation", label: "Formation", href: "/formation", icone: "diplome", visible: restreint(estAdmin) },
-    ],
-  },
 ];
 
 /** Groupes filtrés selon le compte connecté (les groupes vides disparaissent). */

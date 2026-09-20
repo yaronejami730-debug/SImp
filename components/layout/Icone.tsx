@@ -17,7 +17,6 @@ const CHEMINS: Record<string, React.ReactNode> = {
   voiture: <><path d="M5 16l1.5-5.5A2 2 0 0 1 8.4 9h7.2a2 2 0 0 1 1.9 1.5L19 16" /><rect x="3" y="16" width="18" height="4" rx="1.5" /><circle cx="7.5" cy="20" r="1.5" /><circle cx="16.5" cy="20" r="1.5" /><path d="M3 16h18" /></>,
   menu: <><path d="M3 6h18M3 12h18M3 18h18" /></>,
   croix: <><path d="M18 6L6 18M6 6l12 12" /></>,
-  diplome: <><path d="M2 9l10-5 10 5-10 5-10-5z" /><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5" /><path d="M22 9v6" /></>,
 };
 
 export default function Icone({ nom, taille = 18 }: { nom: string; taille?: number }) {

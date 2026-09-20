@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Shell from "@/components/Shell";
-import { authHeaders } from "@/lib/client";
+import Login from "@/components/Login";
+import { authHeaders, tokenValide, clearAuth, getUser } from "@/lib/client";
 
-const NAVY = "var(--brand-dark)";
-const PINK = "var(--brand-primary)";
+// Espace YJ Solutions : indépendant du CRM RDV (pas de <Shell>/sidebar), mais réutilise
+// les mêmes comptes admin (lib/auth.ts côté API) — pas un second système de login.
+const NAVY = "#1a273a";
+const PINK = "#DB407A";
 const GREEN = "#16a34a";
 const MUTED = "#6b7280";
 const LINE = "#e5e7eb";
@@ -27,10 +29,22 @@ const btnPrincipal: React.CSSProperties = { height: 36, padding: "0 14px", borde
 const btnSecondaire: React.CSSProperties = { height: 34, padding: "0 12px", borderRadius: 8, border: `1px solid ${LINE}`, background: "#fff", color: NAVY, fontSize: 13, fontWeight: 700, cursor: "pointer" };
 
 export default function Page() {
+  const [ready, setReady] = useState(false);
+  const [connecte, setConnecte] = useState(false);
+
+  useEffect(() => {
+    if (tokenValide()) setConnecte(true); else clearAuth();
+    setReady(true);
+  }, []);
+
+  if (!ready) return null;
+  if (!connecte) return <div style={{ maxWidth: 420, margin: "60px auto", padding: "0 20px" }}><Login onLogin={() => setConnecte(true)} /></div>;
+  if (getUser()?.role !== "admin") return <div style={{ maxWidth: 480, margin: "60px auto", padding: "0 20px", textAlign: "center", color: MUTED }}>Réservé à l&apos;administrateur.</div>;
+
   return (
-    <Shell active="formation">
+    <div style={{ maxWidth: 880, margin: "0 auto", padding: "32px 20px 60px" }}>
       <Formation />
-    </Shell>
+    </div>
   );
 }
 

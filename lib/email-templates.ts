@@ -468,7 +468,7 @@ type FormationData = {
   type: "individuel" | "groupe";
   partnerName: string;
   programme: string[]; // puces — vient de formation_settings.programme, éditable en admin
-  rescheduleUrl?: string; // lien public "reprogrammer" (token), voir app/formation/reprogrammer
+  rescheduleUrl?: string; // lien public "reprogrammer" (token), voir app/yj/formation/reprogrammer
 };
 
 /** Confirmation d'un créneau de formation (module Formation / YJ Solutions). Les puces du
