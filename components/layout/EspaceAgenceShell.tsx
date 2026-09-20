@@ -25,6 +25,12 @@ export const AGENCE_GROUPES: Groupe[] = [
       { key: "reponses", label: "Réponses reçues", href: "/prospection-agence/reponses", icone: "enveloppe", visible: () => true },
     ],
   },
+  {
+    titre: "Formation",
+    entrees: [
+      { key: "formation", label: "Formation", href: "/prospection-agence/formation", icone: "diplome", visible: () => true },
+    ],
+  },
 ];
 
 const PALETTES: { key: string; label: string; primary: string; dark: string }[] = [
