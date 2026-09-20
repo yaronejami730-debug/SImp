@@ -353,6 +353,39 @@ export async function createReminderEvent(opts: {
   return res.data.id ?? "";
 }
 
+/** Crée un événement "formation" dans Google Agenda (module Formation), même calendrier et
+ *  même convention que createReminderEvent (résumé préfixé, colorId dédié) — pas de calendrier
+ *  séparé pour l'instant. */
+export async function createFormationEvent(opts: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  startISO: string; // "YYYY-MM-DDTHH:MM:SS" heure de Paris, pas de suffixe Z
+  endISO: string;
+  partnerName: string;
+  type: "individuel" | "groupe";
+  registrationId: number;
+}): Promise<string> {
+  const cal = calendarClient();
+  const name = `${opts.firstName} ${opts.lastName}`.trim();
+  const res = await cal.events.insert({
+    calendarId: CALENDAR_ID,
+    sendUpdates: "none",
+    requestBody: {
+      summary: `📞 Formation ${opts.type === "groupe" ? "(groupe) " : ""}${name}`,
+      colorId: "3", // Grape = violet, même code couleur que les rappels téléphoniques
+      description: [`E-mail : ${opts.email}`, `Partenaire : ${opts.partnerName}`].join("\n"),
+      start: { dateTime: opts.startISO, timeZone: "Europe/Paris" },
+      end: { dateTime: opts.endISO, timeZone: "Europe/Paris" },
+      attendees: [{ email: opts.email, displayName: name }],
+      extendedProperties: {
+        private: { app: "simplici-formation", kind: "formation", registrationId: String(opts.registrationId) },
+      },
+    },
+  });
+  return res.data.id ?? "";
+}
+
 /** Liste les événements entre deux dates (cron de relance). */
 export async function listEvents(timeMin: Date, timeMax: Date) {
   const cal = calendarClient();

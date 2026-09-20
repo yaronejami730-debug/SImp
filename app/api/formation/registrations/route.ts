@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { listRegistrations, createRegistration, markRegistrationEmailSent, cancelRegistration, getSettings } from "@/lib/formation";
+import { listRegistrations, createRegistration, markRegistrationEmailSent, cancelRegistration, setCalendarEventId, getSettings, type Slot } from "@/lib/formation";
 import { sendEmail } from "@/lib/brevo";
 import { formationConfirmationEmail } from "@/lib/email-templates";
+import { createFormationEvent, deleteEvent } from "@/lib/google";
+import { baseUrlFrom, formationRescheduleUrl } from "@/lib/links";
+
+const slotISO = (slot: Slot, time: string) => `${slot.date}T${time}:00`;
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +33,17 @@ export async function POST(req: Request) {
     const result = await createRegistration({ slotId, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), createdBy: s.email });
     if (!result.ok) return NextResponse.json({ error: result.reason }, { status: 400 });
 
+    // Toujours synchronisé sur Google Agenda (📞 Formation), indépendamment du toggle d'envoi
+    // e-mail — ce n'est pas une communication client, juste le planning interne.
+    try {
+      const eventId = await createFormationEvent({
+        firstName: result.registration.firstName, lastName: result.registration.lastName, email: result.registration.email,
+        startISO: slotISO(result.slot, result.slot.startTime), endISO: slotISO(result.slot, result.slot.endTime),
+        partnerName: result.slot.partnerName, type: result.slot.type, registrationId: result.registration.id,
+      });
+      if (eventId) await setCalendarEventId(result.registration.id, eventId);
+    } catch { /* la sync agenda ne doit jamais faire échouer l'inscription */ }
+
     const settings = await getSettings();
     let emailSent = false;
     if (settings.autoSendEnabled) {
@@ -37,9 +52,11 @@ export async function POST(req: Request) {
         date: result.slot.date, startTime: result.slot.startTime, endTime: result.slot.endTime,
         type: result.slot.type, partnerName: result.slot.partnerName,
         programme: settings.programme.map((p) => p.title),
+        rescheduleUrl: formationRescheduleUrl(baseUrlFrom(req), result.registration.id),
       });
       await sendEmail({
         to: result.registration.email, toName: result.registration.firstName, subject: mail.subject, html: mail.html,
+        senderName: "YJ Solutions",
         log: { templateKey: "formation_confirmation", clientName: `${result.registration.firstName} ${result.registration.lastName}`, origin: "manual" },
       });
       await markRegistrationEmailSent(result.registration.id);
@@ -57,6 +74,7 @@ export async function DELETE(req: Request) {
   if (!s || s.role !== "admin") return NextResponse.json({ error: "Réservé à l'administrateur." }, { status: 403 });
   const id = Number(new URL(req.url).searchParams.get("id") || 0);
   if (!id) return NextResponse.json({ error: "id requis." }, { status: 400 });
-  await cancelRegistration(id);
+  const oldEventId = await cancelRegistration(id);
+  if (oldEventId) await deleteEvent(oldEventId).catch(() => {});
   return NextResponse.json({ ok: true });
 }

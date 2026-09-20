@@ -25,3 +25,9 @@ export function rescheduleUrl(base: string, eventId: string): string | undefined
   if (!base || !eventId) return undefined;
   return `${base}/reschedule?eid=${encodeURIComponent(eventId)}`;
 }
+
+/** Lien vers la page publique de reprogrammation d'une inscription formation. */
+export function formationRescheduleUrl(base: string, registrationId: number): string | undefined {
+  if (!base || !registrationId) return undefined;
+  return `${base}/formation/reprogrammer?rid=${registrationId}`;
+}

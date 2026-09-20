@@ -50,26 +50,29 @@ function btnOutline(href: string | undefined, label: string, color: string) {
 /** Branding d'une franchise/agence pour un e-mail : par défaut Simplicicar (variables d'env). */
 export type EmailTheme = { name?: string; logo?: string };
 
-function shell(content: string, buttons = "", theme?: EmailTheme) {
+function shell(content: string, buttons = "", theme?: EmailTheme, opts?: { hideSocial?: boolean; noLogo?: boolean }) {
   const business = theme?.name || BUSINESS;
   const logo = theme?.logo || LOGO;
+  const header = opts?.noLogo
+    ? `<p style="margin:0;font-family:${FONT_HEAD};font-size:22px;font-weight:700;color:${C.navy}">${business}</p>`
+    : `<img src="${logo}" alt="${business}" width="230" style="width:230px;max-width:68%;height:auto;display:inline-block;border:0"/>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Cabin:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet"></head>
 <body style="margin:0;background:#ffffff;font-family:${FONT_BODY};color:${C.text};line-height:1.6">
   <div style="max-width:560px;margin:0 auto;padding:30px 24px;text-align:center">
     <div style="text-align:center;margin-bottom:30px">
-      <img src="${logo}" alt="${business}" width="230" style="width:230px;max-width:68%;height:auto;display:inline-block;border:0"/>
+      ${header}
     </div>
     ${content}
     ${buttons ? `<table role="presentation" style="width:100%;max-width:340px;margin:26px auto 0;border-collapse:collapse">${buttons}</table>` : ""}
-    <div style="border-top:1px solid #ececec;margin-top:32px;padding-top:20px;text-align:center">
+    ${opts?.hideSocial ? "" : `<div style="border-top:1px solid #ececec;margin-top:32px;padding-top:20px;text-align:center">
       <table role="presentation" align="center"><tr>
         ${socialIcon(SOCIAL.facebook, "Facebook", "facebook-new")}
         ${socialIcon(SOCIAL.instagram, "Instagram", "instagram-new")}
         ${socialIcon(SOCIAL.youtube, "YouTube", "youtube-play")}
         ${socialIcon(SOCIAL.whatsapp, "WhatsApp", "whatsapp")}
       </tr></table>
-    </div>
+    </div>`}
   </div>
 </body></html>`;
 }
@@ -464,6 +467,7 @@ type FormationData = {
   type: "individuel" | "groupe";
   partnerName: string;
   programme: string[]; // puces — vient de formation_settings.programme, éditable en admin
+  rescheduleUrl?: string; // lien public "reprogrammer" (token), voir app/formation/reprogrammer
 };
 
 /** Confirmation d'un créneau de formation (module Formation / YJ Solutions). Les puces du
@@ -489,8 +493,10 @@ export function formationConfirmationEmail(d: FormationData) {
     <p style="margin:0 0 16px;font-size:15px">Une fois la formation validée et après avoir démontré votre maîtrise de la prospection sur la première phase, vous pourrez passer directement à une étape supérieure : le traitement de leads qualifiés provenant de nos campagnes publicitaires.</p>
     <p style="margin:0 0 16px;font-size:15px">L'objectif est simple : vous former, vous accompagner sur vos premiers contacts, puis vous permettre progressivement de travailler directement sur des leads générés par nos campagnes Meta Ads.</p>
     <p style="margin:0 0 16px;font-size:15px">Nous vous invitons donc à être ponctuel et à prévoir un environnement calme afin de pouvoir participer pleinement à la formation.</p>
+    ${d.rescheduleUrl ? `<p style="margin:0 0 16px;font-size:13.5px;color:${C.muted}">Un empêchement ? Utilisez le bouton ci-dessous pour reprogrammer.</p>` : ""}
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">À bientôt,<br/>YJ Solutions — Formation &amp; Téléprospection</p>`;
-  return { subject: "Confirmation de votre créneau de formation — YJ Solutions", html: shell(content) };
+  const buttons = btn(d.rescheduleUrl, "Reprogrammer la formation", C.primary);
+  return { subject: "Confirmation de votre créneau de formation — YJ Solutions", html: shell(content, buttons, { name: "YJ Solutions" }, { hideSocial: true, noLogo: true }) };
 }
 
 type CancelData = { civility?: string; firstName: string; lastName?: string; startDateTime: string; location: string; whatsappUrl?: string };

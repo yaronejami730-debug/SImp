@@ -3,6 +3,7 @@ import { getAuth } from "@/lib/auth";
 import { getSettings, getSlot, listPartners } from "@/lib/formation";
 import { sendEmail } from "@/lib/brevo";
 import { formationConfirmationEmail } from "@/lib/email-templates";
+import { baseUrlFrom } from "@/lib/links";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +33,11 @@ export async function POST(req: Request) {
       firstName: s.name || "Test",
       date, startTime, endTime, type, partnerName,
       programme: settings.programme.map((p) => p.title),
+      rescheduleUrl: `${baseUrlFrom(req)}/formation/reprogrammer?rid=0`, // aperçu du bouton uniquement, pas une vraie inscription
     });
     await sendEmail({
       to: s.email, toName: s.name || "Test", subject: `[TEST] ${mail.subject}`, html: mail.html,
+      senderName: "YJ Solutions",
       log: { templateKey: "formation_confirmation_test", clientName: "Test admin", origin: "manual" },
     });
     return NextResponse.json({ ok: true, sentTo: s.email });

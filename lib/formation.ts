@@ -24,7 +24,7 @@ export type Slot = {
 export type Registration = {
   id: number; slotId: number; firstName: string; lastName: string; email: string;
   type: "individuel" | "groupe"; partnerId: number; status: "inscrit" | "annule";
-  emailSent: boolean; emailSentAt: string | null; createdAt: string;
+  emailSent: boolean; emailSentAt: string | null; createdAt: string; calendarEventId: string | null;
 };
 
 export async function listPartners(activeOnly = false): Promise<Partner[]> {
@@ -179,20 +179,56 @@ export async function generateSlotsFromTemplate(weeksAhead = 4): Promise<number>
   return created;
 }
 
+type RegistrationRow = {
+  id: number; slot_id: number; first_name: string; last_name: string; email: string;
+  type: "individuel" | "groupe"; partner_id: number; status: "inscrit" | "annule";
+  email_sent: boolean; email_sent_at: string | null; created_at: string; calendar_event_id: string | null;
+};
+const mapRegistration = (r: RegistrationRow): Registration => ({
+  id: Number(r.id), slotId: Number(r.slot_id), firstName: r.first_name, lastName: r.last_name, email: r.email,
+  type: r.type, partnerId: Number(r.partner_id), status: r.status, emailSent: r.email_sent, emailSentAt: r.email_sent_at,
+  createdAt: r.created_at, calendarEventId: r.calendar_event_id,
+});
+
 export async function listRegistrations(slotId: number): Promise<Registration[]> {
-  const { rows } = await getPool().query<{
-    id: number; slot_id: number; first_name: string; last_name: string; email: string;
-    type: "individuel" | "groupe"; partner_id: number; status: "inscrit" | "annule";
-    email_sent: boolean; email_sent_at: string | null; created_at: string;
-  }>(
-    `select id, slot_id, first_name, last_name, email, type, partner_id, status, email_sent, email_sent_at, created_at
+  const { rows } = await getPool().query<RegistrationRow>(
+    `select id, slot_id, first_name, last_name, email, type, partner_id, status, email_sent, email_sent_at, created_at, calendar_event_id
        from formation_registrations where slot_id = $1 order by created_at`,
     [slotId],
   );
-  return rows.map((r) => ({
-    id: Number(r.id), slotId: Number(r.slot_id), firstName: r.first_name, lastName: r.last_name, email: r.email,
-    type: r.type, partnerId: Number(r.partner_id), status: r.status, emailSent: r.email_sent, emailSentAt: r.email_sent_at, createdAt: r.created_at,
-  }));
+  return rows.map(mapRegistration);
+}
+
+export async function getRegistration(id: number): Promise<Registration | undefined> {
+  const { rows } = await getPool().query<RegistrationRow>(
+    `select id, slot_id, first_name, last_name, email, type, partner_id, status, email_sent, email_sent_at, created_at, calendar_event_id
+       from formation_registrations where id = $1`,
+    [id],
+  );
+  return rows[0] ? mapRegistration(rows[0]) : undefined;
+}
+
+export async function setCalendarEventId(id: number, eventId: string | null) {
+  await getPool().query(`update formation_registrations set calendar_event_id = $2 where id = $1`, [id, eventId]);
+}
+
+/** Déplace une inscription vers un autre créneau (reprogrammation) : type/partenaire
+ *  redénormalisés depuis le nouveau créneau, refuse si complet/fermé. Le calendarEventId
+ *  n'est PAS touché ici — l'appelant gère la suppression/recréation de l'event Google. */
+export async function moveRegistration(id: number, newSlotId: number): Promise<{ ok: true; registration: Registration; oldSlotId: number; slot: Slot } | { ok: false; reason: string }> {
+  const current = await getRegistration(id);
+  if (!current || current.status !== "inscrit") return { ok: false, reason: "Inscription introuvable." };
+  const slot = await getSlot(newSlotId);
+  if (!slot) return { ok: false, reason: "Créneau introuvable." };
+  if (!slot.active) return { ok: false, reason: "Ce créneau est fermé." };
+  if (slot.registered >= slot.capacity) return { ok: false, reason: "Ce créneau est complet." };
+
+  await getPool().query(
+    `update formation_registrations set slot_id = $2, type = $3, partner_id = $4, email_sent = false, email_sent_at = null where id = $1`,
+    [id, newSlotId, slot.type, slot.partnerId],
+  );
+  const updated = await getRegistration(id);
+  return { ok: true, registration: updated!, oldSlotId: current.slotId, slot };
 }
 
 /** Inscrit quelqu'un sur un créneau : type/partenaire dénormalisés depuis le créneau,
@@ -211,7 +247,7 @@ export async function createRegistration(input: { slotId: number; firstName: str
   );
   const registration: Registration = {
     id: Number(rows[0].id), slotId: input.slotId, firstName: input.firstName, lastName: input.lastName, email: input.email,
-    type: slot.type, partnerId: slot.partnerId, status: "inscrit", emailSent: false, emailSentAt: null, createdAt: rows[0].created_at,
+    type: slot.type, partnerId: slot.partnerId, status: "inscrit", emailSent: false, emailSentAt: null, createdAt: rows[0].created_at, calendarEventId: null,
   };
   return { ok: true, registration, slot };
 }
@@ -220,6 +256,10 @@ export async function markRegistrationEmailSent(id: number) {
   await getPool().query(`update formation_registrations set email_sent = true, email_sent_at = now() where id = $1`, [id]);
 }
 
-export async function cancelRegistration(id: number) {
-  await getPool().query(`update formation_registrations set status = 'annule' where id = $1`, [id]);
+/** Annule l'inscription et renvoie l'ancien calendarEventId (si présent), pour que
+ *  l'appelant supprime l'event Google correspondant. */
+export async function cancelRegistration(id: number): Promise<string | null> {
+  const current = await getRegistration(id);
+  await getPool().query(`update formation_registrations set status = 'annule', calendar_event_id = null where id = $1`, [id]);
+  return current?.calendarEventId ?? null;
 }
