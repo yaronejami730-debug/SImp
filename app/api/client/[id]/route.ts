@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
-import { getEvent, markReminderSent, patchVehicle, patchContact, patchClientName, patchNote, patchCommercial, patchApptDetails, appendHistory } from "@/lib/google";
+import { getEvent, markReminderSent, patchVehicle, patchContact, patchClientName, patchNote, patchCommercial, patchApptDetails, appendHistory, eventToAppointmentItem } from "@/lib/google";
+import { listAccords, teleproDeal } from "@/lib/remuneration";
+import { listCallCenters, ancestryMap } from "@/lib/callcenters";
 import { sendEmail } from "@/lib/brevo";
 import { sendSMS } from "@/lib/allmysms";
 import { confirmationEmail, reminderEmail, customEmail, noShowFollowupEmail, mobileConfirmationEmail, mobileReminderEmail } from "@/lib/email-templates";
@@ -57,12 +59,24 @@ export async function GET(req: Request, { params }: Params) {
     }
     const p = ev.extendedProperties?.private ?? {};
     // Deux commissions calculées dynamiquement (jamais stockées) :
-    //  - téléprospecteur = barème du créateur (owner)
-    //  - commercial = barème du compte commercial assigné
+    //  - téléprospecteur = deal spécifique (remuneration_accords, payee_kind='telepro',
+    //    scope call center + commercial), sinon repli sur le barème plat du compte (Comptes)
+    //  - commercial = barème plat du compte commercial assigné
     let commissionBase = 50, commissionPct = 10;          // téléprospecteur (owner)
+    let commissionSoldEur = 0, commissionSoldPct = 0, commissionSoldPctBase: "negocie" | "plusvalue" = "negocie";
     let commercialCommissionBase = 0, commercialCommissionPct = 0; // commercial assigné
     if (p.owner) {
-      try { const u = await getUserByEmail(p.owner); if (u) { commissionBase = Number(u.commission_base); commissionPct = Number(u.commission_pct); } } catch { /* défaut */ }
+      try {
+        const [accords, ccs] = await Promise.all([listAccords(), listCallCenters()]);
+        const appt = eventToAppointmentItem(ev);
+        const deal = teleproDeal(appt, accords, ancestryMap(ccs));
+        if (deal) {
+          commissionBase = deal.base_eur; commissionPct = deal.pct_nego;
+          commissionSoldEur = deal.sold_eur; commissionSoldPct = deal.sold_pct; commissionSoldPctBase = deal.sold_pct_base;
+        } else {
+          const u = await getUserByEmail(p.owner); if (u) { commissionBase = Number(u.commission_base); commissionPct = Number(u.commission_pct); }
+        }
+      } catch { /* défaut */ }
     }
     if (p.commercialEmail) {
       try { const cu = await getUserByEmail(p.commercialEmail); if (cu) { commercialCommissionBase = Number(cu.commission_base); commercialCommissionPct = Number(cu.commission_pct); } } catch { /* défaut */ }
@@ -76,6 +90,9 @@ export async function GET(req: Request, { params }: Params) {
         address: p.address ?? ev.location ?? "",
         commissionBase,
         commissionPct,
+        commissionSoldEur,
+        commissionSoldPct,
+        commissionSoldPctBase,
         commercialCommissionBase,
         commercialCommissionPct,
         startDateTime: ev.start?.dateTime ?? null,

@@ -48,7 +48,7 @@ export async function findOrCreateContact(opts: { firstname: string; lastname: s
 }
 
 /** Le brouillon existe encore côté Abby et n'a pas été finalisé/supprimé -> ses lignes actuelles (sinon null). */
-async function openDraftLines(invoiceId: string): Promise<LinePayload[] | null> {
+export async function openDraftLines(invoiceId: string): Promise<LinePayload[] | null> {
   const abby = client();
   try {
     const res = await abby.invoice.getInvoice({ path: { invoiceId } });
@@ -66,8 +66,13 @@ async function openDraftLines(invoiceId: string): Promise<LinePayload[] | null> 
         type: "service_delivery",
         vatCode: "FR_00HT",
       }));
-  } catch {
-    return null; // supprimé dans Abby, ou introuvable -> on repart sur un nouveau brouillon
+  } catch (e) {
+    // Seul le 404 (facture supprimée dans Abby entre-temps) justifie de repartir sur un
+    // nouveau brouillon. Toute autre erreur (droits, format, réseau...) doit remonter — sinon
+    // elle est masquée en "pas de brouillon" et CHAQUE clic crée une facture en double.
+    const statusCode = e && typeof e === "object" && "statusCode" in e ? (e as { statusCode?: number }).statusCode : undefined;
+    if (statusCode === 404) return null;
+    throw e;
   }
 }
 

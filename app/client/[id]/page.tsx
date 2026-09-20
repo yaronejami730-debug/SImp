@@ -23,7 +23,7 @@ type Appt = {
   immatriculation?: string; vehiclePhotoUrl?: string; teleprospector?: string;
   note: string; noteAuthor?: string; noteUpdatedAt?: string;
   present: boolean; presence?: "present" | "absent" | "unknown"; signStatus: Sign; negotiation: number; askingPrice?: number; owner: string; commercial: string; operatedBy?: string;
-  commissionBase?: number; commissionPct?: number; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
+  commissionBase?: number; commissionPct?: number; commissionSoldEur?: number; commissionSoldPct?: number; commissionSoldPctBase?: "negocie" | "plusvalue"; commercialCommissionBase?: number; commercialCommissionPct?: number; ref?: string; deplacement?: boolean; address?: string;
   createdAt: string | null; history: { t: string; at: string; info?: string }[];
   parkingRequested: boolean; parkingSent: boolean; cancelled: boolean; confirmed?: boolean;
   reminder24Sent: boolean; reminder2Sent: boolean;
@@ -318,6 +318,38 @@ function ChaineFacturation({ titre, montant, statut, dateFacture, datePaiement, 
         {statut === "invoiced" && `Facture émise${dateFacture ? ` le ${dateFR(dateFacture)}` : ""} — reste à régler.`}
         {statut === "paid" && `Réglée${datePaiement ? ` le ${dateFR(datePaiement)}` : ""}.`}
       </div>
+    </div>
+  );
+}
+
+/** Ajoute CE dossier comme ligne au DERNIER brouillon Abby connu de ce téléprospecteur
+ *  (nouveau s'il n'y en a pas, ou s'il a été finalisé entre-temps) — un seul clic, pas de
+ *  choix à faire. Admin uniquement (protégé côté API). */
+function FacturerAbby({ eid, kind, onDone }: { eid: string; kind: "ff" | "comm"; onDone: (msg: string) => void }) {
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+
+  async function envoyer() {
+    setEnvoi(true); setErreur("");
+    try {
+      const r = await fetch("/api/abby/invoice-line", {
+        method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ eid, kind }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setErreur(d.error ?? "Erreur Abby."); return; }
+      onDone(`Ligne ajoutée à la facture Abby${d.invoiceNumber ? ` ${d.invoiceNumber}` : ""} (${d.amountEur} €).`);
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : "Erreur Abby.");
+    } finally { setEnvoi(false); }
+  }
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button type="button" disabled={envoi} onClick={envoyer} style={{ height: 30, padding: "0 10px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2, fontSize: 12, fontWeight: 700, cursor: envoi ? "wait" : "pointer" }}>
+        {envoi ? "…" : "Ajouter à la facture →"}
+      </button>
+      {erreur && <div style={{ fontSize: 12.5, color: T.warning, marginTop: 6 }}>{erreur}</div>}
     </div>
   );
 }
@@ -1041,19 +1073,21 @@ function ClientPage({ id }: { id: string }) {
 
               {(() => {
                 const base = a.commissionBase ?? 50;
-                const pct = a.commissionPct ?? 10;
+                // Un seul taux : celui du deal (pct_nego s'il est réglé, sinon sold_pct) — appliqué
+                // directement au prix négocié, sans notion de plus-value ni de prix initial.
+                const pct = (a.commissionPct ?? 0) > 0 ? (a.commissionPct ?? 0) : (a.commissionSoldPct ?? 0);
                 const nego = a.negotiation || 0;
-                const variable = Math.round((pct / 100) * nego);
+                const variable = Math.round((pct / 100) * nego) + Math.round(a.commissionSoldEur ?? 0);
                 const lignes = [
                   { qui: a.teleprospector || "Téléprospecteur", role: "Téléprospecteur", montant: base, aide: "Forfait dû dès que le mandat est signé." },
-                  { qui: `${pct} % du montant négocié`, role: "Part variable", montant: variable, aide: nego ? `${pct} % de ${nego.toLocaleString("fr-FR")} €` : "Se calcule dès qu'un montant négocié est saisi." },
+                  { qui: `${pct} % du prix négocié`, role: "Commission", montant: variable, aide: nego ? `${pct} % de ${nego.toLocaleString("fr-FR")} €` : "Se calcule dès qu'un prix négocié est saisi." },
                 ];
                 return (
                   <>
                     {base === 0 && pct === 0 && (
                       <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: R.sm, background: T.warningSoft, color: T.warning, fontSize: 13.5 }}>
                         Aucun barème enregistré pour ce téléprospecteur — d&apos;où les montants à zéro.
-                        Il se règle sur sa fiche de compte, dans Comptes.
+                        Il se règle sur sa fiche de compte, dans Comptes, ou via un deal dans Barèmes.
                       </div>
                     )}
                     {lignes.map((l, i) => (
@@ -1065,28 +1099,11 @@ function ClientPage({ id }: { id: string }) {
                         <Euro montant={l.montant} discret={l.montant === 0} />
                       </div>
                     ))}
-
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, paddingTop: 12, borderTop: `2px solid ${T.line}` }}>
-                      <strong style={{ fontSize: 15 }}>Total pour ce client</strong>
-                      <Euro montant={base + variable} />
-                    </div>
                   </>
                 );
               })()}
 
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: S.md }}>
-                <label htmlFor="prixInitial" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Prix initial (mandat)</label>
-                <input
-                  id="prixInitial" type="number" inputMode="numeric"
-                  value={a.askingPrice || ""}
-                  onChange={(e) => setA({ ...a, askingPrice: Number(e.target.value) })}
-                  onBlur={(e) => saveStatus({ askingPrice: Number(e.target.value) })}
-                  placeholder="—"
-                  style={{ ...champ, width: 140, height: 38, textAlign: "right" }}
-                />
-                <span style={{ fontSize: 13.5, color: T.ink2 }}>€</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: S.sm }}>
                 <label htmlFor="nego" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Prix négocié</label>
                 <input
                   id="nego" type="number" inputMode="numeric"
@@ -1097,9 +1114,6 @@ function ClientPage({ id }: { id: string }) {
                   style={{ ...champ, width: 140, height: 38, textAlign: "right" }}
                 />
                 <span style={{ fontSize: 13.5, color: T.ink2 }}>€</span>
-                {!!a.askingPrice && !!a.negotiation && (
-                  <span style={{ fontSize: 12.5, color: T.ink2 }}>plus-value : {(a.negotiation - a.askingPrice).toLocaleString("fr-FR")} €</span>
-                )}
               </div>
             </div>
             <ChaineFacturation
@@ -1111,18 +1125,38 @@ function ClientPage({ id }: { id: string }) {
               onChange={(v) => majFacturation("ff", v)}
               busy={busy === "facturation-ff"}
             />
-
-            {a.bcSigned && (a.negotiation || 0) > 0 && (
-              <ChaineFacturation
-                titre="Part variable sur le négocié"
-                montant={Math.round(((a.commissionPct ?? 10) / 100) * (a.negotiation || 0))}
-                statut={a.commStatus ?? ""}
-                dateFacture={a.commDate}
-                datePaiement={a.commPaidDate}
-                onChange={(v) => majFacturation("comm", v)}
-                busy={busy === "facturation-comm"}
-              />
+            {getUser()?.role === "admin" && (a.ffStatus ?? "") === "" && (
+              <FacturerAbby eid={a.id} kind="ff" onDone={(msg) => { setFlash({ kind: "ok", msg }); load(); }} />
             )}
+
+            {(a.negotiation || 0) > 0 && (
+              <>
+                <ChaineFacturation
+                  titre="Commission sur le négocié"
+                  montant={Math.round((((a.commissionPct ?? 0) > 0 ? (a.commissionPct ?? 0) : (a.commissionSoldPct ?? 0)) / 100) * (a.negotiation || 0)) + Math.round(a.commissionSoldEur ?? 0)}
+                  statut={a.commStatus ?? ""}
+                  dateFacture={a.commDate}
+                  datePaiement={a.commPaidDate}
+                  onChange={(v) => majFacturation("comm", v)}
+                  busy={busy === "facturation-comm"}
+                />
+                {getUser()?.role === "admin" && (a.commStatus ?? "") === "" && (
+                  <FacturerAbby eid={a.id} kind="comm" onDone={(msg) => { setFlash({ kind: "ok", msg }); load(); }} />
+                )}
+              </>
+            )}
+
+            {(() => {
+              const base = a.commissionBase ?? 50;
+              const pct = (a.commissionPct ?? 0) > 0 ? (a.commissionPct ?? 0) : (a.commissionSoldPct ?? 0);
+              const total = base + Math.round((pct / 100) * (a.negotiation || 0)) + Math.round(a.commissionSoldEur ?? 0);
+              return (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: "12px 2px", marginBottom: 8, borderTop: `2px solid ${T.line}` }}>
+                  <strong style={{ fontSize: 15 }}>Total de la commission pour ce client</strong>
+                  <strong style={{ fontSize: 17 }}><Euro montant={total} /></strong>
+                </div>
+              );
+            })()}
 
             <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 8, background: a.bcSigned ? "#eff6ff" : "#fff", border: `1.5px solid ${a.bcSigned ? "#2563eb" : "#e5e7eb"}`, fontSize: 14, fontWeight: 600, color: a.bcSigned ? "#1d4ed8" : NAVY, cursor: "pointer", marginBottom: 8 }}>
               <input type="checkbox" checked={a.bcSigned} onChange={(e) => saveStatus({ bcSigned: e.target.checked })} />

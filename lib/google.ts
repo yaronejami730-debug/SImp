@@ -512,7 +512,12 @@ export async function listAppointments(
       const p = ev.extendedProperties?.private;
       return p?.app === "simplici-rdv" || !!p?.clientEmail;
     })
-    .map((ev) => {
+    .map(eventToAppointmentItem);
+}
+
+/** Convertit un event Google Calendar en AppointmentItem — logique partagée entre
+ *  listAppointments (plage) et les routes qui n'ont qu'UN event déjà chargé (fiche client). */
+export function eventToAppointmentItem(ev: calendar_v3.Schema$Event): AppointmentItem {
     const p = ev.extendedProperties?.private ?? {};
     return {
       id: ev.id ?? "",
@@ -583,7 +588,6 @@ export async function listAppointments(
       mandatRemovedAt: p.mandatRemovedAt || null,
       mandatRemovedReason: p.mandatRemovedReason ?? "",
     };
-  });
 }
 
 /** Met à jour la marque/modèle du véhicule sur un RDV. */

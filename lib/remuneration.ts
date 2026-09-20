@@ -112,6 +112,19 @@ function scopeMatch(a: AppointmentItem, r: Accord, ancestry?: Ancestry): boolean
   return false; // accord sans portée : ignoré
 }
 
+/** Accords dont le RDV est dans le périmètre, sans condition de déclencheur (signé/vendu) —
+ *  sert à afficher le barème lui-même (fiche client), pas un montant déjà dû. */
+export function accordsMatching(a: AppointmentItem, accords: Accord[], ancestry?: Ancestry): Accord[] {
+  return accords.filter((r) => scopeMatch(a, r, ancestry));
+}
+
+/** Le deal "telepro" applicable à CE RDV (le plus spécifique, lié à ce commercial, l'emporte
+ *  sur un accord générique de call center) — sert de barème d'affichage ET de facturation. */
+export function teleproDeal(a: AppointmentItem, accords: Accord[], ancestry?: Ancestry): Accord | undefined {
+  const matches = accordsMatching(a, accords, ancestry).filter((r) => r.payee_kind === "telepro");
+  return matches.find((r) => !!r.commercial_email) ?? matches[0];
+}
+
 const parisDay = (iso: string | null) => iso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date(iso)) : "";
 
 /** Pour chaque accord à paliers : regroupe les RDV du périmètre par (bénéficiaire, jour) et calcule,
