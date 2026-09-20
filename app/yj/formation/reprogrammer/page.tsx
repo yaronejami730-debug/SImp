@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-const NAVY = "#1a273a";
-const PINK = "#DB407A";
+// Couleurs YJ Solutions (mêmes tons que le dashboard /prospection-agence).
+const NAVY = "#12203a";
+const PINK = "#c21f2c";
 const MUTED = "#6b7280";
 const LINE = "#e5e7eb";
 

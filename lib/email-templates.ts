@@ -473,6 +473,11 @@ type FormationData = {
 
 /** Confirmation d'un créneau de formation (module Formation / YJ Solutions). Les puces du
  *  programme sont injectées depuis l'admin (lib/formation.ts) — jamais de texte en dur ici. */
+// Couleurs YJ Solutions (mêmes tons que le dashboard /prospection-agence, voir
+// components/layout/EspaceAgenceShell.tsx PALETTES "yj") — pas les couleurs Simplicicar.
+const YJ_RED = "#c21f2c";
+const YJ_BLUE = "#12203a";
+
 export function formationConfirmationEmail(d: FormationData) {
   const dateLabel = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${d.date}T12:00:00`));
   const heureDebut = d.startTime.replace(":", "h");
@@ -480,11 +485,11 @@ export function formationConfirmationEmail(d: FormationData) {
   const format = d.type === "groupe" ? "Groupe" : "Individuel";
   const puces = d.programme.map((p) => `<p style="margin:0 0 6px;font-size:14px">• ${p}</p>`).join("");
   const content = `
-    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${C.navy}">Bonjour ${d.firstName},</p>
+    <p style="margin:0 0 18px;font-family:${FONT_HEAD};font-size:20px;font-weight:700;color:${YJ_BLUE}">Bonjour ${d.firstName},</p>
     <p style="margin:0 0 16px;font-size:15px">Nous vous confirmons votre créneau de formation avec YJ Solutions.</p>
     <p style="margin:0 0 6px;font-size:15px"><strong>Votre formation :</strong></p>
-    <p style="margin:0 0 4px;font-size:15px">📅 Date : <strong>${dateLabel}</strong></p>
-    <p style="margin:0 0 4px;font-size:15px">🕐 Horaire : <strong>${heureDebut} à ${heureFin}</strong></p>
+    <p style="margin:0 0 4px;font-size:15px">📅 Date : <strong style="color:${YJ_RED}">${dateLabel}</strong></p>
+    <p style="margin:0 0 4px;font-size:15px">🕐 Horaire : <strong style="color:${YJ_RED}">${heureDebut} à ${heureFin}</strong></p>
     <p style="margin:0 0 4px;font-size:15px">👥 Format : <strong>${format}</strong></p>
     <p style="margin:0 0 16px;font-size:15px">🤝 Partenaire : <strong>${d.partnerName}</strong></p>
     <p style="margin:0 0 16px;font-size:15px">Cette formation a pour objectif de vous préparer concrètement à votre mission de téléprospection.</p>
@@ -496,7 +501,7 @@ export function formationConfirmationEmail(d: FormationData) {
     <p style="margin:0 0 16px;font-size:15px">Nous vous invitons donc à être ponctuel et à prévoir un environnement calme afin de pouvoir participer pleinement à la formation.</p>
     ${d.rescheduleUrl ? `<p style="margin:0 0 16px;font-size:13.5px;color:${C.muted}">Un empêchement ? Utilisez le bouton ci-dessous pour reprogrammer.</p>` : ""}
     <p style="margin:22px 0 0;font-size:15px;color:${C.muted}">À bientôt,<br/>YJ Solutions — Formation &amp; Téléprospection</p>`;
-  const buttons = btn(d.rescheduleUrl, "Reprogrammer la formation", C.primary);
+  const buttons = btn(d.rescheduleUrl, "Reprogrammer la formation", YJ_BLUE);
   return { subject: "Confirmation de votre créneau de formation — YJ Solutions", html: shell(content, buttons, { name: "YJ Solutions", logo: YJ_LOGO }, { hideSocial: true }) };
 }
 
