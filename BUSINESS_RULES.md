@@ -68,7 +68,8 @@ comportement, juste à ne pas être surpris si ça arrive pour gestionnaire/asso
 *Statut : FAIT.*
 
 ### RÈGLE ROLE-003
-La prise de main (impersonation) n'a aucune restriction sur la cible : un super-admin peut
+La prise de main (impersonation) n'a aucune restriction sur la cible : un super-a
+min peut
 prendre la main sur n'importe quel compte, y compris un autre super-admin ou un compte
 désactivé. Comportement actuel confirmé volontaire — ne pas y toucher.
 
