@@ -56,7 +56,7 @@ export function agencyProposalEmail(d: { civility?: string; name: string; prices
   </p>
 
   <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
-    Pour les leads qualifiés avec consentement, le tarif est de <strong>${p.lead} € TTC</strong> par lead. Votre
+    Pour les leads qualifiés avec consentement, le tarif est de <strong>${p.lead} € HT</strong> par lead. Votre
     équipe peut ensuite reprendre directement contact avec le propriétaire.
   </p>
 
@@ -64,9 +64,9 @@ export function agencyProposalEmail(d: { civility?: string; name: string; prices
     Pour les rendez-vous, le tarif dépend principalement du type et de la valeur du véhicule :
   </p>
   <table role="presentation" style="border-collapse:collapse;margin:0 0 16px">
-    ${puce(`<strong>${p.citadine} € TTC</strong> pour les citadines et petits véhicules`)}
-    ${puce(`<strong>${p.suv} € TTC</strong> pour les SUV, berlines et véhicules intermédiaires`)}
-    ${puce(`<strong>${p.premium} € TTC</strong> pour les véhicules haut de gamme et de plus forte valeur`)}
+    ${puce(`<strong>${p.citadine} € HT</strong> pour les citadines et petits véhicules`)}
+    ${puce(`<strong>${p.suv} € HT</strong> pour les SUV, berlines et véhicules intermédiaires`)}
+    ${puce(`<strong>${p.premium} € HT</strong> pour les véhicules haut de gamme et de plus forte valeur`)}
     ${puce(`Pour les véhicules à partir de 150 000 €, nous définissons directement le tarif ensemble.`)}
   </table>
 

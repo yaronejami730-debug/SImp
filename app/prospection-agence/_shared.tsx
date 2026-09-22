@@ -105,13 +105,13 @@ export function EnvoiModal({ prospect, defaultPrices, onClose, onSent }: {
             </FormGrid>
             <div style={{ marginTop: S.md, fontSize: 13, fontWeight: 700, color: T.ink }}>Tarifs — Formule Rendez-vous signé</div>
             <FormGrid colonnes="repeat(auto-fit, minmax(140px, 1fr))">
-              <Field label="Gamme citadine (€ TTC)"><input type="number" value={prix.citadine} onChange={(e) => setPrix({ ...prix, citadine: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
-              <Field label="Gamme SUV (€ TTC)"><input type="number" value={prix.suv} onChange={(e) => setPrix({ ...prix, suv: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
-              <Field label="Gamme premium (€ TTC)"><input type="number" value={prix.premium} onChange={(e) => setPrix({ ...prix, premium: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
+              <Field label="Gamme citadine (€ HT)"><input type="number" value={prix.citadine} onChange={(e) => setPrix({ ...prix, citadine: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
+              <Field label="Gamme SUV (€ HT)"><input type="number" value={prix.suv} onChange={(e) => setPrix({ ...prix, suv: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
+              <Field label="Gamme premium (€ HT)"><input type="number" value={prix.premium} onChange={(e) => setPrix({ ...prix, premium: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
             </FormGrid>
             <div style={{ marginTop: S.md, fontSize: 13, fontWeight: 700, color: T.ink }}>Tarif — Formule Lead</div>
             <FormGrid colonnes="repeat(auto-fit, minmax(140px, 1fr))">
-              <Field label="Lead qualifié (€ TTC)"><input type="number" value={prix.lead} onChange={(e) => setPrix({ ...prix, lead: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
+              <Field label="Lead qualifié (€ HT)"><input type="number" value={prix.lead} onChange={(e) => setPrix({ ...prix, lead: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
             </FormGrid>
             <div style={{ marginTop: S.lg, display: "flex", justifyContent: "flex-end" }}>
               <Button variante="principal" onClick={() => setEtape("confirmation")}>Continuer</Button>
@@ -122,8 +122,8 @@ export function EnvoiModal({ prospect, defaultPrices, onClose, onSent }: {
             <div style={{ background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 10, padding: S.md, fontSize: 13.5, lineHeight: 1.7 }}>
               Ce mail sera signé <strong>{signataireNom}</strong> ({signataireTitre ? `${signataireTitre} — ` : ""}YJ Solutions, jamais Simplicicar),
               envoyé à <strong>{prospect.email}</strong>, avec la formule « {civilite} {prospect.name}, », les tarifs RDV signé
-              (<strong>{prix.citadine} € / {prix.suv} € / {prix.premium} € TTC</strong>) et lead
-              (<strong>{prix.lead} € TTC</strong>), avec un lien vers le questionnaire de cadrage des besoins.
+              (<strong>{prix.citadine} € / {prix.suv} € / {prix.premium} € HT</strong>) et lead
+              (<strong>{prix.lead} € HT</strong>), avec un lien vers le questionnaire de cadrage des besoins.
             </div>
             <div style={{ marginTop: S.lg, display: "flex", justifyContent: "space-between", gap: 10 }}>
               <Button variante="secondaire" onClick={() => setEtape("prix")}>Retour</Button>
