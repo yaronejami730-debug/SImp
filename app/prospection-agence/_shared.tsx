@@ -6,7 +6,8 @@ import { Button, Field, FormGrid, champ, T, S } from "@/components/ui";
 
 export type Prices = { rdv: number; lead: number };
 export type Prospect = {
-  id: number; name: string; email: string; phone: string; token: string;
+  id: number; name: string; prenom: string; email: string; phone: string; token: string;
+  etablissement: string; localisation: string; needs_form_enabled: boolean;
   created_at: string; last_sent_at: string | null; last_sent_prices: Prices | null;
   needs_answers: Record<string, string> | null; needs_raw: string | null; needs_submitted_at: string | null;
 };

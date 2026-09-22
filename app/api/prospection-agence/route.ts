@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
  *  contact a un token public (lien "cadrage de vos besoins", voir /agence-mes-besoins/[token]). */
 
 type Prospect = {
-  id: number; name: string; email: string; phone: string; token: string;
+  id: number; name: string; prenom: string; email: string; phone: string; token: string;
+  etablissement: string; localisation: string; needs_form_enabled: boolean;
   created_at: string; last_sent_at: string | null; last_sent_prices: ProspectionPrices | null;
   needs_answers: Record<string, string> | null; needs_raw: string | null; needs_submitted_at: string | null;
 };
@@ -21,7 +22,8 @@ export async function GET(req: Request) {
   if (!s || s.role !== "admin") return NextResponse.json({ error: "Réservé au super-admin." }, { status: 403 });
   try {
     const { rows } = await getPool().query<Prospect>(
-      `select id, name, email, phone, token, created_at, last_sent_at, last_sent_prices,
+      `select id, name, prenom, email, phone, token, etablissement, localisation, needs_form_enabled,
+              created_at, last_sent_at, last_sent_prices,
               needs_answers, needs_raw, needs_submitted_at
          from agency_prospects where active order by created_at desc`,
     );
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
   try {
     const b = (await req.json()) as {
       action?: "create" | "send";
-      name?: string; email?: string; phone?: string;
+      name?: string; prenom?: string; email?: string; phone?: string; etablissement?: string; localisation?: string; needsFormEnabled?: boolean;
       id?: number; civility?: string; prices?: Partial<ProspectionPrices>; signataire?: Signataire;
     };
     const pool = getPool();
@@ -73,12 +75,17 @@ export async function POST(req: Request) {
 
     // action "create" (ou défaut)
     const name = (b.name || "").trim();
+    const prenom = (b.prenom || "").trim();
     const email = (b.email || "").trim().toLowerCase();
     const phone = (b.phone || "").trim();
+    const etablissement = (b.etablissement || "").trim();
+    const localisation = (b.localisation || "").trim();
+    const needsFormEnabled = !!b.needsFormEnabled;
     if (!name || !email) return NextResponse.json({ error: "Nom et e-mail requis." }, { status: 400 });
     await pool.query(
-      `insert into agency_prospects (name, email, phone, created_by, token) values ($1,$2,$3,$4,$5)`,
-      [name, email, phone, s.email, randomBytes(16).toString("hex")],
+      `insert into agency_prospects (name, prenom, email, phone, etablissement, localisation, needs_form_enabled, created_by, token)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [name, prenom, email, phone, etablissement, localisation, needsFormEnabled, s.email, randomBytes(16).toString("hex")],
     );
     return NextResponse.json({ ok: true });
   } catch (e) {
