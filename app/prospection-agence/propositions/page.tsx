@@ -7,7 +7,7 @@ import { type Prospect, type Prices, fmtDate, chargerProspects, EnvoiModal } fro
 
 export default function PropositionsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
-  const [defaultPrices, setDefaultPrices] = useState<Prices>({ citadine: 80, suv: 100, premium: 150, lead: 20 });
+  const [defaultPrices, setDefaultPrices] = useState<Prices>({ rdv: 100, lead: 20 });
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Prospect | null>(null);
 
@@ -30,7 +30,7 @@ export default function PropositionsPage() {
     {
       cle: "prix", titre: "Tarifs envoyés",
       rendu: (p) => p.last_sent_prices
-        ? <span style={{ fontSize: 12.5 }}>{p.last_sent_prices.citadine}€ / {p.last_sent_prices.suv}€ / {p.last_sent_prices.premium}€ · lead {p.last_sent_prices.lead}€</span>
+        ? <span style={{ fontSize: 12.5 }}>{p.last_sent_prices.rdv}€ · lead {p.last_sent_prices.lead}€</span>
         : <span style={{ color: T.ink2 }}>—</span>,
     },
     {

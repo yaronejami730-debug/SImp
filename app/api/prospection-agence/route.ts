@@ -50,9 +50,7 @@ export async function POST(req: Request) {
       const prospect = rows[0];
       if (!prospect) return NextResponse.json({ error: "Contact introuvable." }, { status: 404 });
       const prices: ProspectionPrices = {
-        citadine: Number(b.prices?.citadine ?? DEFAULT_PROSPECTION_PRICES.citadine),
-        suv: Number(b.prices?.suv ?? DEFAULT_PROSPECTION_PRICES.suv),
-        premium: Number(b.prices?.premium ?? DEFAULT_PROSPECTION_PRICES.premium),
+        rdv: Number(b.prices?.rdv ?? DEFAULT_PROSPECTION_PRICES.rdv),
         lead: Number(b.prices?.lead ?? DEFAULT_PROSPECTION_PRICES.lead),
       };
       const signataire: Signataire = {

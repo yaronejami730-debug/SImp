@@ -8,7 +8,7 @@ import { type Prospect, fmtDate, chargerProspects, copierLienBesoins, EnvoiModal
 
 export default function ContactsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
-  const [defaultPrices, setDefaultPrices] = useState({ citadine: 80, suv: 100, premium: 150, lead: 20 });
+  const [defaultPrices, setDefaultPrices] = useState({ rdv: 100, lead: 20 });
   const [loading, setLoading] = useState(true);
   const [nom, setNom] = useState("");
   const [email, setEmail] = useState("");

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { authHeaders } from "@/lib/client";
 import { Button, Field, FormGrid, champ, T, S } from "@/components/ui";
 
-export type Prices = { citadine: number; suv: number; premium: number; lead: number };
+export type Prices = { rdv: number; lead: number };
 export type Prospect = {
   id: number; name: string; email: string; phone: string; token: string;
   created_at: string; last_sent_at: string | null; last_sent_prices: Prices | null;
@@ -119,8 +119,8 @@ export function EnvoiModal({ prospect, defaultPrices, onClose, onSent }: {
           <>
             <div style={{ background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 10, padding: S.md, fontSize: 13.5, lineHeight: 1.7 }}>
               Ce mail sera signé <strong>{signataireNom}</strong> ({signataireTitre ? `${signataireTitre} — ` : ""}YJ Solutions, jamais Simplicicar),
-              envoyé à <strong>{prospect.email}</strong>, avec la formule « {civilite} {prospect.name}, », les tarifs RDV signé
-              (<strong>{prix.citadine} € / {prix.suv} € / {prix.premium} € HT</strong>) et lead
+              envoyé à <strong>{prospect.email}</strong>, avec la formule « {civilite} {prospect.name}, », le tarif RDV rentré
+              (<strong>{prix.rdv} € HT</strong>) et lead
               (<strong>{prix.lead} € HT</strong>), avec un lien vers le questionnaire de cadrage des besoins.
             </div>
             <div style={{ marginTop: S.lg, display: "flex", justifyContent: "space-between", gap: 10 }}>
