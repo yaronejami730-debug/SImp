@@ -103,11 +103,9 @@ export function EnvoiModal({ prospect, defaultPrices, onClose, onSent }: {
               <Field label="Fonction"><input type="text" value={signataireTitre} onChange={(e) => setSignataireTitre(e.target.value)} style={champ} /></Field>
               <Field label="Téléphone (facultatif)"><input type="tel" value={signataireTel} onChange={(e) => setSignataireTel(e.target.value)} style={champ} /></Field>
             </FormGrid>
-            <div style={{ marginTop: S.md, fontSize: 13, fontWeight: 700, color: T.ink }}>Tarifs — Formule Rendez-vous signé</div>
+            <div style={{ marginTop: S.md, fontSize: 13, fontWeight: 700, color: T.ink }}>Tarif — Formule Rendez-vous rentré</div>
             <FormGrid colonnes="repeat(auto-fit, minmax(140px, 1fr))">
-              <Field label="Gamme citadine (€ HT)"><input type="number" value={prix.citadine} onChange={(e) => setPrix({ ...prix, citadine: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
-              <Field label="Gamme SUV (€ HT)"><input type="number" value={prix.suv} onChange={(e) => setPrix({ ...prix, suv: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
-              <Field label="Gamme premium (€ HT)"><input type="number" value={prix.premium} onChange={(e) => setPrix({ ...prix, premium: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
+              <Field label="Rendez-vous rentré (€ HT)"><input type="number" value={prix.rdv} onChange={(e) => setPrix({ ...prix, rdv: Number(e.target.value) })} style={{ ...champ, textAlign: "right" }} /></Field>
             </FormGrid>
             <div style={{ marginTop: S.md, fontSize: 13, fontWeight: 700, color: T.ink }}>Tarif — Formule Lead</div>
             <FormGrid colonnes="repeat(auto-fit, minmax(140px, 1fr))">

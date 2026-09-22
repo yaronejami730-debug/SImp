@@ -11,8 +11,8 @@ const LOGO_URL = "https://rz18xsip6ybhgfji.public.blob.vercel-storage.com/yj-sol
 const C = { navy: "#1a2740", text: "#26272b", muted: "#6b7280", line: "#e5e7eb" };
 const FONT_BODY = "Georgia,'Times New Roman',serif";
 
-export type ProspectionPrices = { citadine: number; suv: number; premium: number; lead: number };
-export const DEFAULT_PROSPECTION_PRICES: ProspectionPrices = { citadine: 80, suv: 100, premium: 150, lead: 20 };
+export type ProspectionPrices = { rdv: number; lead: number };
+export const DEFAULT_PROSPECTION_PRICES: ProspectionPrices = { rdv: 100, lead: 20 };
 export type Signataire = { name: string; title: string; phone?: string };
 export const DEFAULT_SIGNATAIRE: Signataire = { name: "Yaron Jami", title: "", phone: "" };
 
@@ -60,20 +60,8 @@ export function agencyProposalEmail(d: { civility?: string; name: string; prices
     équipe peut ensuite reprendre directement contact avec le propriétaire.
   </p>
 
-  <p style="margin:0 0 8px;font-size:15px;line-height:1.75">
-    Pour les rendez-vous, le tarif dépend principalement du type et de la valeur du véhicule :
-  </p>
-  <table role="presentation" style="border-collapse:collapse;margin:0 0 16px">
-    ${puce(`<strong>${p.citadine} € HT</strong> pour les citadines et petits véhicules`)}
-    ${puce(`<strong>${p.suv} € HT</strong> pour les SUV, berlines et véhicules intermédiaires`)}
-    ${puce(`<strong>${p.premium} € HT</strong> pour les véhicules haut de gamme et de plus forte valeur`)}
-    ${puce(`Pour les véhicules à partir de 150 000 €, nous définissons directement le tarif ensemble.`)}
-  </table>
-
   <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
-    Nous pouvons également fonctionner sur une formule où le rendez-vous est rémunéré uniquement lorsqu'il
-    aboutit à la signature d'un mandat. Dans ce cas, le tarif est défini en fonction du véhicule et des critères
-    recherchés.
+    Pour les rendez-vous, le tarif est de <strong>${p.rdv} € HT</strong> par rendez-vous rentré.
   </p>
 
   <p style="margin:0 0 16px;font-size:15px;line-height:1.75">
