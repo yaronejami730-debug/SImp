@@ -17,7 +17,7 @@ const cookieName = (token: string) => `yj_besoins_${token}`;
 
 type Params = { params: Promise<{ token: string }> };
 type Row = {
-  name: string; needs_submitted_at: string | null;
+  name: string; needs_submitted_at: string | null; needs_form_enabled: boolean;
   besoins_session_token: string | null; besoins_session_lock: string | null; besoins_session_started_at: string | null;
 };
 
@@ -32,11 +32,12 @@ export async function GET(req: Request, { params }: Params) {
   try {
     const pool = getPool();
     const { rows } = await pool.query<Row>(
-      `select name, needs_submitted_at, besoins_session_token, besoins_session_lock, besoins_session_started_at
+      `select name, needs_submitted_at, needs_form_enabled, besoins_session_token, besoins_session_lock, besoins_session_started_at
          from agency_prospects where token = $1 and active`, [token],
     );
     const p = rows[0];
     if (!p) return NextResponse.json({ error: "Lien invalide." }, { status: 404 });
+    if (!p.needs_form_enabled) return NextResponse.json({ error: "Lien invalide." }, { status: 404 });
     if (p.needs_submitted_at) return NextResponse.json({ ok: true, etat: "deja", name: p.name });
 
     const cookieLock = cookieValue(req, token);
@@ -77,8 +78,8 @@ export async function POST(req: Request, { params }: Params) {
     const pool = getPool();
 
     if (b.action === "regenerer") {
-      const { rowCount } = await pool.query(`select 1 from agency_prospects where token = $1 and active`, [token]);
-      if (!rowCount) return NextResponse.json({ error: "Lien invalide." }, { status: 404 });
+      const { rows: chk } = await pool.query<{ needs_form_enabled: boolean }>(`select needs_form_enabled from agency_prospects where token = $1 and active`, [token]);
+      if (!chk[0] || !chk[0].needs_form_enabled) return NextResponse.json({ error: "Lien invalide." }, { status: 404 });
       const lock = randomBytes(16).toString("hex");
       await pool.query(
         `update agency_prospects set besoins_session_lock = $2, besoins_session_started_at = now(), besoins_session_token = $3 where token = $1`,
@@ -93,11 +94,12 @@ export async function POST(req: Request, { params }: Params) {
 
     // La soumission exige une session active verrouillée sur cet appareil, comme la lecture.
     const { rows } = await pool.query<Row>(
-      `select name, needs_submitted_at, besoins_session_token, besoins_session_lock, besoins_session_started_at
+      `select name, needs_submitted_at, needs_form_enabled, besoins_session_token, besoins_session_lock, besoins_session_started_at
          from agency_prospects where token = $1 and active`, [token],
     );
     const p = rows[0];
     if (!p) return NextResponse.json({ error: "Lien invalide." }, { status: 404 });
+    if (!p.needs_form_enabled) return NextResponse.json({ error: "Lien invalide." }, { status: 404 });
     if (p.needs_submitted_at) return NextResponse.json({ error: "Déjà répondu." }, { status: 409 });
     const started = p.besoins_session_started_at ? new Date(p.besoins_session_started_at).getTime() : null;
     const expiree = started != null && Date.now() - started > SESSION_MS;

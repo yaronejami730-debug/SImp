@@ -58,6 +58,14 @@ export default function ContactsPage() {
     charger();
   }
 
+  async function toggleBesoin(id: number) {
+    await fetch("/api/prospection-agence", {
+      method: "POST", headers: authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ action: "toggle-needs", id }),
+    });
+    charger();
+  }
+
   const colonnes: Colonne<Prospect>[] = [
     { cle: "nom", titre: "Nom", rendu: (p) => <strong>{p.name}{p.prenom ? ` ${p.prenom}` : ""}</strong> },
     { cle: "etablissement", titre: "Établissement", rendu: (p) => p.etablissement || <span style={{ color: T.ink2 }}>—</span> },
@@ -70,12 +78,19 @@ export default function ContactsPage() {
     },
     {
       cle: "besoins", titre: "Besoins",
-      rendu: (p) => {
-        if (!p.needs_form_enabled) return <span style={{ color: T.ink2 }}>Non requis</span>;
-        return p.needs_submitted_at
-          ? <button onClick={() => setBesoinsAffiches(p)} style={{ border: "none", background: "none", color: T.brand, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: 0 }}>Réponse reçue — voir</button>
-          : <span style={{ color: T.ink2 }}>En attente</span>;
-      },
+      rendu: (p) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: T.ink2 }} title="Rend le formulaire de besoins accessible ou non à ce contact">
+            <input type="checkbox" checked={p.needs_form_enabled} onChange={() => toggleBesoin(p.id)} style={{ width: 14, height: 14, accentColor: T.brand }} />
+            Accessible
+          </label>
+          {p.needs_form_enabled && (
+            p.needs_submitted_at
+              ? <button onClick={() => setBesoinsAffiches(p)} style={{ border: "none", background: "none", color: T.brand, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: 0 }}>Réponse reçue — voir</button>
+              : <span style={{ color: T.ink2 }}>En attente</span>
+          )}
+        </div>
+      ),
     },
     {
       cle: "actions", titre: "", aligne: "droite",

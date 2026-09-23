@@ -38,11 +38,21 @@ export async function POST(req: Request) {
   if (!s || s.role !== "admin") return NextResponse.json({ error: "Réservé au super-admin." }, { status: 403 });
   try {
     const b = (await req.json()) as {
-      action?: "create" | "send";
+      action?: "create" | "send" | "toggle-needs";
       name?: string; prenom?: string; email?: string; phone?: string; etablissement?: string; localisation?: string; needsFormEnabled?: boolean;
       id?: number; civility?: string; prices?: Partial<ProspectionPrices>; signataire?: Signataire;
     };
     const pool = getPool();
+
+    if (b.action === "toggle-needs") {
+      if (!b.id) return NextResponse.json({ error: "Contact requis." }, { status: 400 });
+      const { rows } = await pool.query<{ needs_form_enabled: boolean }>(
+        `update agency_prospects set needs_form_enabled = not needs_form_enabled where id = $1 and active returning needs_form_enabled`,
+        [b.id],
+      );
+      if (!rows[0]) return NextResponse.json({ error: "Contact introuvable." }, { status: 404 });
+      return NextResponse.json({ ok: true, needsFormEnabled: rows[0].needs_form_enabled });
+    }
 
     if (b.action === "send") {
       if (!b.id) return NextResponse.json({ error: "Contact requis." }, { status: 400 });
