@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import EspaceAgenceShell from "@/components/layout/EspaceAgenceShell";
+import AppShell from "@/components/layout/AppShell";
 import Sidebar from "@/components/layout/Sidebar";
 import { authHeaders, getUser, setAuth } from "@/lib/client";
 import { PageHeader, Card, Badge, Field, champ, T, R, S, DateRange } from "@/components/ui";
@@ -12,13 +12,19 @@ type User = {
   is_commercial?: boolean; is_teleprospector?: boolean; phone?: string; active?: boolean;
   commission_base?: number; commission_pct?: number;
   call_center_id?: number; agence_name?: string; call_center_name?: string; username?: string; last_seen_at?: string | null;
-  is_gestionnaire?: boolean; is_associe?: boolean; auto_assign?: boolean;
+  auto_assign?: boolean;
 };
-type CallCenter = { id: number; name: string; slug?: string | null; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean };
+type CallCenter = { id: number; name: string; slug?: string | null; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; parent_id: number | null; parent_name: string | null; commercials_count: number; telepros_count: number; brand_primary?: string; brand_dark?: string; logo_url?: string; header_dark?: boolean; active?: boolean; pay_base_eur: number; pay_pct_nego: number };
 type Assignment = { call_center_id: number; commercial_email: string };
 type TeleproAssignment = { telepro_email: string; commercial_email: string; priority: number };
-type Accord = { id: number; call_center_id: number | null; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number };
-type PricingAgreement = { id: number; call_center_id: number; commercial_name: string; base_amount: number; gestionnaire_amount: number | null; call_center_amount: number | null; status: string; trigger_kind?: string };
+type Accord = { id: number; call_center_id: number | null; commercial_email: string; payee_email: string; payee_kind: string; base_eur: number; pct_nego: number; trigger_kind: string };
+type Platform = { id: number; name: string; active: boolean };
+/** Affiliation d'un téléprospecteur (voir /api/accords-telepro) : plateforme OU commercial précis. */
+type AffiliationAccord = {
+  id: number; commercial_email: string; platform: string | null; payee_email: string;
+  base_eur: string; pct_nego: string; sold_eur: string; sold_pct: string; sold_pct_base: "negocie" | "plusvalue"; trigger_kind: string;
+  commercial_name: string | null; telepro_name: string | null;
+};
 type TeleproEarning = { email: string; name: string; callCenter: string; base: number; pct: number; rdv: number; signes: number; du: number; paye: number; solde: number };
 type TimeOff = { id: number; start_date: string; end_date: string; label: string };
 type Delegation = { id: number; delegate_email: string; delegate_name: string; start_date: string; end_date: string };
@@ -58,7 +64,8 @@ function Comptes() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [teleproAssignments, setTeleproAssignments] = useState<TeleproAssignment[]>([]);
   const [accords, setAccords] = useState<Accord[]>([]);
-  const [pricingAgreements, setPricingAgreements] = useState<PricingAgreement[]>([]);
+  const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [affiliations, setAffiliations] = useState<AffiliationAccord[]>([]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [selection, setSelection] = useState<{ kind: "agence" | "cc" | "utilisateurs"; id: number } | null>(null);
@@ -75,6 +82,14 @@ function Comptes() {
   const [delegateDates, setDelegateDates] = useState<Record<string, { start: string; end: string }>>({});
   const [roleModalUser, setRoleModalUser] = useState<User | null>(null);
   const [assignModalUser, setAssignModalUser] = useState<User | null>(null);
+  const [affModalUser, setAffModalUser] = useState<User | null>(null);
+  const [affModalKind, setAffModalKind] = useState<"none" | "platform" | "commercial">("none");
+  const [affModalPlatform, setAffModalPlatform] = useState("");
+  const [affModalCommercial, setAffModalCommercial] = useState("");
+  const [affModalBase, setAffModalBase] = useState(0);
+  const [affModalPct, setAffModalPct] = useState(0);
+  const [affModalTrigger, setAffModalTrigger] = useState<"signed" | "honored">("signed");
+  const [affModalBusy, setAffModalBusy] = useState(false);
   const [notifyEmail, setNotifyEmail] = useState(true); // envoyer le mail "compte prêt" à la création
   const [showInactive, setShowInactive] = useState(false); // "Supprimer" désactive (historique gardé) -> masqué par défaut
   const [lierCommercialQuery, setLierCommercialQuery] = useState<string | null>(null); // null = picker fermé
@@ -85,21 +100,38 @@ function Comptes() {
   const [previewHeaderDark, setPreviewHeaderDark] = useState(false);
   // Mini-form "ajouter un télépro à CE call center"
 
-  const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin" | "gestionnaire" | "associe">("commercial");
-  // Compte commercial / télépro
+  const [type, setType] = useState<"commercial" | "telepro" | "callcenter" | "admin">("commercial");
+  // Compte commercial / télépro — RIEN par défaut, c'est l'admin qui fixe chaque montant.
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const schemeKey = "60"; // barème par défaut des commerciaux : la page Barèmes est en cours de refonte
-  const [teleBase, setTeleBase] = useState(60); // barème libre du télépro créé (€ fixe / RDV signé)
-  const [telePct, setTelePct] = useState(0);    // + % de la négociation
+  const [commBase, setCommBase] = useState(0); // barème du commercial créé (€ fixe / RDV + % négo)
+  const [commPct, setCommPct] = useState(0);
+  const [teleBase, setTeleBase] = useState(0); // barème par défaut du télépro créé — fallback sans affiliation
+  const [telePct, setTelePct] = useState(0);
   const [attachCC, setAttachCC] = useState<number>(1); // rattachement du nouveau compte (agence / call center)
+  // Affiliation du télépro créé (voir /api/accords-telepro) : aucune / plateforme / commercial précis.
+  const [affKind, setAffKind] = useState<"none" | "platform" | "commercial">("none");
+  const [affPlatform, setAffPlatform] = useState("");
+  const [affCommercial, setAffCommercial] = useState("");
+  const [affBase, setAffBase] = useState(0);
+  const [affPct, setAffPct] = useState(0);
+  const [affTrigger, setAffTrigger] = useState<"signed" | "honored">("signed");
   // Call center
   const [ccName, setCcName] = useState("");
   const [ccAgence, setCcAgence] = useState(true);
   const [ccParentId, setCcParentId] = useState<number>(1); // agence de rattachement du nouveau call center
+  const [ccPayBase, setCcPayBase] = useState(0); // combien on paie ce call center par RDV (fixe)
+  const [ccPayPct, setCcPayPct] = useState(0);
+  const [ccPayTrigger, setCcPayTrigger] = useState<"signed" | "honored">("signed");
+  // Combien un commercial précis paye pour un call center donné, au moment de l'y assigner.
+  const [assignAmountFor, setAssignAmountFor] = useState<{ user: User; ccId: number } | null>(null);
+  const [assignBase, setAssignBase] = useState(0);
+  const [assignPct, setAssignPct] = useState(0);
+  const [assignTrigger, setAssignTrigger] = useState<"signed" | "honored">("signed");
+  const [assignBusy, setAssignBusy] = useState(false);
   const [rName, setRName] = useState("");
   const [rUsername, setRUsername] = useState("");
   const [rEmail, setREmail] = useState("");
@@ -122,17 +154,18 @@ function Comptes() {
       if (d.ok) { setUsers(d.users); setRole(d.role ?? "collab"); }
       else { setErr(d.error ?? "Erreur"); return; }
       if (d.role === "admin") {
-        // Les deux sont indépendants -> en parallèle plutôt qu'en série (page la plus lourde du CRM).
-        const [r2, r3] = await Promise.all([
+        // Indépendants -> en parallèle plutôt qu'en série (page la plus lourde du CRM).
+        const [r2, r3, r4] = await Promise.all([
           fetch("/api/callcenters", { headers: authHeaders() }),
-          fetch("/api/pricing-agreements", { headers: authHeaders() }),
+          fetch("/api/platforms", { headers: authHeaders() }),
+          fetch("/api/accords-telepro", { headers: authHeaders() }),
         ]);
-        const [d2, d3] = await Promise.all([r2.json(), r3.json()]);
+        const [d2, d3, d4] = await Promise.all([r2.json(), r3.json(), r4.json()]);
         // Call centers/agences retirés (soft-delete) : disparaissent de cette vue de gestion,
         // mais leur historique (accords, factures) reste intact ailleurs — voir deleteCallCenter.
         if (d2.ok) { setCallCenters((d2.callCenters as CallCenter[]).filter((c) => c.active !== false)); setAssignments(d2.assignments); setAccords(d2.accords ?? []); setTeleproAssignments(d2.teleproAssignments ?? []); }
-        // Vue lecture seule de ce qui est réglé dans la partie Barèmes (pricing_agreements).
-        if (d3.ok) setPricingAgreements(d3.agreements ?? []);
+        if (d3.ok) setPlatforms(d3.platforms ?? []);
+        if (d4.ok) setAffiliations(d4.accords ?? []);
       }
     } catch (e) { setErr(e instanceof Error ? e.message : "Erreur"); }
   }
@@ -197,9 +230,8 @@ function Comptes() {
     chargerVacations();
   }
 
-  // Gestionnaire/associé/super-admin : identités "libres", sans rattachement à la création —
-  // c'est dans le Deal (ou, pour l'admin, jamais) qu'on les relie ensuite à une agence/call center/commercial.
-  const SANS_RATTACHEMENT = ["gestionnaire", "associe", "admin"] as const;
+  // Super-admin : identité "libre", sans rattachement organisationnel.
+  const SANS_RATTACHEMENT = ["admin"] as const;
 
   async function addUser() {
     // Échec silencieux corrigé : avant, un champ manquant ne faisait rien du tout, sans dire
@@ -207,22 +239,40 @@ function Comptes() {
     if (!name.trim()) { alert("Le nom est requis."); return; }
     if (!username.trim()) { alert("Le pseudo est requis."); return; }
     if (!password.trim()) { alert("Le mot de passe est requis."); return; }
-    const typePreview = ["commercial", "admin", "gestionnaire", "associe"].includes(type) ? type : "telepro";
+    const typePreview = ["commercial", "admin"].includes(type) ? type : "telepro";
     if (!(SANS_RATTACHEMENT as readonly string[]).includes(typePreview) && !attachCC) {
       alert("Choisis l'agence ou le call center de rattachement.");
       return;
     }
+    if (type === "telepro" && affKind !== "none" && affBase <= 0 && affPct <= 0) {
+      alert("Indique un montant fixe ou un pourcentage pour l'affiliation.");
+      return;
+    }
     setBusy(true);
     try {
-      const typeEnvoye = ["commercial", "admin", "gestionnaire", "associe"].includes(type) ? type : "telepro";
+      const typeEnvoye = ["commercial", "admin"].includes(type) ? type : "telepro";
       const sansRattachement = (SANS_RATTACHEMENT as readonly string[]).includes(type);
       const res = await fetch("/api/users", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
-        type: typeEnvoye, name, username, email, password, phone, schemeKey, callCenterId: sansRattachement ? 1 : attachCC, notifyEmail,
+        type: typeEnvoye, name, username, email, password, phone, callCenterId: sansRattachement ? 1 : attachCC, notifyEmail,
         ...(type === "telepro" ? { commissionBase: teleBase, commissionPct: telePct } : {}),
+        ...(type === "commercial" ? { commissionBase: commBase, commissionPct: commPct } : {}),
       }) });
       const d = await res.json();
       if (!d.ok) { alert(d.error ?? "Erreur"); return; }
-      setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); setTeleBase(60); setTelePct(0); load();
+      // Affiliation (plateforme ou commercial précis) : un second appel, une fois le compte créé.
+      if (type === "telepro" && affKind !== "none" && d.user?.email) {
+        const ar = await fetch("/api/accords-telepro", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
+          teleproEmail: d.user.email,
+          platform: affKind === "platform" ? affPlatform : undefined,
+          commercialEmail: affKind === "commercial" ? affCommercial : undefined,
+          baseEur: affBase, pctNego: affPct, trigger: affTrigger,
+        }) });
+        const ad = await ar.json();
+        if (!ad.ok) alert(`Compte créé, mais l'affiliation a échoué : ${ad.error ?? "erreur"}`);
+      }
+      setName(""); setUsername(""); setEmail(""); setPassword(""); setPhone(""); setTeleBase(0); setTelePct(0); setCommBase(0); setCommPct(0);
+      setAffKind("none"); setAffPlatform(""); setAffCommercial(""); setAffBase(0); setAffPct(0); setAffTrigger("signed");
+      load();
       if (d.connexionUrl) copierLien(d.connexionUrl, `Compte créé pour ${d.user?.name ?? "cette personne"}`);
     } finally { setBusy(false); }
   }
@@ -248,10 +298,13 @@ function Comptes() {
     if (!ccName.trim() || !rName.trim() || !rUsername.trim() || !rPass.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ name: ccName, agenceOnly: ccAgence, parentId: ccParentId, notifyEmail, responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone } }) });
+      const res = await fetch("/api/callcenters", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
+        name: ccName, agenceOnly: ccAgence, parentId: ccParentId, notifyEmail, payBaseEur: ccPayBase, payPctNego: ccPayPct, payTrigger: ccPayTrigger,
+        responsable: { name: rName, username: rUsername, email: rEmail, password: rPass, phone: rPhone },
+      }) });
       const d = await res.json();
       if (d.ok) {
-        setCcName(""); setRName(""); setRUsername(""); setREmail(""); setRPass(""); setRPhone(""); load();
+        setCcName(""); setRName(""); setRUsername(""); setREmail(""); setRPass(""); setRPhone(""); setCcPayBase(0); setCcPayPct(0); setCcPayTrigger("signed"); load();
         if (d.connexionUrl) copierLien(d.connexionUrl, `Call center créé, responsable ${rName}`);
       }
       else alert(d.error ?? "Erreur");
@@ -281,22 +334,13 @@ function Comptes() {
     else alert(d.error ?? "Erreur");
   }
   async function saveAccords(cc: CallCenter) {
-    const callEur = Number((document.getElementById(`acc-call-${cc.id}`) as HTMLInputElement)?.value ?? 0);
-    const gestEur = Number((document.getElementById(`acc-gest-${cc.id}`) as HTMLInputElement)?.value ?? 0);
-    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: cc.id, action: "setAccords", callEur, gestEur, respEmail: cc.responsable_email, gestEmail: cc.gestionnaire_email || "" }) });
+    const baseEur = Number((document.getElementById(`acc-base-${cc.id}`) as HTMLInputElement)?.value ?? 0);
+    const pctNego = Number((document.getElementById(`acc-pct-${cc.id}`) as HTMLInputElement)?.value ?? 0);
+    const trigger = (document.getElementById(`acc-trig-${cc.id}`) as HTMLSelectElement)?.value === "honored" ? "honored" : "signed";
+    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: cc.id, action: "setAccords", baseEur, pctNego, trigger, email: cc.responsable_email }) });
     const d = await res.json();
-    if (d.ok) { alert(`Accord enregistré : ${callEur} € call center + ${gestEur} € gestionnaire par RDV signé (total ${callEur + gestEur} €).`); load(); }
+    if (d.ok) { alert(`Barème enregistré : ${baseEur} € + ${pctNego} % du négocié, ${trigger === "honored" ? "au RDV honoré" : "au mandat signé"}.`); load(); }
     else alert(d.error ?? "Erreur");
-  }
-  async function setGestionnaire(ccId: number, email: string) {
-    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setGestionnaire", email }) });
-    const d = await res.json();
-    if (d.ok) load(); else alert(d.error ?? "Erreur");
-  }
-  async function setPayMode(ccId: number, payMode: "gestionnaire" | "responsable") {
-    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setPayMode", payMode }) });
-    const d = await res.json();
-    if (d.ok) load(); else alert(d.error ?? "Erreur");
   }
   async function setResponsable2(ccId: number, email: string) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, action: "setResponsable2", email }) });
@@ -347,9 +391,39 @@ function Comptes() {
 
 
   async function toggleAssign(u: User, ccId: number, assigned: boolean) {
-    const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, email: u.email, action: assigned ? "unassign" : "assign" }) });
-    const d = await res.json();
-    if (d.ok) load(); else alert(d.error ?? "Erreur");
+    if (assigned) {
+      const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, email: u.email, action: "unassign" }) });
+      const d = await res.json();
+      if (d.ok) load(); else alert(d.error ?? "Erreur");
+      return;
+    }
+    // Nouvelle affectation : on demande tout de suite combien ce commercial paye pour ce call center.
+    ouvrirMontantAssignation(u, ccId);
+  }
+  function ouvrirMontantAssignation(u: User, ccId: number) {
+    setAssignBase(0); setAssignPct(0); setAssignTrigger("signed");
+    setAssignAmountFor({ user: u, ccId });
+  }
+  async function confirmerAssignation() {
+    if (!assignAmountFor) return;
+    const { user: u, ccId } = assignAmountFor;
+    const cc = callCenters.find((c) => c.id === ccId);
+    setAssignBusy(true);
+    try {
+      const r1 = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: ccId, email: u.email, action: "assign" }) });
+      const d1 = await r1.json();
+      if (!d1.ok) { alert(d1.error ?? "Erreur"); return; }
+      if ((assignBase > 0 || assignPct > 0) && cc?.responsable_email) {
+        const r2 = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
+          callCenterId: ccId, action: "setCommercialAccord", commercialEmail: u.email, email: cc.responsable_email,
+          baseEur: assignBase, pctNego: assignPct, trigger: assignTrigger,
+        }) });
+        const d2 = await r2.json();
+        if (!d2.ok) alert(`Rattaché, mais le montant n'a pas pu être enregistré : ${d2.error ?? "erreur"}`);
+      }
+      setAssignAmountFor(null);
+      load();
+    } finally { setAssignBusy(false); }
   }
   async function toggleTeleproAssign(teleproEmail: string, commercialEmail: string, assigned: boolean) {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: 1, teleproEmail, commercialEmail, action: assigned ? "unassignTelepro" : "assignTelepro" }) });
@@ -360,6 +434,39 @@ function Comptes() {
     const res = await fetch("/api/callcenters", { method: "PATCH", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({ callCenterId: 1, teleproEmail, commercialEmail, priority, action: "assignTelepro" }) });
     const d = await res.json();
     if (d.ok) load(); else alert(d.error ?? "Erreur");
+  }
+
+  function ouvrirAffiliation(u: User) {
+    const aff = affiliations.find((a) => a.payee_email.toLowerCase() === u.email.toLowerCase());
+    setAffModalKind(aff ? (aff.platform ? "platform" : "commercial") : "none");
+    setAffModalPlatform(aff?.platform ?? "");
+    setAffModalCommercial(aff?.commercial_email ?? "");
+    setAffModalBase(aff ? Number(aff.base_eur) : 0);
+    setAffModalPct(aff ? Number(aff.pct_nego) : 0);
+    setAffModalTrigger(aff?.trigger_kind === "honored" ? "honored" : "signed");
+    setAffModalUser(u);
+  }
+  async function enregistrerAffiliation() {
+    if (!affModalUser) return;
+    setAffModalBusy(true);
+    try {
+      if (affModalKind === "none") {
+        const aff = affiliations.find((a) => a.payee_email.toLowerCase() === affModalUser.email.toLowerCase());
+        if (aff) await fetch(`/api/accords-telepro?id=${aff.id}`, { method: "DELETE", headers: authHeaders() });
+      } else {
+        if (affModalBase <= 0 && affModalPct <= 0) { alert("Indique un montant fixe ou un pourcentage."); return; }
+        const res = await fetch("/api/accords-telepro", { method: "POST", headers: authHeaders({ "content-type": "application/json" }), body: JSON.stringify({
+          teleproEmail: affModalUser.email,
+          platform: affModalKind === "platform" ? affModalPlatform : undefined,
+          commercialEmail: affModalKind === "commercial" ? affModalCommercial : undefined,
+          baseEur: affModalBase, pctNego: affModalPct, trigger: affModalTrigger,
+        }) });
+        const d = await res.json();
+        if (!d.ok) { alert(d.error ?? "Erreur"); return; }
+      }
+      setAffModalUser(null);
+      load();
+    } finally { setAffModalBusy(false); }
   }
 
   async function patch(id: number, body: Record<string, unknown>) {
@@ -440,8 +547,8 @@ function Comptes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reglagesOuverts, noeud?.id]);
 
-  // Comptes libres : sans rattachement organisationnel — gestionnaires, associés, super-admins.
-  const utilisateursLibres = users.filter((u) => (u.role === "admin" || u.is_gestionnaire || u.is_associe) && (showInactive || u.active !== false));
+  // Comptes libres : sans rattachement organisationnel — super-admins.
+  const utilisateursLibres = users.filter((u) => u.role === "admin" && (showInactive || u.active !== false));
 
   /** Comptes rattachés au nœud sélectionné. "Supprimer" désactive (historique gardé) plutôt que
    *  d'effacer -> masqués de la liste par défaut, sinon "Supprimer" semble ne rien faire. */
@@ -528,7 +635,7 @@ function Comptes() {
               Utilisateurs
             </div>
             <button onClick={() => setSelection({ kind: "utilisateurs", id: 0 })} style={lienArbre(selection?.kind === "utilisateurs", false)}>
-              <span>Gestionnaires, associés, admins</span>
+              <span>Super-admins</span>
               <span style={{ fontSize: 12, opacity: 0.75 }}>{utilisateursLibres.length}</span>
             </button>
 
@@ -544,14 +651,14 @@ function Comptes() {
           <div style={{ minWidth: 0 }}>
             {selection?.kind === "utilisateurs" ? (
               <Card
-                title={`Utilisateurs libres (${utilisateursLibres.length})`}
-                description="Sans rattachement à une agence ou un call center : gestionnaires et associés (reliés à un commercial/call center au cas par cas dans Deal), super-admins."
+                title={`Super-admins (${utilisateursLibres.length})`}
+                description="Sans rattachement à une agence ou un call center — accès total."
                 actions={
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: T.ink2, cursor: "pointer" }}>
                       <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Afficher les comptes désactivés
                     </label>
-                    <button onClick={() => { setType("gestionnaire"); setCreationOuverte(true); }} style={{ height: 36, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>+ Créer un utilisateur</button>
+                    <button onClick={() => { setType("admin"); setCreationOuverte(true); }} style={{ height: 36, padding: "0 14px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>+ Créer un utilisateur</button>
                   </div>
                 }
               >
@@ -562,9 +669,7 @@ function Comptes() {
                     {utilisateursLibres.map((u) => (
                       <div key={u.id}>
                         <div style={{ marginBottom: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {u.role === "admin" && <Badge ton="danger">Super-admin</Badge>}
-                          {u.is_gestionnaire && <Badge ton="info">Gestionnaire</Badge>}
-                          {u.is_associe && <Badge ton="succes">Associé</Badge>}
+                          <Badge ton="danger">Super-admin</Badge>
                         </div>
                         {renderUser(u)}
                       </div>
@@ -716,35 +821,6 @@ function Comptes() {
                 </section>
 
                 <section>
-                  <div style={legendeSection}>Gestionnaire</div>
-                  <select value={noeud.gestionnaire_email ?? ""} onChange={(e) => e.target.value && setGestionnaire(noeud.id, e.target.value)} style={{ ...champ, maxWidth: 320 }}>
-                    <option value="">— choisir —</option>
-                    {users.map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
-                  </select>
-                  <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>
-                    Celui qui a apporté ce call center. Il touche la marge sur chaque rendez-vous signé.
-                  </div>
-                </section>
-
-                <section>
-                  <div style={legendeSection}>Mode de rémunération des téléprospecteurs</div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => setPayMode(noeud.id, "gestionnaire")} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: (noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire" ? "none" : `1px solid ${T.line}`, background: (noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire" ? T.brand : T.surface, color: (noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire" ? "#fff" : T.ink2 }}>
-                      Gestionnaire direct
-                    </button>
-                    <button onClick={() => setPayMode(noeud.id, "responsable")} style={{ height: 34, padding: "0 14px", borderRadius: R.sm, fontSize: 13, fontWeight: 700, cursor: "pointer", border: noeud.telepro_pay_mode === "responsable" ? "none" : `1px solid ${T.line}`, background: noeud.telepro_pay_mode === "responsable" ? T.brand : T.surface, color: noeud.telepro_pay_mode === "responsable" ? "#fff" : T.ink2 }}>
-                      Responsable
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>
-                    {(noeud.telepro_pay_mode ?? "gestionnaire") === "gestionnaire"
-                      ? "Le gestionnaire fixe lui-même le deal € (par RDV) de chaque téléprospecteur de ce call center."
-                      : "Le gestionnaire donne un montant global au call center ; la redistribution interne est décidée par le responsable."}
-                    {" "}Ce réglage décide qui édite le deal € des téléprospecteurs dans l&apos;onglet Deal (super-admin toujours autorisé, quel que soit le mode).
-                  </div>
-                </section>
-
-                <section>
                   <div style={legendeSection}>Deuxième responsable (50/50)</div>
                   <select value={noeud.responsable_email_2 ?? ""} onChange={(e) => setResponsable2(noeud.id, e.target.value)} style={{ ...champ, maxWidth: 320 }}>
                     <option value="">— aucun —</option>
@@ -756,20 +832,25 @@ function Comptes() {
                 </section>
 
                 <section>
-                  <div style={legendeSection}>Accord de rémunération (par rendez-vous signé)</div>
+                  <div style={legendeSection}>Combien on paie ce call center (par rendez-vous)</div>
                   {(() => {
-                    const accCall = accords.find((x) => Number(x.call_center_id) === noeud.id && x.payee_kind === "call_center");
-                    const accGest = accords.find((x) => Number(x.call_center_id) === noeud.id && x.payee_kind === "gestionnaire");
+                    const accCall = accords.find((x) => Number(x.call_center_id) === noeud.id && x.payee_kind === "call_center" && !x.commercial_email);
                     return (
                       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-                        <Field label="Call center (€)">
-                          <input id={`acc-call-${noeud.id}`} type="number" defaultValue={accCall ? Number(accCall.base_eur) : 30} style={{ ...champ, width: 120, textAlign: "right" }} />
+                        <Field label="Fixe (€)">
+                          <input id={`acc-base-${noeud.id}`} type="number" defaultValue={accCall ? Number(accCall.base_eur) : (noeud.pay_base_eur ?? 0)} style={{ ...champ, width: 120, textAlign: "right" }} />
                         </Field>
-                        <Field label="Gestionnaire (€)">
-                          <input id={`acc-gest-${noeud.id}`} type="number" defaultValue={accGest ? Number(accGest.base_eur) : 20} style={{ ...champ, width: 120, textAlign: "right" }} />
+                        <Field label="+ % du négocié">
+                          <input id={`acc-pct-${noeud.id}`} type="number" defaultValue={accCall ? Number(accCall.pct_nego) : (noeud.pay_pct_nego ?? 0)} style={{ ...champ, width: 90, textAlign: "right" }} />
+                        </Field>
+                        <Field label="Déclencheur">
+                          <select id={`acc-trig-${noeud.id}`} defaultValue={accCall?.trigger_kind === "honored" ? "honored" : "signed"} style={{ ...champ, width: 160 }}>
+                            <option value="signed">Au mandat signé</option>
+                            <option value="honored">Dès que le client est venu</option>
+                          </select>
                         </Field>
                         <button onClick={() => saveAccords(noeud)} style={{ height: 44, padding: "0 16px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
-                          Enregistrer l&apos;accord
+                          Enregistrer
                         </button>
                       </div>
                     );
@@ -784,15 +865,27 @@ function Comptes() {
                 Les commerciaux rattachés à cette agence sont gérés automatiquement (voir « Comptes »). Ici : lier en plus un commercial d&apos;une AUTRE agence (rare — ex. un commercial qui dépanne plusieurs agences).
               </p>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {users.filter((u) => u.is_commercial && !(estAgence && rootOf(Number(u.call_center_id)) === noeud.id) && isAssigned(u.email, noeud.id)).map((u) => (
-                  <button
-                    key={u.id} type="button" onClick={() => toggleAssign(u, noeud.id, true)}
-                    style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: "none", background: T.ink, color: "#fff" }}
-                    title={`${u.agence_name ? `Agence : ${u.agence_name} · ` : ""}retirer ce lien`}
-                  >
-                    ✓ {u.name}{u.agence_name ? ` (${u.agence_name})` : ""}
-                  </button>
-                ))}
+                {users.filter((u) => u.is_commercial && !(estAgence && rootOf(Number(u.call_center_id)) === noeud.id) && isAssigned(u.email, noeud.id)).map((u) => {
+                  const acc = accords.find((a) => a.call_center_id === noeud.id && a.payee_kind === "call_center" && a.commercial_email === u.email.toLowerCase());
+                  return (
+                    <span key={u.id} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      <button
+                        type="button" onClick={() => toggleAssign(u, noeud.id, true)}
+                        style={{ height: 32, padding: "0 12px", borderRadius: `${R.sm}px 0 0 ${R.sm}px`, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: "none", background: T.ink, color: "#fff" }}
+                        title={`${u.agence_name ? `Agence : ${u.agence_name} · ` : ""}retirer ce lien`}
+                      >
+                        ✓ {u.name}{u.agence_name ? ` (${u.agence_name})` : ""}{acc ? ` — ${Number(acc.base_eur)}€${Number(acc.pct_nego) > 0 ? `+${acc.pct_nego}%` : ""}` : ""}
+                      </button>
+                      <button
+                        type="button" onClick={() => { setAssignBase(acc ? Number(acc.base_eur) : 0); setAssignPct(acc ? Number(acc.pct_nego) : 0); setAssignTrigger(acc?.trigger_kind === "honored" ? "honored" : "signed"); setAssignAmountFor({ user: u, ccId: noeud.id }); }}
+                        style={{ height: 32, padding: "0 10px", borderRadius: `0 ${R.sm}px ${R.sm}px 0`, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: `1px solid ${T.line}`, borderLeft: "none", background: T.surface, color: T.ink2 }}
+                        title="Combien ce commercial paye par RDV pour ce call center"
+                      >
+                        €
+                      </button>
+                    </span>
+                  );
+                })}
                 {users.filter((u) => u.is_commercial && !(estAgence && rootOf(Number(u.call_center_id)) === noeud.id) && isAssigned(u.email, noeud.id)).length === 0 && (
                   <span style={{ fontSize: 12.5, color: T.ink3 }}>Aucun lien externe pour l&apos;instant.</span>
                 )}
@@ -826,35 +919,25 @@ function Comptes() {
 
             {!estAgence && (
               <section>
-                <div style={legendeSection}>💰 Rémunération — vue Deal (lecture seule)</div>
+                <div style={legendeSection}>💰 Téléprospecteurs de ce call center</div>
                 <p style={{ fontSize: 12.5, color: T.ink3, margin: "0 0 10px" }}>
-                  Ce qui est réglé dans la page Deal pour ce call center. Pour modifier, va sur Deal.
+                  Barème par défaut, ou affiliation (plateforme / commercial précis) si réglée — voir la fiche du compte.
                 </p>
                 {(() => {
-                  const deals = pricingAgreements.filter((p) => Number(p.call_center_id) === noeud.id && p.status === "active");
                   const telepros = users.filter((u) => u.is_teleprospector && Number(u.call_center_id) === noeud.id);
+                  if (telepros.length === 0) return <div style={{ fontSize: 13, color: T.ink3 }}>Aucun téléprospecteur dans ce call center.</div>;
                   return (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {deals.length === 0 ? (
-                        <div style={{ fontSize: 13, color: T.ink3 }}>Aucun accord actif avec un commercial dans Deal.</div>
-                      ) : deals.map((d) => (
-                        <div key={d.id} style={{ background: T.surface2, borderRadius: R.sm, padding: "8px 12px", fontSize: 13 }}>
-                          <strong>{d.commercial_name}</strong> — {Number(d.base_amount)} € / RDV signé
-                          {d.gestionnaire_amount != null && <span style={{ color: T.ink3 }}> (dont gestionnaire {Number(d.gestionnaire_amount)} €, call center {Number(d.call_center_amount)} €)</span>}
-                        </div>
-                      ))}
-                      {telepros.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, margin: "6px 0 4px" }}>Deal € par téléprospecteur</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {telepros.map((t) => (
-                              <span key={t.id} style={{ fontSize: 12.5, background: T.surface2, borderRadius: 999, padding: "4px 10px" }}>
-                                {t.name} : {Number(t.commission_base ?? 0)} €{Number(t.commission_pct ?? 0) > 0 ? ` + ${t.commission_pct}%` : ""}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {telepros.map((t) => {
+                        const aff = affiliations.find((a) => a.payee_email.toLowerCase() === t.email.toLowerCase());
+                        return (
+                          <span key={t.id} style={{ fontSize: 12.5, background: T.surface2, borderRadius: 999, padding: "4px 10px" }}>
+                            {t.name} : {aff
+                              ? `${aff.platform ? `plateforme ${aff.platform}` : aff.commercial_name ?? aff.commercial_email} — ${Number(aff.base_eur)} €${Number(aff.pct_nego) > 0 ? ` + ${aff.pct_nego}%` : ""}`
+                              : `${Number(t.commission_base ?? 0)} €${Number(t.commission_pct ?? 0) > 0 ? ` + ${t.commission_pct}%` : ""} (par défaut)`}
+                          </span>
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -869,10 +952,8 @@ function Comptes() {
         <Fenetre titre="Créer un utilisateur" onFermer={() => setCreationOuverte(false)}>
           {isAdmin && (
             <>
-              <div style={legendeSection}>Identités libres — rattachées ensuite dans Deal</div>
+              <div style={legendeSection}>Identité libre</div>
               <div style={{ display: "flex", gap: 8, marginBottom: S.sm, flexWrap: "wrap" }}>
-                {typeBtn("gestionnaire", "Gestionnaire", "négocie les deals")}
-                {typeBtn("associe", "Associé", "partage un bénéfice")}
                 {typeBtn("admin", "Super-admin", "accès total")}
               </div>
             </>
@@ -908,6 +989,20 @@ function Comptes() {
                   {agences.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </Field>
+              <Field label="Combien on paie ce call center (€ / RDV + % négo)">
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input style={inp} type="number" min={0} value={ccPayBase} onChange={(e) => setCcPayBase(Number(e.target.value))} placeholder="€" />
+                  <input style={inp} type="number" min={0} max={100} value={ccPayPct} onChange={(e) => setCcPayPct(Number(e.target.value))} placeholder="%" />
+                </div>
+              </Field>
+              {(ccPayBase > 0 || ccPayPct > 0) && (
+                <Field label="Déclencheur">
+                  <select style={inp} value={ccPayTrigger} onChange={(e) => setCcPayTrigger(e.target.value as "signed" | "honored")}>
+                    <option value="signed">Au mandat signé</option>
+                    <option value="honored">Dès que le client est venu</option>
+                  </select>
+                </Field>
+              )}
               <div style={legendeSection}>Responsable du call center</div>
               <Field label="Nom"><input style={inp} value={rName} onChange={(e) => setRName(e.target.value)} /></Field>
               <Field label="Pseudo (identifiant)"><input style={inp} value={rUsername} onChange={(e) => setRUsername(e.target.value.toLowerCase())} autoCapitalize="none" /></Field>
@@ -928,8 +1023,16 @@ function Comptes() {
               <Field label="Mot de passe"><input style={inp} value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
               <Field label="E-mail (facultatif)"><input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
               {type === "commercial" && <Field label="Téléphone" hint="Utilisé dans les mails et SMS envoyés aux clients."><input style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>}
+              {type === "commercial" && (
+                <Field label="Barème (€ / RDV signé + % négo)" hint="Ce que ce commercial paye par RDV — 0 par défaut, c'est à toi de le fixer.">
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input style={inp} type="number" min={0} value={commBase} onChange={(e) => setCommBase(Number(e.target.value))} placeholder="€" />
+                    <input style={inp} type="number" min={0} max={100} value={commPct} onChange={(e) => setCommPct(Number(e.target.value))} placeholder="%" />
+                  </div>
+                </Field>
+              )}
               {type === "telepro" && (
-                <Field label="Commission (€ / RDV signé + % négo)" hint="Ce qui lui est dû, visible dans son 'Mes paiements'.">
+                <Field label="Barème par défaut (€ / RDV signé + % négo)" hint="Utilisé tant qu'aucune affiliation plateforme/commercial n'est réglée ci-dessous.">
                   <div style={{ display: "flex", gap: 8 }}>
                     <input style={inp} type="number" min={0} value={teleBase} onChange={(e) => setTeleBase(Number(e.target.value))} placeholder="€" />
                     <input style={inp} type="number" min={0} max={100} value={telePct} onChange={(e) => setTelePct(Number(e.target.value))} placeholder="%" />
@@ -955,21 +1058,42 @@ function Comptes() {
                   </select>
                 </Field>
               )}
-              {type === "associe" && (
-                <p style={{ margin: 0, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
-                  Compte simple, sans rattachement — il devient sélectionnable comme associé dans la partie Deal.
-                </p>
-              )}
-              {type === "gestionnaire" && (
-                <p style={{ margin: 0, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
-                  Compte simple, sans rattachement — c'est dans la partie Deal qu'il se relie à un commercial, un call center ou un téléprospecteur.
-                </p>
+              {type === "telepro" && (
+                <Field label="Affiliation (facultatif)" hint="Rattache ce téléprospecteur à une plateforme (payé par la structure) ou à un commercial précis (qui le paie directement) — remplace le barème par défaut ci-dessus.">
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                    <button type="button" onClick={() => setAffKind("none")} style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: affKind === "none" ? "none" : `1px solid ${T.line}`, background: affKind === "none" ? T.ink : T.surface, color: affKind === "none" ? "#fff" : T.ink2 }}>Aucune</button>
+                    <button type="button" onClick={() => setAffKind("platform")} style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: affKind === "platform" ? "none" : `1px solid ${T.line}`, background: affKind === "platform" ? T.ink : T.surface, color: affKind === "platform" ? "#fff" : T.ink2 }}>Plateforme</button>
+                    <button type="button" onClick={() => setAffKind("commercial")} style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: affKind === "commercial" ? "none" : `1px solid ${T.line}`, background: affKind === "commercial" ? T.ink : T.surface, color: affKind === "commercial" ? "#fff" : T.ink2 }}>Commercial précis</button>
+                  </div>
+                  {affKind === "platform" && (
+                    <select style={{ ...inp, marginBottom: 8 }} value={affPlatform} onChange={(e) => setAffPlatform(e.target.value)}>
+                      <option value="">— choisir —</option>
+                      {platforms.filter((p) => p.active).map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </select>
+                  )}
+                  {affKind === "commercial" && (
+                    <select style={{ ...inp, marginBottom: 8 }} value={affCommercial} onChange={(e) => setAffCommercial(e.target.value)}>
+                      <option value="">— choisir —</option>
+                      {users.filter((u) => u.is_commercial).map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
+                    </select>
+                  )}
+                  {affKind !== "none" && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input style={inp} type="number" min={0} value={affBase} onChange={(e) => setAffBase(Number(e.target.value))} placeholder="€ fixe" />
+                      <input style={inp} type="number" min={0} max={100} value={affPct} onChange={(e) => setAffPct(Number(e.target.value))} placeholder="% négo" />
+                      <select style={inp} value={affTrigger} onChange={(e) => setAffTrigger(e.target.value as "signed" | "honored")}>
+                        <option value="signed">Au signé</option>
+                        <option value="honored">À l'honoré</option>
+                      </select>
+                    </div>
+                  )}
+                </Field>
               )}
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: T.ink2 }}>
                 <input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} /> Envoyer un mail avec l&apos;identifiant et le mot de passe
               </label>
               <button onClick={addUser} disabled={busy || !name.trim() || !username.trim() || !password.trim()} style={{ height: 44, borderRadius: R.sm, border: "none", background: busy ? T.surface3 : T.brand, color: busy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: busy ? "not-allowed" : "pointer" }}>
-                {busy ? "…" : type === "commercial" ? "Créer le commercial" : type === "telepro" ? "Créer le téléprospecteur" : type === "gestionnaire" ? "Créer le gestionnaire" : "Créer l'associé"}
+                {busy ? "…" : type === "commercial" ? "Créer le commercial" : "Créer le téléprospecteur"}
               </button>
             </div>
           )}
@@ -1082,8 +1206,6 @@ function Comptes() {
             {([
               { patchKey: "isCommercial", userKey: "is_commercial", label: "Commercial", desc: "Réalise les RDV, reçoit les leads." },
               { patchKey: "isTeleprospector", userKey: "is_teleprospector", label: "Téléprospecteur", desc: "Crée les RDV pour le compte de commerciaux." },
-              { patchKey: "isGestionnaire", userKey: "is_gestionnaire", label: "Gestionnaire", desc: "Négocie et pilote les deals de rémunération." },
-              { patchKey: "isAssocie", userKey: "is_associe", label: "Associé", desc: "Partage un bénéfice sur les deals." },
             ] as const).map((r) => {
               const on = !!roleModalUser[r.userKey];
               return (
@@ -1163,6 +1285,77 @@ function Comptes() {
           </Fenetre>
         );
       })()}
+
+      {affModalUser && (
+        <Fenetre titre={`Affiliation — ${affModalUser.name}`} onFermer={() => setAffModalUser(null)}>
+          <p style={{ marginTop: 0, fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
+            Une seule affiliation à la fois : plateforme (payé par la structure) ou commercial précis (qui le paie directement). Sans affiliation, ce téléprospecteur reste sur son barème par défaut.
+          </p>
+          <div style={{ display: "flex", gap: 6, marginBottom: S.md }}>
+            <button type="button" onClick={() => setAffModalKind("none")} style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: affModalKind === "none" ? "none" : `1px solid ${T.line}`, background: affModalKind === "none" ? T.ink : T.surface, color: affModalKind === "none" ? "#fff" : T.ink2 }}>Aucune</button>
+            <button type="button" onClick={() => setAffModalKind("platform")} style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: affModalKind === "platform" ? "none" : `1px solid ${T.line}`, background: affModalKind === "platform" ? T.ink : T.surface, color: affModalKind === "platform" ? "#fff" : T.ink2 }}>Plateforme</button>
+            <button type="button" onClick={() => setAffModalKind("commercial")} style={{ height: 32, padding: "0 12px", borderRadius: R.sm, fontSize: 12.5, fontWeight: 700, cursor: "pointer", border: affModalKind === "commercial" ? "none" : `1px solid ${T.line}`, background: affModalKind === "commercial" ? T.ink : T.surface, color: affModalKind === "commercial" ? "#fff" : T.ink2 }}>Commercial précis</button>
+          </div>
+          {affModalKind === "platform" && (
+            <Field label="Plateforme">
+              <select style={inp} value={affModalPlatform} onChange={(e) => setAffModalPlatform(e.target.value)}>
+                <option value="">— choisir —</option>
+                {platforms.filter((p) => p.active).map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {affModalKind === "commercial" && (
+            <Field label="Commercial">
+              <select style={inp} value={affModalCommercial} onChange={(e) => setAffModalCommercial(e.target.value)}>
+                <option value="">— choisir —</option>
+                {users.filter((u) => u.is_commercial).map((u) => <option key={u.id} value={u.email}>{u.name}</option>)}
+              </select>
+            </Field>
+          )}
+          {affModalKind !== "none" && (
+            <Field label="€ fixe / RDV + % négo">
+              <div style={{ display: "flex", gap: 8 }}>
+                <input style={inp} type="number" min={0} value={affModalBase} onChange={(e) => setAffModalBase(Number(e.target.value))} placeholder="€" />
+                <input style={inp} type="number" min={0} max={100} value={affModalPct} onChange={(e) => setAffModalPct(Number(e.target.value))} placeholder="%" />
+              </div>
+            </Field>
+          )}
+          {affModalKind !== "none" && (
+            <Field label="Déclencheur">
+              <select style={inp} value={affModalTrigger} onChange={(e) => setAffModalTrigger(e.target.value as "signed" | "honored")}>
+                <option value="signed">Au mandat signé</option>
+                <option value="honored">Dès que le client est venu</option>
+              </select>
+            </Field>
+          )}
+          <button onClick={enregistrerAffiliation} disabled={affModalBusy} style={{ marginTop: S.md, height: 44, width: "100%", borderRadius: R.sm, border: "none", background: affModalBusy ? T.surface3 : T.brand, color: affModalBusy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: affModalBusy ? "not-allowed" : "pointer" }}>
+            {affModalBusy ? "…" : "Enregistrer"}
+          </button>
+        </Fenetre>
+      )}
+
+      {assignAmountFor && (
+        <Fenetre titre={`${assignAmountFor.user.name} — combien il paye pour ce call center`} onFermer={() => setAssignAmountFor(null)}>
+          <p style={{ marginTop: 0, fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
+            Facultatif — laisse à 0 si ce commercial ne paye rien de spécifique pour ce call center.
+          </p>
+          <Field label="€ fixe / RDV + % négo">
+            <div style={{ display: "flex", gap: 8 }}>
+              <input style={inp} type="number" min={0} value={assignBase} onChange={(e) => setAssignBase(Number(e.target.value))} placeholder="€" />
+              <input style={inp} type="number" min={0} max={100} value={assignPct} onChange={(e) => setAssignPct(Number(e.target.value))} placeholder="%" />
+            </div>
+          </Field>
+          <Field label="Ça se déclenche quand ?">
+            <select style={inp} value={assignTrigger} onChange={(e) => setAssignTrigger(e.target.value as "signed" | "honored")}>
+              <option value="signed">Au mandat signé</option>
+              <option value="honored">Dès que le client est venu</option>
+            </select>
+          </Field>
+          <button onClick={confirmerAssignation} disabled={assignBusy} style={{ marginTop: S.md, height: 44, width: "100%", borderRadius: R.sm, border: "none", background: assignBusy ? T.surface3 : T.brand, color: assignBusy ? T.ink3 : "#fff", fontWeight: 700, fontSize: 14.5, cursor: assignBusy ? "not-allowed" : "pointer" }}>
+            {assignBusy ? "…" : "Enregistrer"}
+          </button>
+        </Fenetre>
+      )}
     </>
   );
 
@@ -1190,8 +1383,6 @@ function Comptes() {
               )}
               {u.is_commercial && <Badge ton="succes">Commercial</Badge>}
               {u.is_teleprospector && <Badge ton="info">Téléprospecteur</Badge>}
-              {u.is_gestionnaire && <Badge ton="info">Gestionnaire</Badge>}
-              {u.is_associe && <Badge ton="succes">Associé</Badge>}
               {u.role === "responsable" && <Badge ton="neutre">Responsable</Badge>}
               {u.active === false && <Badge ton="danger">Désactivé</Badge>}
             </div>
@@ -1236,23 +1427,32 @@ function Comptes() {
           );
         })()}
 
-        {isAdmin && u.is_teleprospector && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
-            <span style={{ fontSize: 12, color: T.ink3 }}>Commission (€ + % négo) :</span>
-            <input id={`tb-${u.id}`} type="number" min={0} defaultValue={u.commission_base ?? 0} style={{ width: 70, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }} />
-            <input id={`tp-${u.id}`} type="number" min={0} max={100} defaultValue={u.commission_pct ?? 0} style={{ width: 60, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }} />
-            <button
-              onClick={() => {
-                const base = Number((document.getElementById(`tb-${u.id}`) as HTMLInputElement)?.value ?? 0);
-                const pct = Number((document.getElementById(`tp-${u.id}`) as HTMLInputElement)?.value ?? 0);
-                patch(u.id, { commissionBase: base, commissionPct: pct });
-              }}
-              style={{ height: 30, padding: "0 12px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
-            >
-              Enregistrer
-            </button>
-          </div>
-        )}
+        {isAdmin && u.is_teleprospector && (() => {
+          const aff = affiliations.find((a) => a.payee_email.toLowerCase() === u.email.toLowerCase());
+          return (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: S.sm, paddingTop: S.sm, borderTop: `1px solid ${T.line}` }}>
+              <span style={{ fontSize: 12, color: T.ink3 }}>Barème par défaut (€ + % négo) :</span>
+              <input id={`tb-${u.id}`} type="number" min={0} defaultValue={u.commission_base ?? 0} style={{ width: 70, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }} />
+              <input id={`tp-${u.id}`} type="number" min={0} max={100} defaultValue={u.commission_pct ?? 0} style={{ width: 60, height: 30, padding: "0 8px", borderRadius: R.sm, border: `1px solid ${T.line}`, fontSize: 13 }} />
+              <button
+                onClick={() => {
+                  const base = Number((document.getElementById(`tb-${u.id}`) as HTMLInputElement)?.value ?? 0);
+                  const pct = Number((document.getElementById(`tp-${u.id}`) as HTMLInputElement)?.value ?? 0);
+                  patch(u.id, { commissionBase: base, commissionPct: pct });
+                }}
+                style={{ height: 30, padding: "0 12px", borderRadius: R.sm, border: "none", background: T.brand, color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+              >
+                Enregistrer
+              </button>
+              <span style={{ fontSize: 12, color: T.ink3, marginLeft: 8 }}>
+                Affiliation : {aff ? (aff.platform ? `plateforme ${aff.platform}` : aff.commercial_name ?? aff.commercial_email) : "aucune"}
+              </span>
+              <button onClick={() => ouvrirAffiliation(u)} style={{ height: 30, padding: "0 12px", borderRadius: R.sm, border: `1px solid ${T.line}`, background: T.surface, color: T.ink2, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                Modifier
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Rémunération : barèmes retirés le temps de refaire la page Barèmes (chiffres non fiables). */}
       </div>
@@ -1261,5 +1461,5 @@ function Comptes() {
 }
 
 export default function Page() {
-  return <EspaceAgenceShell active="comptes"><Comptes /></EspaceAgenceShell>;
+  return <AppShell active="comptes"><Comptes /></AppShell>;
 }

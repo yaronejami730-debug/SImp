@@ -31,10 +31,11 @@ type Stats = {
   negoTotal?: number;
   scheme?: { base: number; pct: number };
   signedList?: { firstName: string; lastName: string; car: string; commercial: string; date: string | null }[];
-  // Responsable/Gestionnaire fields
-  byCommercial?: { name: string; email?: string; signed: number; total: number; totalOwed?: number; callCenterPortion?: number; beneficiaryPortion?: number }[];
-  // For debugging/layout
-  viewerRole?: "commercial" | "responsable" | "gestionnaire" | "admin";
+  // Admin uniquement : détail par commercial.
+  byCommercial?: { name: string; email?: string; signed: number; total: number; totalOwed?: number }[];
+  // Responsable : total agrégé de son call center, jamais le détail par personne.
+  ccResume?: { totalCommerciaux: number; totalCallCenter: number };
+  viewerRole?: "commercial" | "responsable" | "admin";
 };
 
 const eur = (n: number) => n.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -152,8 +153,8 @@ function StatsView({ data, from, to, onRange, busy }: {
   data: Stats; from: string; to: string;
   onRange: (from: string, to: string) => void; busy: boolean;
 }) {
-  const isCommercial = !data.byCommercial || data.commission !== undefined;
-  const isGestionnaire = data.viewerRole === "gestionnaire";
+  const isCommercial = data.viewerRole === "commercial";
+  const isResponsable = data.viewerRole === "responsable";
 
   return (
     <div style={{ opacity: busy ? 0.55 : 1, transition: "opacity .15s", display: "grid", gap: 16 }}>
@@ -161,7 +162,7 @@ function StatsView({ data, from, to, onRange, busy }: {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
           <div>
             <h1 style={{ margin: 0, fontFamily: "'Cabin',sans-serif", fontSize: 24, fontWeight: 700, color: NAVY }}>
-              {isCommercial ? "Mes paiements" : isGestionnaire ? "Rémunérations (vue complète)" : "Rémunérations"}
+              {isCommercial ? "Mes paiements" : "Rémunérations"}
             </h1>
             <p style={{ margin: "4px 0 0", fontSize: 13, color: MUTED }}>Du {fmtFr(data.from)} au {fmtFr(data.to)}</p>
           </div>
@@ -230,12 +231,10 @@ function StatsView({ data, from, to, onRange, busy }: {
         </>
       )}
 
-      {/* === RESPONSABLE / GESTIONNAIRE VIEW === */}
-      {!isCommercial && (
+      {/* === ADMIN VIEW : détail par commercial === */}
+      {!isCommercial && !isResponsable && (
         <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
-          <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>
-            {isGestionnaire ? "Commerciaux & Répartition" : "Rémunération des commerciaux"}
-          </h2>
+          <h2 style={{ margin: "0 0 16px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Rémunération des commerciaux</h2>
           {(data.byCommercial ?? []).length === 0 ? (
             <div style={{ fontSize: 13, color: MUTED }}>Aucun RDV sur la période.</div>
           ) : (
@@ -247,12 +246,6 @@ function StatsView({ data, from, to, onRange, busy }: {
                     <th style={{ textAlign: "center", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Signés</th>
                     <th style={{ textAlign: "center", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Total RDV</th>
                     <th style={{ textAlign: "right", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>À payer</th>
-                    {isGestionnaire && (
-                      <>
-                        <th style={{ textAlign: "right", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>CC (share %)</th>
-                        <th style={{ textAlign: "right", padding: "12px 8px", fontSize: 13, fontWeight: 600, color: NAVY }}>Gestionnaire</th>
-                      </>
-                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -262,12 +255,6 @@ function StatsView({ data, from, to, onRange, busy }: {
                       <td style={{ padding: "12px 8px", textAlign: "center", fontSize: 14, color: GREEN, fontWeight: 600 }}>{c.signed}</td>
                       <td style={{ padding: "12px 8px", textAlign: "center", fontSize: 13, color: MUTED }}>{c.total}</td>
                       <td style={{ padding: "12px 8px", textAlign: "right", fontSize: 14, fontWeight: 600, color: NAVY }}>{eur(c.totalOwed ?? 0)}</td>
-                      {isGestionnaire && (
-                        <>
-                          <td style={{ padding: "12px 8px", textAlign: "right", fontSize: 14, color: "#6366f1", fontWeight: 600 }}>{eur(c.callCenterPortion ?? 0)}</td>
-                          <td style={{ padding: "12px 8px", textAlign: "right", fontSize: 14, color: "#f59e0b", fontWeight: 600 }}>{eur(c.beneficiaryPortion ?? 0)}</td>
-                        </>
-                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -275,6 +262,22 @@ function StatsView({ data, from, to, onRange, busy }: {
             </div>
           )}
         </section>
+      )}
+
+      {/* === RESPONSABLE VIEW : totaux agrégés de son call center, jamais le détail par personne === */}
+      {isResponsable && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
+          <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
+            <h2 style={{ margin: "0 0 12px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Dû aux commerciaux</h2>
+            <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 40, fontWeight: 700, color: NAVY, lineHeight: 1 }}>{eur(data.ccResume?.totalCommerciaux ?? 0)}</div>
+            <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>total de ton call center sur la période</div>
+          </section>
+          <section style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: 22 }}>
+            <h2 style={{ margin: "0 0 12px", fontFamily: "'Cabin',sans-serif", fontSize: 14, fontWeight: 700, color: NAVY }}>Dû à ton call center</h2>
+            <div style={{ fontFamily: "'Cabin',sans-serif", fontSize: 40, fontWeight: 700, color: GREEN, lineHeight: 1 }}>{eur(data.ccResume?.totalCallCenter ?? 0)}</div>
+            <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>selon le barème fixé à la création du call center</div>
+          </section>
+        </div>
       )}
     </div>
   );

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Shell from "@/components/Shell";
-import { PricingAgreement } from "@/components/PricingAgreement";
 import { authHeaders, sessionExpiree, getUser } from "@/lib/client";
 import {
   PageHeader, Card, StatCard, StatRow, Badge, Button, Field, FormGrid, DataTable, Euro, DateRange, champ, T, S, R, type Colonne, type Ton,
@@ -117,10 +116,13 @@ function PaiementsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [mesDeals, setMesDeals] = useState<string[]>([]);
-  const [mesRdvDus, setMesRdvDus] = useState<{ apptId: string; date: string | null; client: string; total: number; declencheur: string; gestionnaireName: string }[]>([]);
-  const [mesAccordsDirects, setMesAccordsDirects] = useState<{ id: number; commercial_email: string; commercial_name: string | null; base_eur: string; pct_nego: string; sold_eur: string; sold_pct: string; sold_pct_base: "negocie" | "plusvalue"; trigger_kind: string }[]>([]);
+  const [mesRdvDus, setMesRdvDus] = useState<{ apptId: string; date: string | null; client: string; total: number; declencheur: string; payeeName: string }[]>([]);
+  const [mesAccordsDirects, setMesAccordsDirects] = useState<{ id: number; commercial_email: string; commercial_name: string | null; platform: string | null; base_eur: string; pct_nego: string; sold_eur: string; sold_pct: string; sold_pct_base: "negocie" | "plusvalue"; trigger_kind: string }[]>([]);
   const [commerciauxDispo, setCommerciauxDispo] = useState<{ email: string; name: string }[]>([]);
+  const [platformsDispo, setPlatformsDispo] = useState<{ id: number; name: string }[]>([]);
   const [accordFormOuvert, setAccordFormOuvert] = useState(false);
+  const [accordAffiliation, setAccordAffiliation] = useState<"platform" | "commercial">("platform");
+  const [accordPlatform, setAccordPlatform] = useState("");
   const [accordCommercial, setAccordCommercial] = useState("");
   const [accordBase, setAccordBase] = useState("");
   const [accordPct, setAccordPct] = useState("");
@@ -142,23 +144,29 @@ function PaiementsPage() {
     fetch("/api/me", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
       if (d.ok) setCommerciauxDispo(d.commercials ?? []);
     }).catch(() => {});
+    fetch("/api/platforms", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
+      if (d.ok) setPlatformsDispo(d.platforms ?? []);
+    }).catch(() => {});
   }, [chargerAccordsDirects]);
 
   async function creerAccordDirect() {
-    if (!accordCommercial) { alert("Choisis le commercial."); return; }
+    if (accordAffiliation === "platform" && !accordPlatform) { alert("Choisis la plateforme."); return; }
+    if (accordAffiliation === "commercial" && !accordCommercial) { alert("Choisis le commercial."); return; }
     if (!accordBase && !accordPct && !accordSoldEur && !accordSoldPct) { alert("Indique un montant fixe ou un pourcentage."); return; }
     setSavingAccord(true);
     try {
       const res = await fetch("/api/accords-telepro", {
         method: "POST", headers: authHeaders({ "content-type": "application/json" }),
         body: JSON.stringify({
-          commercialEmail: accordCommercial, baseEur: parseFloat(accordBase) || 0, pctNego: parseFloat(accordPct) || 0, trigger: accordTrigger,
+          platform: accordAffiliation === "platform" ? accordPlatform : undefined,
+          commercialEmail: accordAffiliation === "commercial" ? accordCommercial : undefined,
+          baseEur: parseFloat(accordBase) || 0, pctNego: parseFloat(accordPct) || 0, trigger: accordTrigger,
           soldEur: parseFloat(accordSoldEur) || 0, soldPct: parseFloat(accordSoldPct) || 0, soldPctBase: accordSoldBase,
         }),
       });
       const d = await res.json();
       if (!d.ok) { alert(d.error ?? "Erreur"); return; }
-      setAccordCommercial(""); setAccordBase(""); setAccordPct(""); setAccordSoldEur(""); setAccordSoldPct(""); setAccordSoldBase("negocie"); setAccordFormOuvert(false);
+      setAccordPlatform(""); setAccordCommercial(""); setAccordBase(""); setAccordPct(""); setAccordSoldEur(""); setAccordSoldPct(""); setAccordSoldBase("negocie"); setAccordFormOuvert(false);
       chargerAccordsDirects();
     } finally {
       setSavingAccord(false);
@@ -174,23 +182,9 @@ function PaiementsPage() {
   useEffect(() => {
     fetch("/api/deals", { headers: authHeaders() }).then((r) => r.json()).then((d) => {
       if (!d.ok) return;
-      const me = (d.myEmail as string) ?? "";
-      // Vue commercial : jamais le détail interne (gestionnaire, associés, répartition) —
-      // juste "je paie X €, je travaille avec Y" (mesDealsSimplifies, déjà groupé côté API).
-      const simplifies = (d.mesDealsSimplifies as { explain: string }[] ?? []).map((x) => x.explain);
-      // Vue bénéficiaire (téléprospecteur, associé…) sur un deal dont je ne suis PAS le commercial :
-      // là, montrer son propre montant ne révèle la part de personne d'autre.
-      const recus = (d.deals as { payer_email: string; payee_email: string; commercial_email: string; explain: string }[])
-        .filter((x) => x.payee_email.toLowerCase() === me && x.commercial_email.toLowerCase() !== me)
-        .map((x) => x.explain);
-      // Accords directs indépendants (téléprospecteur↔commercial, sans call center ni deal_ref)
-      // où JE suis le commercial qui paie : accord simple 1:1, rien à cacher. Ne PAS élargir ce
-      // filtre à payee_kind !== 'telepro' — un deal broker (gestionnaire/call_center/associé) créé
-      // sans deal_ref (données historiques) doit rester invisible en détail au commercial.
-      const accordsDirectsPayes = (d.deals as { payer_email: string; deal_ref: string | null; payee_kind: string; call_center_id: number | null; explain: string }[])
-        .filter((x) => x.payer_email.toLowerCase() === me && !x.deal_ref && x.payee_kind === "telepro" && x.call_center_id == null)
-        .map((x) => x.explain);
-      setMesDeals([...simplifies, ...accordsDirectsPayes, ...recus]);
+      // Vue commercial : ce que je paie à un téléprospecteur affilié à moi — jamais le détail
+      // interne de son propre barème (mesDealsSimplifies, déjà scopé "payer = moi" côté API).
+      setMesDeals((d.mesDealsSimplifies as { explain: string }[] ?? []).map((x) => x.explain));
       setMesRdvDus(d.mesRdvDus ?? []);
     }).catch(() => {});
   }, []);
@@ -395,7 +389,7 @@ function PaiementsPage() {
                 {mesRdvDus.map((r) => (
                   <div key={r.apptId} style={{ fontSize: 13.5, padding: "6px 0", borderTop: `1px solid ${T.line}`, display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <span>{fmtDate(r.date)} — {r.client || "Client"} ({r.declencheur})</span>
-                    <span style={{ fontWeight: 700 }}>{eur(r.total)} à {r.gestionnaireName}</span>
+                    <span style={{ fontWeight: 700 }}>{eur(r.total)} à {r.payeeName}</span>
                   </div>
                 ))}
               </div>
@@ -406,19 +400,32 @@ function PaiementsPage() {
 
       {estTeleprospecteur && (
         <Card
-          title="Accord direct"
-          description="Un accord direct que tu passes toi-même avec un commercial précis : il te paie directement pour chaque rendez-vous que tu lui apportes, sans passer par un call center ni un gestionnaire."
-          actions={<Button variante={accordFormOuvert ? "secondaire" : "principal"} onClick={() => setAccordFormOuvert((v) => !v)}>{accordFormOuvert ? "Fermer" : "+ Nouvel accord"}</Button>}
+          title="Mon affiliation"
+          description="Une seule affiliation à la fois : soit une plateforme (payée par la structure sur chaque RDV signé sous cette plateforme), soit un commercial précis (qui te paie directement pour chaque rendez-vous que tu lui apportes)."
+          actions={<Button variante={accordFormOuvert ? "secondaire" : "principal"} onClick={() => setAccordFormOuvert((v) => !v)}>{accordFormOuvert ? "Fermer" : "+ Nouvelle affiliation"}</Button>}
         >
           {accordFormOuvert && (
             <div style={{ background: T.surface2, border: `1px solid ${T.line}`, borderRadius: 12, padding: S.md, marginBottom: S.md }}>
+              <div style={{ display: "flex", gap: 6, marginBottom: S.md }}>
+                <Button variante={accordAffiliation === "platform" ? "principal" : "secondaire"} onClick={() => setAccordAffiliation("platform")}>Plateforme</Button>
+                <Button variante={accordAffiliation === "commercial" ? "principal" : "secondaire"} onClick={() => setAccordAffiliation("commercial")}>Commercial précis</Button>
+              </div>
               <FormGrid>
-                <Field label="Avec quel commercial ?">
-                  <select value={accordCommercial} onChange={(e) => setAccordCommercial(e.target.value)} style={champ}>
-                    <option value="">— à choisir —</option>
-                    {commerciauxDispo.map((c) => <option key={c.email} value={c.email}>{c.name}</option>)}
-                  </select>
-                </Field>
+                {accordAffiliation === "platform" ? (
+                  <Field label="Quelle plateforme ?">
+                    <select value={accordPlatform} onChange={(e) => setAccordPlatform(e.target.value)} style={champ}>
+                      <option value="">— à choisir —</option>
+                      {platformsDispo.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </select>
+                  </Field>
+                ) : (
+                  <Field label="Avec quel commercial ?">
+                    <select value={accordCommercial} onChange={(e) => setAccordCommercial(e.target.value)} style={champ}>
+                      <option value="">— à choisir —</option>
+                      {commerciauxDispo.map((c) => <option key={c.email} value={c.email}>{c.name}</option>)}
+                    </select>
+                  </Field>
+                )}
                 <Field label="Ça se déclenche quand ?">
                   <select value={accordTrigger} onChange={(e) => setAccordTrigger(e.target.value as "signed" | "honored")} style={champ}>
                     <option value="signed">Au mandat signé</option>
@@ -447,13 +454,14 @@ function PaiementsPage() {
             </div>
           )}
           {mesAccordsDirects.length === 0 ? (
-            <div style={{ color: T.ink2, fontSize: 14 }}>Aucun accord direct pour l&apos;instant.</div>
+            <div style={{ color: T.ink2, fontSize: 14 }}>Aucune affiliation pour l&apos;instant — tu restes sur ton barème par défaut.</div>
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {mesAccordsDirects.map((a) => (
                 <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: S.md, padding: "8px 0", borderTop: `1px solid ${T.line}` }}>
                   <div style={{ fontSize: 14 }}>
-                    <strong>{a.commercial_name ?? a.commercial_email}</strong> te paie {Number(a.base_eur) > 0 ? <Euro montant={Number(a.base_eur)} /> : null}
+                    <strong>{a.platform ? `Plateforme ${a.platform}` : (a.commercial_name ?? a.commercial_email)}</strong>
+                    {" "}{a.platform ? "te paie (via la structure)" : "te paie"} {Number(a.base_eur) > 0 ? <Euro montant={Number(a.base_eur)} /> : null}
                     {Number(a.pct_nego) > 0 ? ` + ${Number(a.pct_nego)} % du négocié` : ""}
                     {" "}{a.trigger_kind === "honored" ? "dès que le client est venu" : "au mandat signé"}.
                     {(Number(a.sold_eur) > 0 || Number(a.sold_pct) > 0) && (
@@ -573,7 +581,6 @@ function PaiementsPage() {
       </Card>
       )}
 
-      {!recoit && <PricingAgreement />}
     </Shell>
   );
 }

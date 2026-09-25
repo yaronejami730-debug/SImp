@@ -50,17 +50,10 @@ export async function GET(req: Request) {
       (!a.operatedByEmail && !!a.operatedBy && !!myName && tokset(a.operatedBy) === myName) ||
       (!!a.commercialEmail && delegatedEmails.has(a.commercialEmail.toLowerCase())) ||
       (!a.commercialEmail && delegatedNames.has(tokset(a.commercial)));
-    // Visibilité : super-admin = tout ; responsable = son call center ;
-    // sinon : mes RDV créés + affectés + ceux des call centers dont je suis GESTIONNAIRE.
-    const { listCallCenters } = await import("@/lib/callcenters");
-    const managedCc = new Set(
-      (await listCallCenters().catch(() => []))
-        .filter((c) => (c.gestionnaire_email ?? "").toLowerCase() === myEmail)
-        .map((c) => c.id),
-    );
+    // Visibilité : super-admin = tout ; responsable = son call center ; sinon mes RDV créés + affectés.
     const visibleByRole = s.role === "admin" ? items
-      : s.role === "responsable" ? items.filter((a) => a.callCenterId === s.callCenterId || managedCc.has(a.callCenterId ?? 1))
-      : items.filter((a) => isCreator(a) || isAssignee(a) || managedCc.has(a.callCenterId ?? 1));
+      : s.role === "responsable" ? items.filter((a) => a.callCenterId === s.callCenterId)
+      : items.filter((a) => isCreator(a) || isAssignee(a));
     // Navigation sous un slug d'agence (/simplicicar-paris-17e/agenda) : restreint même un
     // super-admin à cette agence (elle-même + descendants), comme s'il n'était connecté qu'à elle.
     const agenceScope = await agenceScopeCcIds(req);

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserByLogin } from "@/lib/users";
-import { themeForCallCenter, isGestionnaireEmail } from "@/lib/callcenters";
+import { themeForCallCenter } from "@/lib/callcenters";
 import { verifyPassword, signToken } from "@/lib/auth";
 
 export const maxDuration = 30;
@@ -24,13 +24,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Compte désactivé. Contacte ton administrateur." }, { status: 403 });
     }
     // Thème de la franchise (racine de la hiérarchie) -> l'interface prend les couleurs de sa marque.
-    const [theme, isGestionnaire] = await Promise.all([
-      themeForCallCenter(u.call_center_id ?? 1).catch(() => null),
-      isGestionnaireEmail(u.email).catch(() => false),
-    ]);
-    // isGestionnaire/isAssocie dans le token (RÈGLE ROLE-002) — comme isCommercial/isTeleprospector déjà.
-    const session = { email: u.email, name: u.name, role: u.role, callCenterId: u.call_center_id ?? 1, isCommercial: !!u.is_commercial, isTeleprospector: !!u.is_teleprospector, isGestionnaire, isAssocie: !!u.is_associe };
-    return NextResponse.json({ ok: true, token: signToken(session), ...session, isGestionnaire, theme });
+    const theme = await themeForCallCenter(u.call_center_id ?? 1).catch(() => null);
+    const session = { email: u.email, name: u.name, role: u.role, callCenterId: u.call_center_id ?? 1, isCommercial: !!u.is_commercial, isTeleprospector: !!u.is_teleprospector };
+    return NextResponse.json({ ok: true, token: signToken(session), ...session, theme });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });
   }

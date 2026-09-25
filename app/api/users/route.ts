@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { listUsers, createUser, deleteUser, updateUserFlags } from "@/lib/users";
 import { nameAndSlugForCallCenter } from "@/lib/callcenters";
-import { schemeByKey } from "@/lib/commission";
 import { getAuth } from "@/lib/auth";
 import { agenceScopeCcIds } from "@/lib/agence-scope";
 import { sendEmail } from "@/lib/brevo";
@@ -38,8 +37,8 @@ export async function POST(req: Request) {
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
     const b = (await req.json()) as {
-      type?: "commercial" | "telepro" | "admin" | "gestionnaire" | "associe";
-      email?: string; password?: string; name?: string; phone?: string; schemeKey?: string; callCenterId?: number; username?: string;
+      type?: "commercial" | "telepro" | "admin";
+      email?: string; password?: string; name?: string; phone?: string; callCenterId?: number; username?: string;
       commissionBase?: number; commissionPct?: number; notifyEmail?: boolean;
     };
     if (!b.username?.trim() || !b.password?.trim() || !b.name?.trim()) {
@@ -57,22 +56,20 @@ export async function POST(req: Request) {
       const user = await createUser({ email: b.email, username: b.username, password: b.password, name: b.name, role: "admin", callCenterId: 1 });
       return NextResponse.json({ ok: true, user });
     }
-    // Barème libre (€ fixe + % négo) si fourni, sinon le schéma par défaut — sans objet pour
-    // gestionnaire/associé (leur argent vient des deals, pas d'un commission_base sur le compte).
-    const sch = schemeByKey(b.schemeKey);
-    const commissionBase = b.type === "gestionnaire" || b.type === "associe" ? 0 : b.commissionBase !== undefined ? Number(b.commissionBase) : sch.base;
-    const commissionPct = b.type === "gestionnaire" || b.type === "associe" ? 0 : b.commissionPct !== undefined ? Number(b.commissionPct) : sch.pct;
+    // Barème libre (€ fixe + % négo) — RIEN par défaut, c'est l'admin qui le fixe. Sert de
+    // fallback pour un téléprospecteur sans affiliation plateforme/commercial (voir /api/accords-telepro).
+    const commissionBase = Number(b.commissionBase ?? 0);
+    const commissionPct = Number(b.commissionPct ?? 0);
     const isCommercial = b.type === "commercial";
     const isTeleprospector = b.type === "telepro";
     // Admin peut cibler un call center précis (panneau call center) ; sinon son propre CC.
     const callCenterId = s.role === "admin" ? (b.callCenterId && b.callCenterId > 0 ? b.callCenterId : 1) : s.callCenterId;
     // Le type choisi à la création ne fait que poser le PREMIER rôle — cumulable ensuite
-    // (toggles Commercial/Téléprospecteur/Gestionnaire/Associé dans la fiche du compte).
+    // (toggles Commercial/Téléprospecteur dans la fiche du compte).
     const user = await createUser({
       email: b.email, username: b.username, password: b.password, name: b.name, role: "collab",
       callCenterId, commissionBase, commissionPct, phone: b.phone,
       isCommercial, isTeleprospector,
-      isGestionnaire: b.type === "gestionnaire", isAssocie: b.type === "associe",
     });
     // Lien de connexion PERMANENT de l'agence rattachée (pas un lien d'activation à usage
     // unique) — tout le monde chez elle se connecte toujours à la même adresse.
@@ -99,23 +96,18 @@ export async function PATCH(req: Request) {
   if (!s) return NextResponse.json({ error: "Réservé admin." }, { status: 403 });
   try {
     const b = (await req.json()) as {
-      id?: number; isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean; isAssocie?: boolean; active?: boolean; phone?: string;
-      schemeKey?: string; commissionBase?: number; commissionPct?: number; password?: string; autoAssign?: boolean;
+      id?: number; isCommercial?: boolean; isTeleprospector?: boolean; active?: boolean; phone?: string;
+      commissionBase?: number; commissionPct?: number; password?: string; autoAssign?: boolean;
     };
     if (!b.id) return NextResponse.json({ error: "id manquant." }, { status: 400 });
     if (s.role === "responsable" && !(await sameCallCenter(b.id, s.callCenterId))) {
       return NextResponse.json({ error: "Compte hors de votre call center." }, { status: 403 });
     }
-    // Gestionnaire/associé : rôles cumulables, réservés au super-admin (comme la création).
-    if (s.role !== "admin" && (b.isGestionnaire !== undefined || b.isAssocie !== undefined)) {
-      return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
-    }
     const patch: Parameters<typeof updateUserFlags>[1] = {
       isCommercial: b.isCommercial, isTeleprospector: b.isTeleprospector, active: b.active, phone: b.phone,
-      isGestionnaire: b.isGestionnaire, isAssocie: b.isAssocie, autoAssign: b.autoAssign,
+      autoAssign: b.autoAssign,
     };
-    if (b.schemeKey) { const sch = schemeByKey(b.schemeKey); patch.commissionBase = sch.base; patch.commissionPct = sch.pct; }
-    // Accord direct sur-mesure (montants libres, ex: 60€ négociés avec ce commercial précis) — admin uniquement.
+    // Barème (montants libres) — admin uniquement.
     if (s.role === "admin" && (b.commissionBase !== undefined || b.commissionPct !== undefined)) {
       if (b.commissionBase !== undefined) patch.commissionBase = Number(b.commissionBase);
       if (b.commissionPct !== undefined) patch.commissionPct = Number(b.commissionPct);

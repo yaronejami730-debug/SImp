@@ -18,7 +18,7 @@ export function verifyPassword(pw: string, stored: string): boolean {
 }
 
 export type Role = "admin" | "responsable" | "collab";
-export type Session = { email: string; name: string; role: Role; callCenterId: number; isCommercial?: boolean; isTeleprospector?: boolean; isGestionnaire?: boolean; isAssocie?: boolean };
+export type Session = { email: string; name: string; role: Role; callCenterId: number; isCommercial?: boolean; isTeleprospector?: boolean };
 
 export function signToken(s: Session): string {
   const body = Buffer.from(JSON.stringify({ ...s, exp: Date.now() + TOKEN_TTL })).toString("base64url");

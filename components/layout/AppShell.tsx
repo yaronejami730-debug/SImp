@@ -17,7 +17,6 @@ export default function AppShell({ active, children, wide }: { active: string; c
   const [pret, setPret] = useState(false);
   const [connecte, setConnecte] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
-  const [isGestionnaire, setIsGestionnaire] = useState<boolean | null>(null);
   const [espaceChoisi, setEspaceChoisi] = useState(false);
   const [agences, setAgences] = useState<{ id: number; name: string; slug: string }[]>([]);
 
@@ -35,19 +34,16 @@ export default function AppShell({ active, children, wide }: { active: string; c
     setPret(true);
   }, []);
 
-  // Statut gestionnaire vérifié en direct (pas seulement au login) : visible dans la nav
-  // dès qu'un admin te rattache à un call center, sans attendre une reconnexion.
-  // Même appel : si on n'est pas déjà sous un slug d'agence, on y bascule l'URL — TOUT compte,
-  // super-admin inclus, navigue toujours "dans" une agence (branding, mails...). Pour l'admin,
-  // priorité à la dernière agence choisie au sélecteur (getAgencePref), sinon celle par défaut
-  // de son compte (agenceSlug, voir /api/me).
+  // Si on n'est pas déjà sous un slug d'agence, on y bascule l'URL — TOUT compte, super-admin
+  // inclus, navigue toujours "dans" une agence (branding, mails...). Pour l'admin, priorité à
+  // la dernière agence choisie au sélecteur (getAgencePref), sinon celle par défaut de son
+  // compte (agenceSlug, voir /api/me).
   useEffect(() => {
     if (!connecte) return;
     fetch("/api/me", { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => {
         if (!d.ok) return;
-        setIsGestionnaire(!!d.isGestionnaire);
         const cible = (d.role === "admin" ? getAgencePref() : null) || d.agenceSlug;
         if (cible && !getAgenceSlug()) {
           window.location.href = `/${cible}${window.location.pathname}${window.location.search}`;
@@ -114,7 +110,7 @@ export default function AppShell({ active, children, wide }: { active: string; c
       </div>
     );
   }
-  const user = userBase && isGestionnaire !== null ? { ...userBase, isGestionnaire } : userBase;
+  const user = userBase;
   // Sous un préfixe de slug d'agence (/simplicicar-paris-17e/...), le thème de CETTE agence
   // prime sur celui du compte connecté — même compte, image de marque de l'agence visitée.
   const theme = getAgenceTheme() ?? getTheme();
@@ -130,7 +126,7 @@ export default function AppShell({ active, children, wide }: { active: string; c
     localStorage.setItem("auth_user", backup.user);
     if (backup.theme) localStorage.setItem("auth_theme", backup.theme); else localStorage.removeItem("auth_theme");
     localStorage.removeItem("auth_backup");
-    window.location.href = "/prospection-agence/comptes";
+    window.location.href = "/comptes";
   }
 
   function deconnexion() {

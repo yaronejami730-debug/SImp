@@ -1,7 +1,7 @@
 import { getPool } from "./db";
 import { createUser } from "./users";
 
-export type CallCenter = { id: number; name: string; slug?: string | null; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; gestionnaire_email?: string; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string; telepro_pay_mode?: "gestionnaire" | "responsable"; active?: boolean; deleted_at?: string | null };
+export type CallCenter = { id: number; name: string; slug?: string | null; agence_only: boolean; responsable_email: string; responsable_email_2?: string | null; parent_id: number | null; brand_primary?: string; brand_dark?: string; logo_url?: string; active?: boolean; deleted_at?: string | null };
 
 /** Résout un slug d'URL (ex: "simplicicar-paris-17e") vers son call center — utilisé par
  *  middleware.ts pour déterminer sur quelle agence on navigue, sans changer de compte. */
@@ -53,15 +53,17 @@ export async function themeForCallCenter(ccId: number): Promise<BrandTheme | nul
     headerDark: !!root.header_dark,
   };
 }
-export type CallCenterDetail = CallCenter & { parent_name: string | null; commercials_count: number; telepros_count: number };
+export type CallCenterDetail = CallCenter & { parent_name: string | null; commercials_count: number; telepros_count: number; pay_base_eur: number; pay_pct_nego: number };
 
 export async function listCallCenters(): Promise<CallCenterDetail[]> {
   const { rows } = await getPool().query<CallCenterDetail>(
-    `select c.id, c.name, c.slug, c.agence_only, c.responsable_email, c.responsable_email_2, c.gestionnaire_email, c.parent_id,
-            c.brand_primary, c.brand_dark, c.logo_url, c.header_dark, c.telepro_pay_mode, c.active, c.deleted_at,
+    `select c.id, c.name, c.slug, c.agence_only, c.responsable_email, c.responsable_email_2, c.parent_id,
+            c.brand_primary, c.brand_dark, c.logo_url, c.header_dark, c.active, c.deleted_at,
             p.name as parent_name,
             (select count(*) from call_center_commercials x where x.call_center_id = c.id) as commercials_count,
-            (select count(*) from users u where u.call_center_id = c.id and u.is_teleprospector = true and u.active = true) as telepros_count
+            (select count(*) from users u where u.call_center_id = c.id and u.is_teleprospector = true and u.active = true) as telepros_count,
+            coalesce((select a.base_eur from remuneration_accords a where a.call_center_id = c.id and a.payee_kind = 'call_center' and a.active limit 1), 0) as pay_base_eur,
+            coalesce((select a.pct_nego from remuneration_accords a where a.call_center_id = c.id and a.payee_kind = 'call_center' and a.active limit 1), 0) as pay_pct_nego
        from call_centers c
        left join call_centers p on p.id = c.parent_id
       order by c.id`,
@@ -75,6 +77,8 @@ export async function listCallCenters(): Promise<CallCenterDetail[]> {
     active: r.active !== false,
     commercials_count: Number(r.commercials_count),
     telepros_count: Number(r.telepros_count),
+    pay_base_eur: Number(r.pay_base_eur ?? 0),
+    pay_pct_nego: Number(r.pay_pct_nego ?? 0),
   }));
 }
 
@@ -159,32 +163,6 @@ export async function createAgence(name: string): Promise<CallCenter> {
 /** Rattache un call center à une agence (parent). */
 export async function setCallCenterParent(ccId: number, parentId: number) {
   await getPool().query(`update call_centers set parent_id = $2 where id = $1`, [ccId, parentId]);
-}
-
-/** Définit le gestionnaire du call (celui qui touche la marge sur les signés du call center). */
-export async function setGestionnaire(ccId: number, email: string) {
-  await getPool().query(`update call_centers set gestionnaire_email = $2 where id = $1`, [ccId, email.trim().toLowerCase()]);
-}
-
-/** Cet e-mail est-il gestionnaire d'au moins un call center ? (apporteur d'affaires — rôle non exclusif :
- *  cumulable avec admin, responsable, commercial ou téléprospecteur, voir telepro_pay_mode / /baremes.) */
-/** "Être gestionnaire" = épinglé sur un call center (gestionnaire_email) OU flag de rôle
- *  is_gestionnaire coché sur le compte (Comptes > Rôles) — les deux signaux comptent (RÈGLE
- *  ROLE-001), sinon un compte avec le flag mais jamais épinglé garde les droits serveur côté
- *  /api/deals sans jamais voir le lien de navigation vers Deal. */
-export async function isGestionnaireEmail(email: string): Promise<boolean> {
-  const { rows } = await getPool().query<{ c: string }>(
-    `select count(*)::int as c from call_centers where lower(gestionnaire_email) = lower($1)
-     union all
-     select count(*)::int as c from users where lower(email) = lower($1) and is_gestionnaire = true`,
-    [email.trim()],
-  );
-  return rows.some((r) => Number(r.c) > 0);
-}
-
-/** Mode de rémunération télépros de ce call center (voir CallCenter.telepro_pay_mode). Super-admin uniquement. */
-export async function setTeleproPayMode(ccId: number, mode: "gestionnaire" | "responsable") {
-  await getPool().query(`update call_centers set telepro_pay_mode = $2 where id = $1`, [ccId, mode]);
 }
 
 /** Deuxième responsable (50/50 avec le premier, affichage uniquement) — vide pour retirer. */

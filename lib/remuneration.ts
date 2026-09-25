@@ -2,10 +2,11 @@ import { getPool } from "./db";
 import type { AppointmentItem } from "./google";
 
 /** MOTEUR DE RÉMUNÉRATION — 100 % piloté par la table remuneration_accords, rien en dur.
- *  Un accord = { portée (call center OU commercial), bénéficiaire, type, base €/signé, % négo }.
- *  Types : 'call_center' (le call touche X €/signé), 'gestionnaire' (l'apporteur du call),
- *          'telepro' (télépro indépendant payé par un commercial), 'apporteur' (% du négocié).
- *  Pour un RDV SIGNÉ, le moteur émet des lignes { bénéficiaire, montant } selon les accords actifs. */
+ *  Un accord = { portée (call center, plateforme et/ou commercial), bénéficiaire, type, base €/signé, % négo }.
+ *  Types : 'call_center' (le call center touche X €/signé), 'telepro' (télépro affilié à une
+ *          plateforme ou à un commercial précis), 'apporteur' (% du négocié).
+ *  Pour un RDV SIGNÉ, le moteur émet des lignes { bénéficiaire, montant } selon les accords actifs.
+ *  Une seule ligne par affiliation — pas de chaîne (plus de gestionnaire/associé). */
 
 export type TierMode = "none" | "threshold" | "progressive";
 /** Un palier de volume : à partir de `minCount` RDV pris ce jour-là (seuil, mode threshold)
@@ -14,8 +15,8 @@ export type TierMode = "none" | "threshold" | "progressive";
 export type Tier = { minCount: number; amountEur: number; pctNego: number };
 
 export type Accord = {
-  id: number; call_center_id: number | null; commercial_email: string;
-  payee_email: string; payee_kind: "call_center" | "gestionnaire" | "telepro" | "apporteur" | "associe";
+  id: number; call_center_id: number | null; commercial_email: string; platform: string | null;
+  payee_email: string; payee_kind: "call_center" | "telepro" | "apporteur";
   base_eur: number; pct_nego: number; sold_eur: number; sold_pct: number; // sortie : € fixes et/ou % du négocié, versés quand le véhicule est VENDU
   sold_pct_base: "negocie" | "plusvalue"; // base du % sortie : le négocié total, ou la plus-value (négocié - prix initial du mandat)
   trigger_kind: "signed" | "honored"; // entrée payée au mandat SIGNÉ ou dès que le RDV est HONORÉ (client venu)
@@ -37,7 +38,7 @@ type TierIndex = Map<number, Map<string, { count: number; rank: number }>>; // a
 
 export async function listAccords(): Promise<Accord[]> {
   const { rows } = await getPool().query<Accord & { tiers: { minCount: number; amountEur: string; pctNego: string }[] }>(
-    `select a.id, a.call_center_id, a.commercial_email, a.payee_email, a.payee_kind, a.base_eur, a.pct_nego,
+    `select a.id, a.call_center_id, a.commercial_email, a.platform, a.payee_email, a.payee_kind, a.base_eur, a.pct_nego,
             a.sold_eur, a.sold_pct, a.sold_pct_base, a.trigger_kind, a.payer_email, a.label, a.active, a.tier_mode,
             a.payment_method, a.payment_delay_days, a.includes_descendants, a.deal_ref, a.deal_name,
             coalesce(
@@ -51,6 +52,7 @@ export async function listAccords(): Promise<Accord[]> {
     ...r,
     id: Number(r.id),
     call_center_id: r.call_center_id == null ? null : Number(r.call_center_id),
+    platform: r.platform || null,
     base_eur: Number(r.base_eur), pct_nego: Number(r.pct_nego), sold_eur: Number(r.sold_eur ?? 0), sold_pct: Number(r.sold_pct ?? 0),
     trigger_kind: (r.trigger_kind === "honored" ? "honored" : "signed"),
     payer_email: (r.payer_email || "").toLowerCase(),
@@ -89,6 +91,14 @@ function scopeMatch(a: AppointmentItem, r: Accord, ancestry?: Ancestry): boolean
   const cc = a.callCenterId ?? 1;
   const commEmail = (a.commercialEmail || "").toLowerCase();
   const commName = tok(a.commercial || "");
+  // Portée "plateforme" : affiliation d'un téléprospecteur (ou apporteur) à une plateforme —
+  // exclusive du call center / commercial, ne matche que ce RDV-là et, pour un telepro, que SON
+  // propre bénéficiaire (sinon tout téléprospecteur qui touche cette plateforme serait payé).
+  if (r.platform) {
+    if ((a.platform || "").trim().toLowerCase() !== r.platform.trim().toLowerCase()) return false;
+    if (r.payee_kind === "telepro" && (a.owner || "").toLowerCase() !== r.payee_email) return false;
+    return true;
+  }
   if (r.call_center_id != null) {
     const ccMatches = cc === r.call_center_id ||
       (r.includes_descendants && !!ancestry?.get(cc)?.includes(r.call_center_id));
@@ -186,27 +196,53 @@ export function linesFor(a: AppointmentItem, accords: Accord[], tierIndex?: Tier
   return out;
 }
 
-/** Upsert des 2 accords standards d'un call center (call + gestionnaire). Montants libres. */
-export async function upsertCcAccords(ccId: number, callEur: number, gestEur: number, respEmail: string, gestEmail: string) {
+/** Upsert de l'accord "combien on paie ce call center par RDV" (fixe + %, signé ou honoré).
+ *  Portée call_center_id seul (commercial_email vide) : s'applique à tous ses RDV, quel que soit
+ *  le commercial. Un seul accord, créé/mis à jour depuis le formulaire du call center. */
+export async function upsertCcAccord(ccId: number, baseEur: number, pctNego: number, respEmail: string, trigger: "signed" | "honored" = "signed") {
   const pool = getPool();
-  const up = async (kind: string, payee: string, eur: number) => {
-    if (!payee) return;
-    const { rowCount } = await pool.query(
-      `update remuneration_accords set base_eur=$3, payee_email=$4 where call_center_id=$1 and payee_kind=$2 and active`,
-      [ccId, kind, eur, payee.toLowerCase()],
-    );
-    if (!rowCount) await pool.query(
-      `insert into remuneration_accords (call_center_id, payee_email, payee_kind, base_eur, label) values ($1,$2,$3,$4,$5)`,
-      [ccId, payee.toLowerCase(), kind, eur, `${kind} cc${ccId}`],
-    );
-  };
-  await up("call_center", respEmail, callEur);
-  await up("gestionnaire", gestEmail, gestEur);
+  if (!respEmail) return;
+  const { rowCount } = await pool.query(
+    `update remuneration_accords set base_eur=$3, pct_nego=$4, payee_email=$2, trigger_kind=$5
+       where call_center_id=$1 and payee_kind='call_center' and commercial_email='' and active`,
+    [ccId, respEmail.toLowerCase(), baseEur, pctNego, trigger],
+  );
+  if (!rowCount) await pool.query(
+    `insert into remuneration_accords (call_center_id, payee_email, payee_kind, base_eur, pct_nego, trigger_kind, label) values ($1,$2,'call_center',$3,$4,$5,$6)`,
+    [ccId, respEmail.toLowerCase(), baseEur, pctNego, trigger, `Call center cc${ccId}`],
+  );
 }
 
 /** Accords actifs d'un call center (pour l'UI Comptes). */
 export async function accordsForCc(ccId: number): Promise<Accord[]> {
   return (await listAccords()).filter((a) => a.call_center_id === ccId);
+}
+
+/** Upsert de l'accord "combien CE commercial paye pour les RDV qu'il réalise via CE call
+ *  center" (fixe + %, déclenché au signé ou à l'honoré) — payé au responsable du call center.
+ *  Distinct de l'accord global du call center (upsertCcAccord, payé par la structure). */
+export async function upsertCommercialCcAccord(
+  ccId: number, commercialEmail: string, payeeEmail: string,
+  baseEur: number, pctNego: number, trigger: "signed" | "honored",
+) {
+  const pool = getPool();
+  const email = commercialEmail.trim().toLowerCase();
+  const { rowCount } = await pool.query(
+    `update remuneration_accords set base_eur=$3, pct_nego=$4, trigger_kind=$5, payee_email=$6
+       where call_center_id=$1 and payee_kind='call_center' and lower(commercial_email)=$2 and active`,
+    [ccId, email, baseEur, pctNego, trigger, payeeEmail.toLowerCase()],
+  );
+  if (!rowCount) await pool.query(
+    `insert into remuneration_accords (call_center_id, commercial_email, payee_email, payee_kind, base_eur, pct_nego, trigger_kind, payer_email, label)
+     values ($1,$2,$3,'call_center',$4,$5,$6,$2,$7)`,
+    [ccId, email, payeeEmail.toLowerCase(), baseEur, pctNego, trigger, `${email} pour cc${ccId}`],
+  );
+}
+
+/** Accord commercial<->call center actif, s'il existe. */
+export async function commercialCcAccord(ccId: number, commercialEmail: string): Promise<Accord | undefined> {
+  const accords = await listAccords();
+  return accords.find((a) => a.call_center_id === ccId && a.payee_kind === "call_center" && a.commercial_email === commercialEmail.trim().toLowerCase());
 }
 
 /** Ce qu'un PAYEUR (ex : le commercial) doit sur un lot de RDV signés, ligne par ligne. */
@@ -234,7 +270,7 @@ export function totalFor(payeeEmail: string, appts: AppointmentItem[], accords: 
 }
 
 const PAYEE_LABEL: Record<Accord["payee_kind"], string> = {
-  call_center: "le call center", gestionnaire: "le gestionnaire", telepro: "le téléprospecteur", apporteur: "l'apporteur", associe: "l'associé",
+  call_center: "le call center", telepro: "le téléprospecteur", apporteur: "l'apporteur",
 };
 
 /** Phrase claire "qui paie qui, comment, sous quel délai" — affichée telle quelle dans /baremes

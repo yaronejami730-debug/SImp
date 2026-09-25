@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       } catch (err) {
         console.error("post-sign action failed", err);
       }
-      // 🔔 Notification interne : RDV signé -> owner + responsable + gestionnaire du call center.
+      // 🔔 Notification interne : RDV signé -> owner + responsable du call center.
       if (signStatus === "signed") {
         try {
           const ev = await getEvent(eid);
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
           const client = `${priv.clientFirstName ?? ""} ${priv.clientLastName ?? ""}`.trim();
           const vehicle = [priv.carBrand, priv.carModel].filter(Boolean).join(" ");
           await notify(
-            [priv.owner, c?.responsable_email, c?.gestionnaire_email],
+            [priv.owner, c?.responsable_email],
             "signed", `🎉 RDV signé — ${client || "client"}`,
             `${vehicle ? vehicle + " · " : ""}par ${priv.commercial || "?"}`,
             `/client/${encodeURIComponent(eid)}`,

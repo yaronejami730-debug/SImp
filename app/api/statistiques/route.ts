@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { listAppointments } from "@/lib/google";
-import { listAccords, linesFor, totalFor } from "@/lib/remuneration";
 import { toParisISO } from "@/lib/parse";
 import { getPool } from "@/lib/db";
 import { agenceScopeCcIds } from "@/lib/agence-scope";
@@ -14,11 +13,10 @@ const isDate = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.t
 const tokset = (x: string) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" ");
 
 /** GET ?from=YYYY-MM-DD&to=YYYY-MM-DD
- *  Visibilité par rôle:
- *  - Commercial (isCommercial=true): ses RDV + commission total (pas distribution)
- *  - Responsable CC: RDV du CC + par commercial: total_owed (pas distribution)
- *  - Gestionnaire (email = call_centers.gestionnaire_email): idem + call_center_portion + beneficiary_portion
- *  - Admin: tout partout */
+ *  Visibilité par rôle (moteur unique — barème de compte, users.commission_base/pct) :
+ *  - Commercial (isCommercial=true) : ses RDV + sa commission totale (jamais de répartition).
+ *  - Responsable CC : RDV du CC + total dû par commercial (jamais QUI paie quoi en interne).
+ *  - Admin : tout partout. */
 export async function GET(req: Request) {
   const s = getAuth(req);
   if (!s) return NextResponse.json({ error: "Non connecté." }, { status: 401 });
@@ -43,21 +41,10 @@ export async function GET(req: Request) {
     // Déterminer rôle viewer
     const myEmailLc = s.email.toLowerCase();
     const myNameTok = tokset(s.name);
-    let viewerRole: "commercial" | "responsable" | "gestionnaire" | "admin" = "admin";
-
-    if (s.role === "admin") {
-      viewerRole = "admin";
-    } else if (s.role === "responsable") {
-      // Vérifier si gestionnaire
-      const ccResult = await getPool().query("SELECT gestionnaire_email FROM call_centers WHERE id = $1", [s.callCenterId]);
-      if (ccResult.rows[0]?.gestionnaire_email?.toLowerCase() === myEmailLc) {
-        viewerRole = "gestionnaire";
-      } else {
-        viewerRole = "responsable";
-      }
-    } else if (s.isCommercial) {
-      viewerRole = "commercial";
-    }
+    let viewerRole: "commercial" | "responsable" | "admin" = "admin";
+    if (s.role === "admin") viewerRole = "admin";
+    else if (s.role === "responsable") viewerRole = "responsable";
+    else if (s.isCommercial) viewerRole = "commercial";
 
     // Filtre RDV selon rôle
     const isMine = (a: { owner?: string; commercial?: string; commercialEmail?: string }) =>
@@ -67,7 +54,7 @@ export async function GET(req: Request) {
 
     const visibleByRole = viewerRole === "admin" ? allAppts
       : viewerRole === "commercial" ? allAppts.filter(isMine)
-      : allAppts.filter((a) => a.callCenterId === s.callCenterId); // responsable/gestionnaire: tous du CC
+      : allAppts.filter((a) => a.callCenterId === s.callCenterId); // responsable: tous du CC
 
     // Navigation sous un slug d'agence : restreint même un super-admin à cette agence.
     const agenceScope = await agenceScopeCcIds(req);
@@ -77,13 +64,11 @@ export async function GET(req: Request) {
     const active = appts.filter((a) => !a.cancelled);
     const isSigned = (a: { signStatus?: string; mandatRemoved?: boolean }) => a.signStatus === "signed" && !a.mandatRemoved;
 
-    // Charger commercial_compensation
-    const compRes = await getPool().query(
-      `SELECT commercial_email, commercial_name, commission_base, commission_pct, call_center_share_pct
-       FROM commercial_compensation WHERE call_center_id = $1`,
-      [s.callCenterId]
+    // Barème de compte (moteur unique, plus de table parallèle) : commission_base/pct de chaque commercial.
+    const compRes = await getPool().query<{ email: string; commission_base: string; commission_pct: string }>(
+      `select email, commission_base, commission_pct from users where is_commercial = true`,
     );
-    const compByEmail = new Map<string, any>(compRes.rows.map(r => [r.commercial_email.toLowerCase(), r]));
+    const compByEmail = new Map(compRes.rows.map((r) => [r.email.toLowerCase(), { commission_base: Number(r.commission_base), commission_pct: Number(r.commission_pct) }]));
 
     // === CAS: COMMERCIAL ===
     if (viewerRole === "commercial") {
@@ -146,11 +131,6 @@ export async function GET(req: Request) {
       const negoTotal = signedAppts.reduce((sum, a) => sum + (a.negotiation || 0), 0);
       const commissionVariable = comp ? Math.round((comp.commission_pct / 100) * negoTotal) : 0;
       comm.totalOwed = commissionFixe + commissionVariable;
-
-      if (viewerRole === "gestionnaire") {
-        comm.callCenterPortion = Math.round((comp?.call_center_share_pct ?? 0) / 100 * comm.totalOwed);
-        comm.beneficiaryPortion = comm.totalOwed - comm.callCenterPortion;
-      }
     }
 
     const total = active.length;
@@ -164,6 +144,22 @@ export async function GET(req: Request) {
       date: a.startDateTime ?? null,
     }));
 
+    // Responsable : montant global de son call center (dû aux commerciaux + dû au call center
+    // lui-même via son propre accord), JAMAIS le détail par personne — réservé au super-admin.
+    let ccResume: { totalCommerciaux: number; totalCallCenter: number } | undefined;
+    if (viewerRole === "responsable") {
+      const signedActive = active.filter(isSigned);
+      const negoTotalCc = signedActive.reduce((sum, a) => sum + (a.negotiation || 0), 0);
+      const { rows: accCc } = await getPool().query<{ base_eur: string; pct_nego: string }>(
+        `select base_eur, pct_nego from remuneration_accords where call_center_id = $1 and payee_kind = 'call_center' and active limit 1`,
+        [s.callCenterId],
+      );
+      const acc = accCc[0];
+      const totalCallCenter = acc ? Math.round(Number(acc.base_eur) * signedActive.length + (Number(acc.pct_nego) / 100) * negoTotalCc) : 0;
+      const totalCommerciaux = byCommercial.reduce((n, c) => n + (c.totalOwed ?? 0), 0);
+      ccResume = { totalCommerciaux, totalCallCenter };
+    }
+
     return NextResponse.json({
       ok: true,
       from: fromStr,
@@ -171,9 +167,10 @@ export async function GET(req: Request) {
       total,
       signed,
       rateSignature,
-      byCommercial,
+      byCommercial: viewerRole === "admin" ? byCommercial : undefined,
+      ccResume,
       signedList,
-      viewerRole, // pour debug
+      viewerRole,
     });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erreur." }, { status: 500 });

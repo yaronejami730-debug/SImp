@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getUserByEmail, listCommercials, listTeleprospectors, listUsers } from "@/lib/users";
-import { callCenterRule, commercialsForCallCenterInherited, commercialsForTelepro, isGestionnaireEmail, slugForCallCenter } from "@/lib/callcenters";
+import { callCenterRule, commercialsForCallCenterInherited, commercialsForTelepro, slugForCallCenter } from "@/lib/callcenters";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,6 @@ export async function GET(req: Request) {
       ? await listTeleprospectors()
       : (await listUsers(s.callCenterId)).filter((u) => u.is_teleprospector && u.active).map((u) => ({ email: u.email, name: u.name, phone: u.phone }));
 
-    const isGestionnaire = await isGestionnaireEmail(s.email).catch(() => false);
     // TOUT compte, super-admin inclus, navigue toujours sous le slug d'une agence — ça permet de
     // toujours savoir "où on est" (branding, mails...). Pour l'admin c'est juste sa dernière agence
     // choisie (voir le sélecteur dans AppShell) ; par défaut, celle de son propre call center.
@@ -49,7 +48,6 @@ export async function GET(req: Request) {
       isCommercial: !!me?.is_commercial,
       isTeleprospector: !!me?.is_teleprospector,
       autoAssign: !!me?.auto_assign,
-      isGestionnaire,
       agenceSlug,
       commercials,
       teleprospectors,

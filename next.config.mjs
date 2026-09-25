@@ -6,7 +6,12 @@ const nextConfig = {
   async redirects() {
     // /simplicicar renommé en /simplicicar-paris-17 — garde les anciens liens déjà envoyés
     // aux leads (SMS/mail) fonctionnels.
-    return [{ source: "/simplicicar", destination: "/simplicicar-paris-17", permanent: true }];
+    // /prospection-agence/comptes déplacé vers /comptes : c'est de l'admin CRM générique, pas
+    // du démarchage B2B YJ Solutions — ne devait jamais vivre sous ce préfixe.
+    return [
+      { source: "/simplicicar", destination: "/simplicicar-paris-17", permanent: true },
+      { source: "/prospection-agence/comptes", destination: "/comptes", permanent: true },
+    ];
   },
 };
 

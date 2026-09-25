@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { getPool } from "@/lib/db";
-import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, setGestionnaire, setResponsable2, setTeleproPayMode, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments, assignTeleproCommercial, unassignTeleproCommercial, listTeleproAssignments } from "@/lib/callcenters";
-import { listAccords, upsertCcAccords } from "@/lib/remuneration";
+import { listCallCenters, createCallCenter, createAgence, setCallCenterParent, setBrandTheme, setResponsable2, renameCallCenter, deleteCallCenter, assignCommercial, unassignCommercial, listAssignments, assignTeleproCommercial, unassignTeleproCommercial, listTeleproAssignments } from "@/lib/callcenters";
+import { listAccords, upsertCcAccord, upsertCommercialCcAccord } from "@/lib/remuneration";
 import { sendEmail } from "@/lib/brevo";
 import { accountReadyEmail } from "@/lib/account-email";
 
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { agence?: boolean; name?: string; agenceOnly?: boolean; parentId?: number; notifyEmail?: boolean; responsable?: { name?: string; email?: string; username?: string; password?: string; phone?: string } };
+    const b = (await req.json()) as { agence?: boolean; name?: string; agenceOnly?: boolean; parentId?: number; notifyEmail?: boolean; payBaseEur?: number; payPctNego?: number; payTrigger?: "signed" | "honored"; responsable?: { name?: string; email?: string; username?: string; password?: string; phone?: string } };
     // Création d'une agence (call center racine).
     if (b.agence) {
       if (!b.name?.trim()) return NextResponse.json({ error: "Nom de l'agence requis." }, { status: 400 });
@@ -43,6 +43,10 @@ export async function POST(req: Request) {
       name: b.name, agenceOnly: !!b.agenceOnly, parentId: b.parentId,
       responsable: { name: b.responsable.name, email: b.responsable.email, username: b.responsable.username, password: b.responsable.password, phone: b.responsable.phone },
     });
+    // Combien on paie ce call center par RDV (fixe + %) — un seul accord, réglé dès la création.
+    if ((b.payBaseEur ?? 0) > 0 || (b.payPctNego ?? 0) > 0) {
+      await upsertCcAccord(cc.id, Number(b.payBaseEur ?? 0), Number(b.payPctNego ?? 0), cc.responsable_email, b.payTrigger === "honored" ? "honored" : "signed");
+    }
     // Lien de connexion PERMANENT de cette agence (pas un lien d'activation à usage unique) —
     // tout le monde chez elle s'y connecte, toujours la même adresse.
     const base = (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/$/, "");
@@ -65,7 +69,7 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   if (!requireAdmin(req)) return NextResponse.json({ error: "Réservé super-admin." }, { status: 403 });
   try {
-    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename" | "setSlug" | "setGestionnaire" | "setResponsable2" | "setAccords" | "setPayMode" | "assignTelepro" | "unassignTelepro"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string; slug?: string; teleproEmail?: string; commercialEmail?: string; priority?: number; payMode?: "gestionnaire" | "responsable" };
+    const b = (await req.json()) as { callCenterId?: number; email?: string; parentId?: number; action?: "assign" | "unassign" | "setAgence" | "setTheme" | "rename" | "setSlug" | "setResponsable2" | "setAccords" | "setCommercialAccord" | "assignTelepro" | "unassignTelepro"; primary?: string; dark?: string; logo?: string; headerDark?: boolean; name?: string; slug?: string; teleproEmail?: string; commercialEmail?: string; priority?: number; baseEur?: number; pctNego?: number; trigger?: "signed" | "honored" };
     if (b.action === "assignTelepro" || b.action === "unassignTelepro") {
       if (!b.teleproEmail?.trim() || !b.commercialEmail?.trim()) {
         return NextResponse.json({ error: "teleproEmail et commercialEmail requis." }, { status: 400 });
@@ -81,22 +85,17 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ ok: true });
     }
     if (b.action === "setAccords") {
-      const bb = b as unknown as { callEur?: number; gestEur?: number; respEmail?: string; gestEmail?: string };
-      await upsertCcAccords(b.callCenterId, Number(bb.callEur ?? 0), Number(bb.gestEur ?? 0), bb.respEmail ?? "", bb.gestEmail ?? "");
+      if (!b.email?.trim()) return NextResponse.json({ error: "E-mail du responsable requis." }, { status: 400 });
+      await upsertCcAccord(b.callCenterId, Number(b.baseEur ?? 0), Number(b.pctNego ?? 0), b.email, b.trigger === "honored" ? "honored" : "signed");
       return NextResponse.json({ ok: true });
     }
-    if (b.action === "setGestionnaire") {
-      if (!b.email?.trim()) return NextResponse.json({ error: "email requis." }, { status: 400 });
-      await setGestionnaire(b.callCenterId, b.email);
+    if (b.action === "setCommercialAccord") {
+      if (!b.commercialEmail?.trim() || !b.email?.trim()) return NextResponse.json({ error: "commercialEmail et e-mail du responsable requis." }, { status: 400 });
+      await upsertCommercialCcAccord(b.callCenterId, b.commercialEmail, b.email, Number(b.baseEur ?? 0), Number(b.pctNego ?? 0), b.trigger === "honored" ? "honored" : "signed");
       return NextResponse.json({ ok: true });
     }
     if (b.action === "setResponsable2") {
       await setResponsable2(b.callCenterId, b.email ?? "");
-      return NextResponse.json({ ok: true });
-    }
-    if (b.action === "setPayMode") {
-      if (b.payMode !== "gestionnaire" && b.payMode !== "responsable") return NextResponse.json({ error: "payMode invalide." }, { status: 400 });
-      await setTeleproPayMode(b.callCenterId, b.payMode);
       return NextResponse.json({ ok: true });
     }
     if (b.action === "rename") {

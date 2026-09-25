@@ -31,7 +31,7 @@ export default function Sidebar({ active, user, marque, logo, onNaviguer, groupe
               const courant = active === e.key;
               return (
                 <Link
-                  key={e.key} href={agenceHref(e.href)} onClick={onNaviguer}
+                  key={e.key} href={groupesForces ? e.href : agenceHref(e.href)} onClick={onNaviguer}
                   aria-current={courant ? "page" : undefined}
                   style={{
                     display: "flex", alignItems: "center", gap: 10, padding: "10px 10px", borderRadius: R.sm,

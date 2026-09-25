@@ -42,7 +42,7 @@ async function ownsOrAdmin(ev: GEvent, email: string, role: string): Promise<boo
     const cc = Number(p.cc ?? "1");
     const { getCallCenter } = await import("@/lib/callcenters");
     const c = await getCallCenter(cc);
-    if (c && ((c.responsable_email ?? "").toLowerCase() === me || (c.gestionnaire_email ?? "").toLowerCase() === me)) return true;
+    if (c && (c.responsable_email ?? "").toLowerCase() === me) return true;
   } catch { /* refus par défaut */ }
   return false;
 }

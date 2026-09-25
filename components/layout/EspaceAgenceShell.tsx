@@ -12,12 +12,6 @@ const YJ_LOGO = "https://rz18xsip6ybhgfji.public.blob.vercel-storage.com/yj-solu
 
 export const AGENCE_GROUPES: Groupe[] = [
   {
-    titre: "Pilotage",
-    entrees: [
-      { key: "comptes", label: "Comptes et utilisateurs", href: "/prospection-agence/comptes", icone: "personnes", visible: () => true },
-    ],
-  },
-  {
     titre: "Prospection",
     entrees: [
       { key: "contacts", label: "Contacts", href: "/prospection-agence", icone: "personnes", visible: () => true },
